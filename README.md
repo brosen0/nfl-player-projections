@@ -6,17 +6,17 @@ A machine learning workflow that predicts NFL player fantasy performance for 1-1
 
 ## Features
 
-- **4-position support**: ML models for QB, RB, WR, TE
+- **6-position support**: ML models for QB, RB, WR, TE plus rolling-average projections for K and DST
 - **Flexible prediction window**: Predict performance for next week or entire season (1-18 weeks)
 - **Utilization Score integration**: Incorporates opportunity-based metrics for offensive position predictions
-- **Automated data pipelines**: Loaders to refresh historical data to latest results (back to 2006)
+- **Automated data pipelines**: Loaders (via nfl-data-py) to refresh historical data to latest results (back to 2006)
 - **Team context**: Includes team stats for every team a player has been on
 - **Model optimization**: Hyperparameter tuning with Optuna, dimensionality reduction
 
 ## Installation
 
 ```bash
-cd nfl-predictor
+cd nfl-player-projections
 pip install -r requirements.txt
 ```
 
@@ -24,7 +24,11 @@ pip install -r requirements.txt
 
 ### 1. Load Data
 ```bash
-python -m src.scrapers.run_scrapers --seasons 2020-2024
+# Load specific season range
+python -m src.scrapers.run_scrapers --seasons 2020-2025
+
+# Refresh current season only
+python -m src.scrapers.run_scrapers --refresh
 ```
 
 ### 2. Train Models
@@ -44,39 +48,55 @@ python -m src.predict --weeks 18
 python -m src.predict --player "Patrick Mahomes" --weeks 4
 ```
 
-## Web app (FastAPI + React SPA)
+## Web App (FastAPI)
 
-A dark-theme single-page app with 5 tabs: **Dashboard**, **Rankings**, **Draft Assistant**, **Player Lookup**, and **Model Insights**. Supports QB, RB, WR, TE with time horizon filters (1-week, 4-week, rest-of-season).
+A web app served by FastAPI at **http://localhost:8501**. Supports QB, RB, WR, TE with time horizon filters (1-week, 4-week, rest-of-season).
 
-**Recommended: one command** (builds frontend if needed, starts server):
-   ```bash
-   python run_app.py --refresh --with-predictions
-   ```
-   Then open **http://localhost:8501**. Use `--skip-data` to skip data load, or `--with-predictions` to regenerate ML predictions before launch.
-**Alternatively**, run API and frontend separately:
-1. Build frontend: `cd frontend && npm install && npm run build && cd ..`
-2. Start API (serves built SPA at `/`): `python -m uvicorn api.main:app --host 0.0.0.0 --port 8501`
+**Recommended: one command** (starts server with data refresh and predictions):
+```bash
+python run_app.py --refresh --with-predictions
+```
 
-See `docs/RUN_WITH_NEW_FEATURES.md`, `api/README.md`, and `frontend/README.md` for details.
+Other useful flags:
+- `--skip-data` — skip data loading, start app immediately
+- `--with-predictions` — regenerate ML predictions before launch (uses cache if fresh)
+- `--force-predictions` — always regenerate predictions (ignore cache)
+- `--port <N>` — change port (default: 8501)
+
+**Alternatively**, start the API server directly:
+```bash
+python -m uvicorn api.main:app --host 0.0.0.0 --port 8501
+```
+
+See `docs/RUN_WITH_NEW_FEATURES.md` and `api/README.md` for details.
 
 ## Project Structure
 
 ```
-nfl-predictor/
+nfl-player-projections/
+├── run_app.py              # Main entry point (data + predictions + web server)
+├── requirements.txt        # Python dependencies
+├── config/
+│   └── settings.py         # Central configuration (seasons, paths, feature flags)
 ├── data/
-│   ├── raw/              # Raw source data
-│   ├── processed/        # Cleaned and feature-engineered data
-│   └── models/           # Trained model artifacts
+│   ├── raw/                # Raw source data (team stats CSVs)
+│   ├── models/             # Trained model artifacts and metadata
+│   └── nfl_data.db         # SQLite database with player/team data
 ├── src/
-│   ├── scrapers/         # Data collection utilities (nfl-data-py loaders)
-│   ├── features/         # Feature engineering and utilization score
-│   ├── models/           # ML model definitions and training
-│   ├── evaluation/       # Model evaluation and testing
-│   └── utils/            # Shared utilities
-├── api/                  # FastAPI backend for SPA
-├── frontend/             # React + Vite SPA
-├── tests/                # Unit and integration tests
-└── config/               # Configuration files
+│   ├── data/               # Data loading, auto-refresh, PBP aggregation
+│   ├── scrapers/           # Data collection wrappers (nfl-data-py loaders)
+│   ├── features/           # Feature engineering and utilization score
+│   ├── models/             # ML model definitions, training, and ensembles
+│   ├── evaluation/         # Backtesting, metrics, monitoring, explainability
+│   ├── integrations/       # External platform integrations (e.g. ESPN)
+│   ├── utils/              # Shared utilities (database, calendar, helpers)
+│   ├── predict.py          # Prediction CLI
+│   └── pipeline.py         # End-to-end pipeline orchestration
+├── api/                    # FastAPI backend
+├── scripts/                # Standalone scripts (compliance, secrets scan, analytics)
+├── tests/                  # Unit and integration tests
+├── notebooks/              # Jupyter notebooks (model validation)
+└── docs/                   # Documentation
 ```
 
 ## Publishing to GitHub / Security
@@ -88,7 +108,7 @@ nfl-predictor/
 
 ## Rubric Compliance Gate
 
-The repository now includes a CI gate that verifies key fantasy-system requirements (position-specific architecture, multi-horizon model contracts, feature/evaluation surface checks, and monitoring artifacts).
+The repository includes a CI gate that verifies key fantasy-system requirements (position-specific architecture, multi-horizon model contracts, feature/evaluation surface checks, and monitoring artifacts).
 
 Run locally:
 
@@ -111,8 +131,8 @@ pytest -q tests/test_rubric_compliance_checker.py tests/test_metrics_evaluator.p
 
 ## Data and Mid-Season Updates
 
-- **Auto-refresh**: Running the pipeline (train or `scripts/generate_app_data.py`) triggers an auto-refresh so the current NFL season’s completed weeks are loaded when available (e.g. 2025 weeks before today).
-- **Schedule updates**: Schedule data is refreshed from nfl-data-py on `--refresh`. New seasons (e.g. next year's schedule when released in spring) are loaded automatically when nfl-data-py publishes them.
+- **Auto-refresh**: Running the pipeline (train or `scripts/generate_app_data.py`) triggers an auto-refresh so the current NFL season's completed weeks are loaded when available.
+- **Schedule updates**: Schedule data is refreshed from nfl-data-py on `--refresh`. New seasons are loaded automatically when nfl-data-py publishes them.
 - **Train/test**: The latest available season is held out as the test set; training uses all prior seasons.
 - **Data loading**: `src/data/nfl_data_loader.py` uses PBP fallback when weekly data has fewer weeks than the current NFL week, so in-season data stays up to date.
 
