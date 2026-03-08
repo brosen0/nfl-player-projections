@@ -428,9 +428,9 @@ class WeatherDataLoader:
                         )
                         
                         # Derive is_cold_game from temperature (< 35F)
-                            if has_temp:
-                                temp_col = 'temp_sched' if 'temp_sched' in result.columns else 'temp'
-                                if temp_col in result.columns:
+                        if has_temp:
+                            temp_col = 'temp_sched' if 'temp_sched' in result.columns else 'temp'
+                            if temp_col in result.columns:
                                 temp_vals = pd.to_numeric(result[temp_col], errors='coerce')
                                 result.loc[temp_vals.notna(), 'weather_temp_f'] = temp_vals[temp_vals.notna()]
                                 if temp_vals.notna().any():
@@ -451,7 +451,7 @@ class WeatherDataLoader:
                                         wind_penalty = 0.0
                                 else:
                                     wind_penalty = 0.0
-                                
+
                                 result['weather_score'] = np.where(
                                     result['is_dome'] == 1,
                                     1.0,
