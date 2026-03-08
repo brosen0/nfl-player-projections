@@ -16,9 +16,12 @@ specializations and can serve as a foundation for future decomposition.
 | **Feature Agent** | `src/features/` | Feature engineering (`feature_engineering.py`), utilization scoring (`utilization_score.py`), dimensionality reduction (`dimensionality_reduction.py`), weight optimization (`utilization_weight_optimizer.py`), QB features, rookie/injury features, season-long and multi-week features |
 | **Model Agent** | `src/models/` | Position-specific training (`train.py`), model families (`position_models.py`), horizon models (`horizon_models.py`), ensemble construction (`ensemble.py`), Bayesian models, advanced techniques |
 | **Ensemble Agent** | `src/models/ensemble.py` | Weighted ensemble blending, uncertainty quantification, horizon-specific model combination |
-| **Decision Agent** | *(not yet implemented)* | Would handle lineup construction, draft ranking, start/sit recommendations, abstention logic |
-| **Audit Agent** | `src/evaluation/`, `src/utils/leakage.py` | Metrics (`metrics.py`), backtesting (`ts_backtester.py`, `backtester.py`), monitoring (`monitoring.py`), A/B testing (`ab_testing.py`), explainability (`explainability.py`), leakage guards (`leakage.py`) |
-| **Deployment Agent** | `api/main.py`, `Dockerfile`, `docker-compose.yml` | FastAPI serving, containerization, health checks |
+| **Decision Agent** | `src/evaluation/decision_optimizer.py`, `src/optimization/lineup_optimizer.py` | VOR rankings, start/sit recommendations with abstention, waiver wire priority, DFS lineup optimization (DraftKings/FanDuel salary cap) |
+| **Audit Agent** | `src/evaluation/`, `src/utils/leakage.py` | Metrics (`metrics.py`), ECE/reliability curves, backtesting (`ts_backtester.py`, `backtester.py`), monitoring (`monitoring.py`), A/B testing with pre-promotion checks (`ab_testing.py`), explainability (`explainability.py`), leakage guards (`leakage.py`) |
+| **Governance Agent** | `src/governance/approval_gates.py` | Decision authority matrix, approval workflows, audit trail logging |
+| **Meta-Learning Agent** | `src/models/meta_learning.py` | Tracks best configs per (position, horizon, regime), provides lookup for optimal configuration |
+| **Research Agent** | `src/research/auto_experiment.py` | Hypothesis queue, knowledge retention (findings registry), autonomous experiment scheduling |
+| **Deployment Agent** | `api/main.py`, `Dockerfile`, `docker-compose.yml` | FastAPI serving, containerization, health checks, monitoring dashboard |
 
 ---
 
@@ -135,6 +138,9 @@ system is migrated to a multi-agent architecture:
 
 1. Each `src/<module>/` becomes an independent service with a defined API contract
 2. `src/pipeline.py` becomes the orchestrator, communicating via message passing
-3. `src/evaluation/ab_testing.py` provides the foundation for an Audit Agent veto mechanism
-4. Inter-agent contracts would be formalized using the `ExperimentRecord` dataclass pattern
-5. A Decision Agent (Section 9) would be added as a new module consuming predictions and producing actionable recommendations
+3. `src/evaluation/ab_testing.py` provides the foundation for an Audit Agent veto mechanism (pre-promotion checks already implemented)
+4. Inter-agent contracts formalized using typed dataclasses in each module
+5. Conflict resolution protocol documented in `docs/CONFLICT_RESOLUTION.md`
+6. Governance framework in `src/governance/approval_gates.py` with decision authority matrix
+7. Platform integrations: `src/integrations/` (ESPN, Yahoo, Sleeper)
+8. Compute budget tracking via `src/evaluation/compute_budget.py`

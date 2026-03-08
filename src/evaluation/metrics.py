@@ -1,7 +1,7 @@
 """Model evaluation metrics and testing utilities."""
 import pandas as pd
 import numpy as np
-from typing import Dict, List, Tuple, Optional
+from typing import Any, Dict, List, Tuple, Optional
 from sklearn.model_selection import TimeSeriesSplit, cross_val_score
 from sklearn.metrics import (
     mean_squared_error, mean_absolute_error, r2_score,
@@ -843,6 +843,160 @@ def check_position_benchmarks_for_horizon(
         "mape_pass": (mape is not None and mape <= benchmarks.get("mape_target", 999)) if mape else None,
         "r2_target": benchmarks.get("r2_target"),
         "r2_pass": r2 >= benchmarks.get("r2_target", -999),
+    }
+
+
+def expected_calibration_error(
+    y_true: np.ndarray,
+    y_pred: np.ndarray,
+    pred_std: np.ndarray,
+    n_bins: int = 10,
+) -> Dict[str, float]:
+    """Compute Expected Calibration Error (ECE) for regression uncertainty.
+
+    Per Directive V7 Section 8: calibration diagnostics must include ECE.
+
+    Bins predictions by predicted std, then checks whether the empirical
+    error rate within each bin matches the predicted uncertainty level.
+
+    Args:
+        y_true: Actual observed values.
+        y_pred: Point predictions.
+        pred_std: Predicted standard deviations.
+        n_bins: Number of bins for calibration analysis.
+
+    Returns:
+        Dict with ECE value, per-bin diagnostics, and pass/fail.
+    """
+    y_true = np.asarray(y_true, dtype=float)
+    y_pred = np.asarray(y_pred, dtype=float)
+    pred_std = np.asarray(pred_std, dtype=float)
+
+    valid = np.isfinite(y_true) & np.isfinite(y_pred) & np.isfinite(pred_std) & (pred_std > 0)
+    if valid.sum() < 20:
+        return {"ece": None, "bins": [], "n_valid": int(valid.sum())}
+
+    yt = y_true[valid]
+    yp = y_pred[valid]
+    ps = pred_std[valid]
+
+    abs_errors = np.abs(yt - yp)
+
+    # Bin by predicted std
+    bin_edges = np.percentile(ps, np.linspace(0, 100, n_bins + 1))
+    bin_edges[-1] += 1e-6  # include max
+    bins = np.digitize(ps, bin_edges) - 1
+    bins = np.clip(bins, 0, n_bins - 1)
+
+    bin_results = []
+    weighted_errors = []
+    for b in range(n_bins):
+        mask = bins == b
+        if mask.sum() < 5:
+            continue
+        mean_predicted_std = float(np.mean(ps[mask]))
+        mean_actual_error = float(np.mean(abs_errors[mask]))
+        cal_error = abs(mean_actual_error - mean_predicted_std) / max(mean_predicted_std, 1e-6)
+        weight = mask.sum() / len(yt)
+        weighted_errors.append(cal_error * weight)
+        bin_results.append({
+            "bin": b,
+            "n_samples": int(mask.sum()),
+            "mean_predicted_std": round(mean_predicted_std, 3),
+            "mean_actual_error": round(mean_actual_error, 3),
+            "calibration_error": round(cal_error, 4),
+        })
+
+    ece = float(np.sum(weighted_errors)) if weighted_errors else None
+
+    return {
+        "ece": round(ece, 4) if ece is not None else None,
+        "bins": bin_results,
+        "n_valid": int(valid.sum()),
+        "is_well_calibrated": ece is not None and ece < 0.05,
+    }
+
+
+def reliability_curve_data(
+    y_true: np.ndarray,
+    y_pred: np.ndarray,
+    pred_std: np.ndarray,
+    nominal_levels: Optional[List[float]] = None,
+    n_bins: int = 5,
+) -> Dict[str, Any]:
+    """Generate reliability curve data for plotting.
+
+    Per Directive V7 Section 8: produce reliability curves as calibration
+    diagnostics.
+
+    For each nominal coverage level, splits data into bins by predicted std
+    and computes the actual coverage within each bin. A perfectly calibrated
+    model has actual_coverage == nominal_coverage for all bins.
+
+    Args:
+        y_true: Actual observed values.
+        y_pred: Point predictions.
+        pred_std: Predicted standard deviations.
+        nominal_levels: Coverage levels to evaluate.
+        n_bins: Number of bins by predicted uncertainty.
+
+    Returns:
+        Dict with reliability curve data suitable for plotting.
+    """
+    if nominal_levels is None:
+        nominal_levels = [0.50, 0.80, 0.90, 0.95]
+
+    y_true = np.asarray(y_true, dtype=float)
+    y_pred = np.asarray(y_pred, dtype=float)
+    pred_std = np.asarray(pred_std, dtype=float)
+
+    valid = np.isfinite(y_true) & np.isfinite(y_pred) & np.isfinite(pred_std) & (pred_std > 0)
+    if valid.sum() < 20:
+        return {"curves": [], "n_valid": int(valid.sum())}
+
+    yt = y_true[valid]
+    yp = y_pred[valid]
+    ps = pred_std[valid]
+
+    from scipy.stats import norm as _norm
+
+    curves = []
+    for nominal in nominal_levels:
+        z = _norm.ppf(0.5 + nominal / 2.0)
+        lower = yp - z * ps
+        upper = yp + z * ps
+        covered = (yt >= lower) & (yt <= upper)
+        actual_coverage = float(covered.mean())
+
+        # Bin by predicted std for per-bin reliability
+        bin_edges = np.percentile(ps, np.linspace(0, 100, n_bins + 1))
+        bin_edges[-1] += 1e-6
+        bins = np.clip(np.digitize(ps, bin_edges) - 1, 0, n_bins - 1)
+
+        bin_data = []
+        for b in range(n_bins):
+            mask = bins == b
+            if mask.sum() < 5:
+                continue
+            bin_coverage = float(covered[mask].mean())
+            bin_data.append({
+                "bin": b,
+                "n_samples": int(mask.sum()),
+                "mean_std": round(float(np.mean(ps[mask])), 3),
+                "actual_coverage": round(bin_coverage, 4),
+                "nominal_coverage": nominal,
+            })
+
+        curves.append({
+            "nominal": nominal,
+            "overall_actual_coverage": round(actual_coverage, 4),
+            "calibration_error": round(abs(actual_coverage - nominal), 4),
+            "bins": bin_data,
+        })
+
+    return {
+        "curves": curves,
+        "n_valid": int(valid.sum()),
     }
 
 
