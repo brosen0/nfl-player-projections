@@ -405,6 +405,9 @@ class TimeSeriesBacktester:
         for pos, grp in valid.groupby("position"):
             self.position_metrics[pos] = _calc_metrics(grp["actual"], grp["predicted"])
 
+        # Drawdown analysis: longest streak of poor rank accuracy (Directive V7 §10)
+        self.drawdown_metrics = self._compute_drawdown(valid)
+
         if self.verbose:
             print(f"\n{'='*60}")
             print("BACKTEST RESULTS")
@@ -427,6 +430,45 @@ class TimeSeriesBacktester:
                       f"avg RMSE={np.mean(early):.2f}")
                 print(f"    Late (wk {weeks_sorted[-4]}-{weeks_sorted[-1]}): "
                       f"avg RMSE={np.mean(late):.2f}")
+            if self.drawdown_metrics.get("max_drawdown_weeks", 0) > 0:
+                print(f"\n  Drawdown: max {self.drawdown_metrics['max_drawdown_weeks']} "
+                      f"consecutive weeks with rank accuracy < 50%")
+
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _compute_drawdown(valid_df: pd.DataFrame) -> Dict[str, Any]:
+        """Compute drawdown metrics: longest streak of poor rank accuracy per week.
+
+        Rank accuracy per week = fraction of top-10 actual players that appear
+        in the top-10 predicted players.  A "bad" week has rank accuracy < 50%.
+        """
+        if valid_df.empty or "week" not in valid_df.columns:
+            return {"max_drawdown_weeks": 0, "weekly_rank_accuracy": []}
+
+        weekly_rank_acc = []
+        for week, grp in sorted(valid_df.groupby("week")):
+            if len(grp) < 10:
+                continue
+            top_n = min(10, len(grp) // 2)
+            actual_top = set(grp.nlargest(top_n, "actual").index)
+            pred_top = set(grp.nlargest(top_n, "predicted").index)
+            overlap = len(actual_top & pred_top) / top_n
+            weekly_rank_acc.append({"week": int(week), "rank_accuracy": round(overlap, 3)})
+
+        # Longest streak below 50%
+        max_streak = 0
+        current_streak = 0
+        for entry in weekly_rank_acc:
+            if entry["rank_accuracy"] < 0.5:
+                current_streak += 1
+                max_streak = max(max_streak, current_streak)
+            else:
+                current_streak = 0
+
+        return {
+            "max_drawdown_weeks": max_streak,
+            "weekly_rank_accuracy": weekly_rank_acc,
+        }
 
     # ------------------------------------------------------------------
     def get_results_dict(self) -> Dict[str, Any]:
@@ -449,6 +491,7 @@ class TimeSeriesBacktester:
                 p: _serialize_metrics(m)
                 for p, m in self.position_metrics.items()
             },
+            "drawdown": self.drawdown_metrics if hasattr(self, "drawdown_metrics") else {},
             "diagnostics": {
                 "model_refit_per_week": True,
                 "expanding_window": True,

@@ -7,6 +7,30 @@
 
 ---
 
+## Corrections Addendum (2026-03-08)
+
+Re-exploration of the codebase revealed several findings in this evaluation
+were stale at the time of writing (already addressed in prior commits) or
+incorrect. The following corrections apply:
+
+| Original Finding | Correction |
+|-----------------|------------|
+| CI stages non-blocking (`\|\| echo`) | Fixed in commit 9ebb27f; all CI stages are now blocking |
+| 16/35 test files in CI | Now 35/35 — extended tests stage added to CI |
+| No schema validation (§19) | `src/data/schema_validator.py` exists with column checks |
+| No dataset hashing (§5) | `ExperimentTracker.log_dataset_hash()` implemented (lines 85-131) |
+| `id` column not in leakage blocklist (§15 C3) | `id` is in `_IDENTIFIER_COLUMNS` in `src/utils/leakage.py` |
+| Contradictory R² artifacts (§11 P1) | Files `ml_evaluation_results.json` and `approach_comparison_results.json` no longer exist |
+| No evaluation matrix (§13) | `generate_evaluation_matrix()` exists in `src/evaluation/metrics.py` |
+| `sos_next_*` leakage (M2) | Training-mode `shift(1)` fix applied to `src/features/multiweek_features.py` |
+| No drawdown analysis (§10) | `_compute_drawdown()` added to `src/evaluation/ts_backtester.py` |
+| No compute timing (§20) | `duration_seconds` auto-computed in `ExperimentTracker.end_run()` |
+| No `--cov` in CI (§23) | `pytest-cov` added to CI; `--cov=src` on unit test stage |
+
+**Revised compliance estimate: ~52%** (up from 42%), with 5 PASS, 16 PARTIAL, 4 FAIL sections.
+
+---
+
 ## Executive Summary
 
 ### Overall Compliance

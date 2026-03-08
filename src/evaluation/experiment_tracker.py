@@ -137,6 +137,14 @@ class ExperimentTracker:
         run = self._active_runs.pop(run_id)
         run["status"] = status
         run["ended_at"] = datetime.now().isoformat()
+        # Auto-compute duration for compute budget tracking (Directive V7 §20)
+        try:
+            started = datetime.fromisoformat(run["started_at"])
+            run["duration_seconds"] = round(
+                (datetime.now() - started).total_seconds(), 2
+            )
+        except (ValueError, KeyError):
+            pass
         self._append_to_log(run)
         logger.info("Experiment run ended: %s (%s)", run_id, status)
 
