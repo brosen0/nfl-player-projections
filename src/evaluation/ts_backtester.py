@@ -471,10 +471,119 @@ class TimeSeriesBacktester:
         }
 
     # ------------------------------------------------------------------
+    @staticmethod
+    def scenario_sensitivity(
+        pred_df: pd.DataFrame,
+        noise_levels: Optional[Dict[str, float]] = None,
+    ) -> Dict[str, Dict[str, float]]:
+        """Compute scenario sensitivity analysis.
+
+        Per Directive V7 Section 10: measure scenario sensitivity under
+        optimistic, base, and pessimistic assumptions.
+
+        Simulates varying levels of prediction noise and reports how
+        metrics degrade under each scenario.
+
+        Args:
+            pred_df: Predictions DataFrame with 'actual' and 'predicted'.
+            noise_levels: Dict of scenario_name -> noise_std_factor.
+
+        Returns:
+            Dict of scenario_name -> metrics.
+        """
+        if noise_levels is None:
+            noise_levels = {
+                "optimistic": 0.0,   # No additional noise
+                "base": 0.5,         # Moderate noise
+                "pessimistic": 1.0,  # High noise
+            }
+
+        valid = pred_df.dropna(subset=["actual", "predicted"])
+        if valid.empty:
+            return {}
+
+        actuals = valid["actual"].values
+        preds = valid["predicted"].values
+        base_std = float(np.std(actuals - preds))
+
+        results = {}
+        rng = np.random.RandomState(42)
+        for scenario, factor in noise_levels.items():
+            if factor == 0:
+                noisy_preds = preds
+            else:
+                noise = rng.normal(0, base_std * factor, len(preds))
+                noisy_preds = preds + noise
+
+            results[scenario] = _calc_metrics(
+                pd.Series(actuals), pd.Series(noisy_preds)
+            )
+        return results
+
+    @staticmethod
+    def friction_analysis(
+        pred_df: pd.DataFrame,
+        data_delay_weeks: int = 0,
+        roster_lock_penalty_pct: float = 0.0,
+    ) -> Dict[str, Any]:
+        """Model friction terms relevant to fantasy football.
+
+        Per Directive V7 Section 10: include friction terms relevant
+        to the domain (roster lock timing, data availability delays).
+
+        Args:
+            pred_df: Predictions DataFrame.
+            data_delay_weeks: Simulated weeks of data delay.
+            roster_lock_penalty_pct: Percentage penalty for late roster decisions.
+
+        Returns:
+            Dict with friction-adjusted metrics.
+        """
+        valid = pred_df.dropna(subset=["actual", "predicted"])
+        if valid.empty:
+            return {}
+
+        base_metrics = _calc_metrics(valid["actual"], valid["predicted"])
+
+        # Simulate data delay: predictions become less accurate
+        # as they rely on older information
+        delay_degradation = 1.0 + (data_delay_weeks * 0.05)
+        adjusted_rmse = base_metrics.get("rmse", 0) * delay_degradation
+
+        # Roster lock penalty: late decisions lead to suboptimal lineups
+        lock_penalty = base_metrics.get("rmse", 0) * (roster_lock_penalty_pct / 100)
+
+        return {
+            "base_rmse": base_metrics.get("rmse"),
+            "data_delay_weeks": data_delay_weeks,
+            "delay_adjusted_rmse": round(adjusted_rmse, 3),
+            "roster_lock_penalty_pct": roster_lock_penalty_pct,
+            "friction_adjusted_rmse": round(adjusted_rmse + lock_penalty, 3),
+            "total_friction_impact_pct": round(
+                ((adjusted_rmse + lock_penalty) / max(base_metrics.get("rmse", 1), 0.01) - 1) * 100, 1
+            ),
+        }
+
+    # ------------------------------------------------------------------
     def get_results_dict(self) -> Dict[str, Any]:
         """Return results as a JSON-serializable dict."""
         pred_df = pd.DataFrame(self.predictions)
         valid = pred_df.dropna(subset=["actual", "predicted"])
+
+        # Compute scenario sensitivity (Directive V7 §10)
+        scenarios = self.scenario_sensitivity(pred_df)
+        friction = self.friction_analysis(pred_df)
+
+        # Week-by-week performance path (Directive V7 §10)
+        weekly_path = []
+        for w in sorted(self.weekly_metrics.keys()):
+            m = self.weekly_metrics[w]
+            weekly_path.append({
+                "week": w,
+                "rmse": round(m.get("rmse", 0), 3),
+                "mae": round(m.get("mae", 0), 3),
+                "r2": round(m.get("r2", 0), 4),
+            })
 
         return {
             "season": self.season,
@@ -492,6 +601,11 @@ class TimeSeriesBacktester:
                 for p, m in self.position_metrics.items()
             },
             "drawdown": self.drawdown_metrics if hasattr(self, "drawdown_metrics") else {},
+            "weekly_performance_path": weekly_path,
+            "scenario_sensitivity": {
+                k: _serialize_metrics(v) for k, v in scenarios.items()
+            } if scenarios else {},
+            "friction_analysis": friction,
             "diagnostics": {
                 "model_refit_per_week": True,
                 "expanding_window": True,

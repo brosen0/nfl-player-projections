@@ -218,3 +218,96 @@ def validate_dataframe_schema(
             raise SchemaValidationError(msg)
 
     return issues
+
+
+# ---------------------------------------------------------------------------
+# Data freshness SLA (Directive V7 §19.3)
+# ---------------------------------------------------------------------------
+
+def check_data_freshness(
+    df: pd.DataFrame,
+    max_staleness_days: int = 7,
+    date_col: str = "game_date",
+    season_col: str = "season",
+    week_col: str = "week",
+) -> dict:
+    """Check if data is stale beyond the freshness SLA.
+
+    Per Directive V7 Section 19.3: every data source must have a documented
+    freshness SLA. Alert when data is too stale.
+
+    Args:
+        df: DataFrame to check.
+        max_staleness_days: Maximum acceptable staleness in days.
+        date_col: Column with game dates.
+        season_col: Column with season year.
+        week_col: Column with week number.
+
+    Returns:
+        Dict with freshness assessment.
+    """
+    from datetime import datetime, timedelta
+
+    result = {
+        "is_fresh": True,
+        "max_staleness_days": max_staleness_days,
+        "warnings": [],
+    }
+
+    if df.empty:
+        result["is_fresh"] = False
+        result["warnings"].append("DataFrame is empty")
+        return result
+
+    if date_col in df.columns:
+        try:
+            latest_date = pd.to_datetime(df[date_col]).max()
+            if pd.notna(latest_date):
+                staleness = (datetime.now() - latest_date).days
+                result["latest_date"] = str(latest_date.date())
+                result["staleness_days"] = staleness
+                if staleness > max_staleness_days:
+                    result["is_fresh"] = False
+                    result["warnings"].append(
+                        f"Data is {staleness} days old (SLA: {max_staleness_days} days)"
+                    )
+        except Exception:
+            pass
+
+    if season_col in df.columns and week_col in df.columns:
+        try:
+            max_season = int(df[season_col].max())
+            max_week = int(df[df[season_col] == max_season][week_col].max())
+            result["latest_season"] = max_season
+            result["latest_week"] = max_week
+        except Exception:
+            pass
+
+    return result
+
+
+def validate_on_load(source_name: str = "data", strict: bool = False):
+    """Decorator to auto-validate DataFrames after loading.
+
+    Per Directive V7 Section 19: pipeline must include schema validation.
+
+    Usage:
+        @validate_on_load("weekly_stats")
+        def load_weekly_data():
+            return pd.read_csv("weekly.csv")
+    """
+    def decorator(func):
+        def wrapper(*args, **kwargs):
+            df = func(*args, **kwargs)
+            if isinstance(df, pd.DataFrame):
+                issues = validate_weekly_data(df, strict=strict)
+                if issues:
+                    logger.warning(
+                        "Schema validation for %s: %d issues found",
+                        source_name, len(issues),
+                    )
+            return df
+        wrapper.__name__ = func.__name__
+        wrapper.__doc__ = func.__doc__
+        return wrapper
+    return decorator

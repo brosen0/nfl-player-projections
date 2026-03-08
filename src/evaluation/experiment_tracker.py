@@ -46,8 +46,18 @@ class ExperimentTracker:
         config: Optional[Dict[str, Any]] = None,
         tags: Optional[Dict[str, str]] = None,
         description: str = "",
+        dataset_version: str = "",
+        feature_version: str = "",
+        validation_split_spec: str = "",
+        random_seeds: Optional[Dict[str, int]] = None,
+        calibration_method: str = "",
     ) -> str:
-        """Begin a new experiment run.  Returns a unique run ID."""
+        """Begin a new experiment run.  Returns a unique run ID.
+
+        Per Directive V7 Section 3: all experiment records must include
+        dataset version, feature version, validation split spec, random
+        seeds, and calibration method for reproducibility.
+        """
         run_id = datetime.now().strftime("%Y%m%d_%H%M%S") + "_" + uuid.uuid4().hex[:6]
         run = {
             "run_id": run_id,
@@ -60,6 +70,14 @@ class ExperimentTracker:
             "metrics": {},
             "git_commit": self._git_short_hash(),
             "git_dirty": self._git_is_dirty(),
+            # Directive V7 §3 required fields
+            "dataset_version": dataset_version,
+            "feature_version": feature_version,
+            "validation_split_spec": validation_split_spec,
+            "random_seeds": random_seeds or {},
+            "calibration_method": calibration_method,
+            "dataset_hashes": {},
+            "promotion_status": None,
         }
         self._active_runs[run_id] = run
         logger.info("Experiment run started: %s", run_id)
@@ -145,8 +163,45 @@ class ExperimentTracker:
             )
         except (ValueError, KeyError):
             pass
+        # Track peak memory if available (Directive V7 §20)
+        try:
+            import resource
+            mem_kb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+            run["memory_peak_mb"] = round(mem_kb / 1024, 1)
+        except Exception:
+            pass
         self._append_to_log(run)
         logger.info("Experiment run ended: %s (%s)", run_id, status)
+
+    def promote_run(self, run_id: str, justification: str = "") -> None:
+        """Mark a run as promoted to production.
+
+        Per Directive V7 Section 14: promotion gate tracks which runs
+        are promoted and why.
+        """
+        record = {
+            "run_id": run_id,
+            "action": "promote",
+            "justification": justification,
+            "timestamp": datetime.now().isoformat(),
+        }
+        self._append_to_log(record)
+        logger.info("Run %s promoted: %s", run_id, justification)
+
+    def reject_run(self, run_id: str, reason: str = "") -> None:
+        """Mark a run as rejected.
+
+        Per Directive V7 Section 14: rejected runs are logged so future
+        agents learn what doesn't work.
+        """
+        record = {
+            "run_id": run_id,
+            "action": "reject",
+            "reason": reason,
+            "timestamp": datetime.now().isoformat(),
+        }
+        self._append_to_log(record)
+        logger.info("Run %s rejected: %s", run_id, reason)
 
     def list_runs(self, last_n: int = 20) -> List[Dict[str, Any]]:
         """Read the most recent *last_n* runs from the log file."""

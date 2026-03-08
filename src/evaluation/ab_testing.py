@@ -195,14 +195,98 @@ class ABTestManager:
 
         return result
 
-    def promote(self) -> bool:
+    def pre_promotion_checks(
+        self,
+        calibration_ece: Optional[float] = None,
+        max_ece: float = 0.10,
+        drawdown_weeks: Optional[int] = None,
+        max_drawdown_weeks: int = 4,
+        prediction_variance_change: Optional[float] = None,
+        max_variance_increase: float = 0.20,
+    ) -> Dict:
+        """Run pre-promotion safety checks before model swap.
+
+        Per Directive V7 Section 15/25: block promotion if calibration,
+        drawdown, or stability thresholds are violated.
+
+        Args:
+            calibration_ece: Expected Calibration Error of candidate.
+            max_ece: Maximum allowed ECE.
+            drawdown_weeks: Max consecutive poor-performance weeks.
+            max_drawdown_weeks: Threshold for drawdown rejection.
+            prediction_variance_change: Ratio change in prediction variance.
+            max_variance_increase: Max allowed variance increase.
+
+        Returns:
+            Dict with 'approved' bool and 'blockers' list.
+        """
+        blockers: List[str] = []
+
+        if calibration_ece is not None and calibration_ece > max_ece:
+            blockers.append(
+                f"Calibration ECE {calibration_ece:.3f} exceeds threshold {max_ece}"
+            )
+
+        if drawdown_weeks is not None and drawdown_weeks > max_drawdown_weeks:
+            blockers.append(
+                f"Drawdown {drawdown_weeks} weeks exceeds threshold {max_drawdown_weeks}"
+            )
+
+        if prediction_variance_change is not None and prediction_variance_change > max_variance_increase:
+            blockers.append(
+                f"Prediction variance increased by {prediction_variance_change:.1%} "
+                f"(threshold: {max_variance_increase:.1%})"
+            )
+
+        result = {
+            "approved": len(blockers) == 0,
+            "blockers": blockers,
+            "checks_run": {
+                "calibration": calibration_ece is not None,
+                "drawdown": drawdown_weeks is not None,
+                "variance_stability": prediction_variance_change is not None,
+            },
+            "timestamp": datetime.now().isoformat(),
+        }
+
+        # Log the check result
+        check_path = self.log_dir / f"promotion_check_{self.position}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        with open(check_path, "w") as f:
+            json.dump(result, f, indent=2)
+
+        return result
+
+    def promote(self, dry_run: bool = False) -> bool:
         """Save candidate model as the new production model.
 
         Creates a backup of the current production model before overwriting.
-        Returns True if promotion succeeded.
+        Per Directive V7 Section 21: supports --dry-run to preview changes
+        without executing.
+
+        Args:
+            dry_run: If True, log what would happen without executing.
+
+        Returns True if promotion succeeded (or would succeed in dry-run).
         """
         if self.candidate_model is None:
             return False
+
+        if dry_run:
+            save_path = MODELS_DIR / f"multiweek_{self.position.lower()}.joblib"
+            result = {
+                "dry_run": True,
+                "action": "promote",
+                "position": self.position,
+                "candidate_label": self.candidate_label,
+                "target_path": str(save_path),
+                "current_exists": save_path.exists(),
+                "timestamp": datetime.now().isoformat(),
+            }
+            log_path = self.log_dir / f"promotion_dryrun_{self.position}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+            with open(log_path, "w") as f:
+                json.dump(result, f, indent=2)
+            return True
+
         try:
             save_path = MODELS_DIR / f"multiweek_{self.position.lower()}.joblib"
             

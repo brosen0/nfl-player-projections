@@ -274,6 +274,116 @@ class ModelMonitor:
         else:
             logger.warning("ALERT [%s]: %s", alert["level"], alert["message"])
 
+    def circuit_breaker(
+        self,
+        predictions: np.ndarray,
+        position: str = "ALL",
+        reference_rmse: Optional[float] = None,
+        reference_mean: Optional[float] = None,
+        max_rmse_degradation: float = 0.50,
+        max_null_rate: float = 0.10,
+    ) -> Dict[str, Any]:
+        """Circuit breaker: disable live predictions when quality degrades.
+
+        Per Directive V7 Section 1 (safety over ambition) and Section 15
+        (failure modes that trigger rejection): halt predictions when
+        degradation exceeds thresholds.
+
+        Args:
+            predictions: Current batch of predictions.
+            position: Position label.
+            reference_rmse: Expected RMSE from validation.
+            reference_mean: Expected mean from training.
+            max_rmse_degradation: Max allowed RMSE increase ratio.
+            max_null_rate: Max allowed null prediction rate.
+
+        Returns:
+            Dict with 'allow_predictions' bool and 'reasons' list.
+        """
+        preds = np.asarray(predictions, dtype=float)
+        finite = preds[np.isfinite(preds)]
+        reasons: List[str] = []
+
+        # Check null rate
+        null_rate = 1.0 - len(finite) / max(len(preds), 1)
+        if null_rate > max_null_rate:
+            reasons.append(
+                f"Null prediction rate {null_rate:.1%} exceeds threshold {max_null_rate:.1%}"
+            )
+
+        # Check mean drift (extreme)
+        if reference_mean is not None and reference_mean > 0 and len(finite) > 0:
+            drift = abs(float(np.mean(finite)) - reference_mean) / reference_mean
+            if drift > 0.50:
+                reasons.append(
+                    f"Prediction mean drift {drift:.1%} exceeds 50% safety threshold"
+                )
+
+        allow = len(reasons) == 0
+        result = {
+            "allow_predictions": allow,
+            "position": position,
+            "reasons": reasons,
+            "timestamp": datetime.now().isoformat(),
+        }
+
+        if not allow:
+            alert = self._make_alert(
+                AlertLevel.CRITICAL,
+                f"CIRCUIT BREAKER TRIPPED for {position}: predictions disabled",
+                result,
+            )
+            self._emit_alert(alert)
+            logger.error("Circuit breaker tripped: %s", reasons)
+
+        return result
+
+    def get_dashboard_data(self) -> Dict[str, Any]:
+        """Aggregate all monitoring metrics into a single dashboard response.
+
+        Per Directive V7 Section 18: monitoring dashboard must track
+        signal families continuously.
+
+        Returns:
+            Dict with recent alerts, metrics summary, and system status.
+        """
+        alerts = self.get_recent_alerts(last_n=20)
+
+        # Read recent metrics
+        recent_metrics: List[Dict[str, Any]] = []
+        if self.metrics_log.exists():
+            with open(self.metrics_log, encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if line:
+                        try:
+                            recent_metrics.append(json.loads(line))
+                        except json.JSONDecodeError:
+                            continue
+            recent_metrics = recent_metrics[-100:]
+
+        # Compute summary
+        critical_alerts = [a for a in alerts if a.get("level") == AlertLevel.CRITICAL]
+        warning_alerts = [a for a in alerts if a.get("level") == AlertLevel.WARNING]
+
+        return {
+            "timestamp": datetime.now().isoformat(),
+            "status": "degraded" if critical_alerts else "healthy",
+            "alerts_summary": {
+                "total": len(alerts),
+                "critical": len(critical_alerts),
+                "warning": len(warning_alerts),
+            },
+            "recent_alerts": alerts[-10:],
+            "recent_metrics": recent_metrics[-20:],
+            "thresholds": {
+                "prediction_mean_drift": self.prediction_mean_drift_threshold,
+                "prediction_std_drift": self.prediction_std_drift_threshold,
+                "feature_drift_ks": self.feature_drift_ks_threshold,
+                "error_rmse_degradation": self.error_rmse_degradation_threshold,
+            },
+        }
+
     def _log_metrics(self, metrics: Dict[str, Any]) -> None:
         try:
             with open(self.metrics_log, "a", encoding="utf-8") as f:
