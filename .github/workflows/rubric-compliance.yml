@@ -34,6 +34,7 @@ jobs:
             statsmodels==0.14.1 \
             joblib==1.3.2 \
             pytest==7.4.4 \
+            pytest-cov==4.1.0 \
             torch --extra-index-url https://download.pytorch.org/whl/cpu
 
       - name: Run rubric compliance checker
@@ -64,10 +65,28 @@ jobs:
 
       - name: Run unit tests
         run: |
-          pytest -q \
+          pytest -q --cov=src --cov-report=term-missing \
             tests/test_nfl_calendar.py \
             tests/test_utilization_score.py \
             tests/test_database.py \
             tests/test_predictions.py \
             tests/test_qb_utilization_conversion.py \
             tests/test_eligible_players.py
+
+      - name: Run extended tests
+        run: |
+          pytest -q \
+            tests/test_ml_robustness_15_steps.py \
+            tests/test_injury_modeling.py \
+            tests/test_integration.py \
+            tests/test_missing_data_and_new_features.py \
+            tests/test_pbp_aggregator.py \
+            tests/test_rookie_projections.py \
+            tests/test_schedule_and_team_stats.py \
+            tests/test_utilization_targets_and_weights.py \
+            tests/test_data_availability.py \
+            tests/test_fast_mode.py \
+            tests/test_matchup_aware_prediction.py \
+            tests/test_latest_season_workflow.py \
+            tests/test_webapp_rendering.py \
+            tests/test_api_predictions.py

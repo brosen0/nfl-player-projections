@@ -130,17 +130,18 @@ class ScheduleStrengthAnalyzer:
         if is_training:
             # BACKWARD-LOOKING: use rolling window of past N weeks' opponent
             # strength to avoid leaking future schedule during training
+            # shift(1) excludes current week's opponent to prevent leakage
             result[f'sos_next_{n_weeks}'] = result.groupby(
                 ['player_id', 'season']
             )['opp_defense_strength'].transform(
-                lambda x: x.rolling(n_weeks, min_periods=1).mean()
+                lambda x: x.shift(1).rolling(n_weeks, min_periods=1).mean()
             )
-            
+
             result['is_favorable'] = (result['opp_defense_strength'] > 1.1).astype(int)
             result[f'favorable_matchups_next_{n_weeks}'] = result.groupby(
                 ['player_id', 'season']
             )['is_favorable'].transform(
-                lambda x: x.rolling(n_weeks, min_periods=1).sum()
+                lambda x: x.shift(1).rolling(n_weeks, min_periods=1).sum()
             ).fillna(n_weeks // 2)
         else:
             # FORWARD-LOOKING: use known future schedule for inference
