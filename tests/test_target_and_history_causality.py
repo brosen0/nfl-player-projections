@@ -29,16 +29,23 @@ def test_horizon_targets_are_forward_looking():
         np.array([20.0, 30.0, 40.0, 50.0]),
         atol=1e-8,
     )
+    # target_4w uses min_periods=ceil(4*0.75)=3 for sums to avoid scale bias.
+    # With 5 rows, only weeks 1-2 have >=3 future games; weeks 3-5 are NaN.
     np.testing.assert_allclose(
-        out["target_4w"].values[:-1],
-        np.array([140.0, 120.0, 90.0, 50.0]),
+        out["target_4w"].values[:2],
+        np.array([140.0, 120.0]),
         atol=1e-8,
     )
+    assert all(np.isnan(out["target_4w"].values[2:]))
+
+    # target_util_4w uses min_periods=ceil(4*0.60)=3 for means.
     np.testing.assert_allclose(
-        out["target_util_4w"].values[:-1],
-        np.array([3.5, 4.0, 4.5, 5.0]),
+        out["target_util_4w"].values[:2],
+        np.array([3.5, 4.0]),
         atol=1e-8,
     )
+    assert all(np.isnan(out["target_util_4w"].values[2:]))
+
     assert np.isnan(out["target_1w"].iloc[-1])
 
 
@@ -56,8 +63,9 @@ def test_horizon_targets_respect_season_boundary():
 
     # 2024 week 18 should not point to 2025 week 1.
     assert np.isnan(out.loc[(out["season"] == 2024) & (out["week"] == 18), "target_1w"]).all()
-    # 2024 week 17 only has one future game in same season.
-    assert out.loc[(out["season"] == 2024) & (out["week"] == 17), "target_4w"].iloc[0] == 20.0
+    # 2024 week 17 only has one future game in same season — insufficient for
+    # min_periods=3 required by target_4w, so it should be NaN.
+    assert np.isnan(out.loc[(out["season"] == 2024) & (out["week"] == 17), "target_4w"].iloc[0])
 
 
 def test_games_played_projection_is_causal_to_future_seasons():
