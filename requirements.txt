@@ -1,5 +1,6 @@
 # Data collection and processing
 requests==2.31.0
+certifi>=2023.11.17
 beautifulsoup4==4.12.3
 pandas==2.1.4
 numpy==1.26.3
