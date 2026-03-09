@@ -62,6 +62,32 @@ app.add_middleware(
 )
 
 
+# ---------------------------------------------------------------------------
+# API latency tracking middleware (Directive V7 Section 18)
+# ---------------------------------------------------------------------------
+import time as _time
+from collections import deque as _deque
+
+_request_latencies: _deque = _deque(maxlen=500)
+
+
+@app.middleware("http")
+async def track_latency(request, call_next):
+    """Record per-request latency for monitoring dashboard."""
+    start = _time.monotonic()
+    response = await call_next(request)
+    elapsed_ms = (_time.monotonic() - start) * 1000
+    _request_latencies.append({
+        "path": str(request.url.path),
+        "method": request.method,
+        "status": response.status_code,
+        "latency_ms": round(elapsed_ms, 1),
+        "timestamp": _time.time(),
+    })
+    response.headers["X-Response-Time-Ms"] = f"{elapsed_ms:.1f}"
+    return response
+
+
 def _teams_playing_for_week(schedule_codes_upper: Set[str]) -> Set[str]:
     """Expand schedule team codes with roster aliases so parquet/roster team column matches."""
     out = set(schedule_codes_upper)
@@ -579,6 +605,42 @@ def _get_predictions_impl(
     if upcoming_label:
         out["upcoming_week_label"] = upcoming_label
     return out
+
+
+# -----------------------------------------------------------------------------
+# Monitoring (Directive V7 Section 18)
+# -----------------------------------------------------------------------------
+@app.get("/api/monitoring/dashboard")
+def monitoring_dashboard() -> Dict[str, Any]:
+    """Monitoring dashboard aggregating model health, alerts, and API latency."""
+    from src.evaluation.monitoring import ModelMonitor
+    monitor = ModelMonitor()
+    dashboard = monitor.get_dashboard_data()
+
+    # Add API latency stats
+    latencies = list(_request_latencies)
+    if latencies:
+        ms_values = [r["latency_ms"] for r in latencies]
+        dashboard["api_latency"] = {
+            "recent_requests": len(latencies),
+            "mean_ms": round(sum(ms_values) / len(ms_values), 1),
+            "p50_ms": round(sorted(ms_values)[len(ms_values) // 2], 1),
+            "p95_ms": round(sorted(ms_values)[int(len(ms_values) * 0.95)], 1),
+            "max_ms": round(max(ms_values), 1),
+        }
+    else:
+        dashboard["api_latency"] = {"recent_requests": 0}
+
+    return dashboard
+
+
+@app.get("/api/monitoring/alerts")
+def monitoring_alerts(last_n: int = Query(default=50, ge=1, le=500)) -> Dict[str, Any]:
+    """Return recent monitoring alerts."""
+    from src.evaluation.monitoring import ModelMonitor
+    monitor = ModelMonitor()
+    alerts = monitor.get_recent_alerts(last_n=last_n)
+    return {"alerts": alerts, "count": len(alerts)}
 
 
 # -----------------------------------------------------------------------------

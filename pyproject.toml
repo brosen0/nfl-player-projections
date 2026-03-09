@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nfl-player-projections"
+version = "1.0.0"
+description = "NFL player fantasy performance prediction system"
+requires-python = ">=3.10"
+
+[tool.setuptools.packages.find]
+include = ["src*", "config*", "api*"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+filterwarnings = [
+    "ignore:A NumPy version >=.*required for this version of SciPy.*:UserWarning",
+    "ignore:Trying to unpickle estimator .* from version .*:UserWarning",
+    "ignore:.*If you are loading a serialized model.*XGBoost.*:UserWarning",
+    "ignore:Mean of empty slice:RuntimeWarning",
+]

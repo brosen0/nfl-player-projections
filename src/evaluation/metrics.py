@@ -1172,3 +1172,66 @@ def compare_to_expert_consensus(
         "beats_expert": improvement_pct >= target_pct,
         "position": position,
     }
+
+
+def compare_raw_vs_calibrated(
+    y_true: np.ndarray,
+    y_pred_raw: np.ndarray,
+    y_pred_calibrated: np.ndarray,
+    pred_std_raw: Optional[np.ndarray] = None,
+    pred_std_calibrated: Optional[np.ndarray] = None,
+) -> Dict[str, Any]:
+    """Compare raw ensemble predictions against calibrated predictions.
+
+    Per Directive V7 Section 8: compare raw vs calibrated vs
+    ensemble-calibrated outputs to ensure calibration helps.
+
+    Args:
+        y_true: Actual values.
+        y_pred_raw: Raw ensemble predictions (before calibration).
+        y_pred_calibrated: Calibrated predictions (after isotonic/conformal).
+        pred_std_raw: Uncertainty estimates from raw ensemble (optional).
+        pred_std_calibrated: Uncertainty estimates after calibration (optional).
+
+    Returns:
+        Dict with side-by-side RMSE, MAE, R² for raw and calibrated,
+        plus calibration-specific metrics if uncertainties are provided.
+    """
+    y_t = np.asarray(y_true, dtype=float)
+    y_raw = np.asarray(y_pred_raw, dtype=float)
+    y_cal = np.asarray(y_pred_calibrated, dtype=float)
+
+    valid = np.isfinite(y_t) & np.isfinite(y_raw) & np.isfinite(y_cal)
+    y_t, y_raw, y_cal = y_t[valid], y_raw[valid], y_cal[valid]
+
+    if len(y_t) < 5:
+        return {"error": "insufficient valid samples", "n_valid": int(valid.sum())}
+
+    from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+
+    result: Dict[str, Any] = {
+        "n_samples": len(y_t),
+        "raw_rmse": round(float(np.sqrt(mean_squared_error(y_t, y_raw))), 4),
+        "calibrated_rmse": round(float(np.sqrt(mean_squared_error(y_t, y_cal))), 4),
+        "raw_mae": round(float(mean_absolute_error(y_t, y_raw)), 4),
+        "calibrated_mae": round(float(mean_absolute_error(y_t, y_cal)), 4),
+        "raw_r2": round(float(r2_score(y_t, y_raw)), 4),
+        "calibrated_r2": round(float(r2_score(y_t, y_cal)), 4),
+    }
+
+    rmse_change = result["calibrated_rmse"] - result["raw_rmse"]
+    result["calibration_rmse_change"] = round(rmse_change, 4)
+    result["calibration_helps"] = rmse_change <= 0
+
+    # Compare uncertainty calibration if both stds provided
+    if pred_std_raw is not None and pred_std_calibrated is not None:
+        std_raw = np.asarray(pred_std_raw, dtype=float)[valid]
+        std_cal = np.asarray(pred_std_calibrated, dtype=float)[valid]
+
+        for label, std, pred in [("raw", std_raw, y_raw), ("calibrated", std_cal, y_cal)]:
+            if len(std) == len(y_t) and np.all(np.isfinite(std)):
+                ci_info = confidence_interval_calibration(y_t, pred, std)
+                result[f"{label}_ci_mean_error"] = ci_info.get("mean_calibration_error")
+                result[f"{label}_ci_is_calibrated"] = ci_info.get("is_calibrated")
+
+    return result
