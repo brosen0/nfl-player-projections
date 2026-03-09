@@ -80,26 +80,25 @@ Our implementation aligns with the **FantasyLife Utilization Score** methodology
 
 ### Data Limitations
 
-1. **No Real Air Yards Data**: Currently estimated from receiving yards
-2. **No Red Zone Specific Data**: Estimated from TDs
-3. **No Snap Count Data**: Available in nfl-data-py but not fully integrated
-4. **2025 Season Data**: Not yet available in nfl-data-py
+1. **Red Zone Data Sometimes Estimated**: Available when in source data, otherwise estimated from TDs
+2. **2025 Season Data**: Not yet available in nfl-data-py (will auto-load when published)
+3. **Real Vegas Lines API**: Using synthetic/estimated lines; a real API integration is needed (`src/models/advanced_models.py:589`)
 
 ### Model Limitations
 
-1. **No Opponent Adjustments**: Defense strength not factored in
-2. **No Weather Data**: Could affect outdoor games
-3. **No Injury Data**: Injury reports not integrated
-4. **No Vegas Lines**: Implied totals could improve predictions
+1. **K/DST Models Use Rolling Averages**: Kicker and defense models are not ML-based like offensive positions
+2. **No News/Sentiment Integration**: Cannot capture breaking news impact on player projections
+3. **No Player-Tier-Specific Uncertainty**: Same variance model applied to elite starters and backups
+4. **No Coaching/Scheme Change Detection**: Team change features exist but mid-season coaching changes are not detected
 
 ### Recommended Future Improvements
 
-1. **Integrate Snap Counts**: Use `nfl.import_snap_counts()` for actual snap data
-2. **Add Opponent Strength**: Factor in defense rankings by position
-3. **Vegas Lines Integration**: Use implied team totals as features
-4. **Injury Reports**: Integrate injury status for predictions
-5. **Rookie Projections**: Use draft capital and college stats
-6. **Real-Time Updates**: Auto-refresh during season
+1. **Integrate Real Vegas Lines API**: Replace synthetic data with The Odds API or ESPN
+2. **News/Sentiment Pipeline**: Add NLP on news feeds for breaking news impact
+3. **Tier-Specific Uncertainty**: Calibrate confidence intervals by player tier
+4. **Coaching Change Detection**: Detect mid-season OC/HC changes and adjust projections
+5. **K/DST ML Models**: Train XGBoost/LightGBM models for kickers and defenses
+6. **End-to-End Integration Tests**: Add full pipeline tests with live data
 
 ---
 
@@ -141,7 +140,7 @@ python3 src/models/validate_methodology.py
 
 ## Data Availability & Refresh
 
-### Current Status (January 2026)
+### Current Status (March 2026)
 
 | Season | Weekly Data | Schedule | Status |
 |--------|-------------|----------|--------|
@@ -196,4 +195,4 @@ streamlit run app.py                       # Launch app
 
 ---
 
-*Last updated: 2026-01-31*
+*Last updated: 2026-03-09*
