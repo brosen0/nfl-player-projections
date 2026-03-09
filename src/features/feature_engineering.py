@@ -96,6 +96,10 @@ class FeatureEngineer:
         # Vegas game script predictors (spread, over/under, implied team total)
         df = self._create_vegas_game_script_features(df)
 
+        # Advanced analytics: sentiment, coaching changes, suspensions,
+        # trade deadline, and playoff context features.
+        df = self._create_advanced_analytics_features(df)
+
         # Optional injury/rookie predictors for utilization (defaults when missing)
         df = self._ensure_injury_rookie_features(df)
         
@@ -1551,6 +1555,12 @@ class FeatureEngineer:
             df["is_favorite"] = (df["spread"] < 0).astype(int)
 
         return df
+
+    def _create_advanced_analytics_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Add advanced analytics features: sentiment, coaching, suspension, trade, playoff."""
+        from src.features.advanced_analytics import AdvancedAnalyticsEngine
+        engine = AdvancedAnalyticsEngine()
+        return engine.add_all_features(df)
 
     def _ensure_injury_rookie_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """

@@ -352,8 +352,24 @@ QB_TARGET_CHOICE_FILENAME = "qb_target_choice.json"
 
 # Feature set version: bump when feature_engineering adds/removes/renames model features.
 # Saved when training; checked when loading models. Mismatch triggers a retrain warning.
-FEATURE_VERSION = "7"  # v7: Residual deep net, Huber loss, target transforms, stability selection, bye/short-week features, learned blend weights, isotonic calibration, player embeddings
+FEATURE_VERSION = "8"  # v8: Advanced analytics (sentiment NLP, coaching change, suspension risk, trade deadline, playoff features)
 FEATURE_VERSION_FILENAME = "feature_version.txt"
+
+# =============================================================================
+# ADVANCED ANALYTICS SETTINGS
+# =============================================================================
+# Enable/disable individual advanced analytics modules.
+ADVANCED_ANALYTICS_CONFIG = {
+    "enable_news_sentiment": True,      # NLP sentiment scoring from news text
+    "enable_coaching_change": True,      # Coaching change detection & impact
+    "enable_suspension_risk": True,      # Suspension history & risk scoring
+    "enable_trade_deadline": True,       # Trade deadline proximity features
+    "enable_playoff_features": True,     # Playoff context & rest risk
+    "trade_deadline_week": 8,            # NFL trade deadline (week 8)
+    "coaching_adaptation_weeks": 6,      # Weeks for players to adapt to new coach
+    "suspension_base_risk": 0.03,        # Baseline annualized suspension probability
+    "suspension_recidivism_factor": 2.5, # Risk multiplier per prior suspension
+}
 
 # =============================================================================
 # PERFORMANCE TARGETS (from requirements)
