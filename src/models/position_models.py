@@ -588,6 +588,43 @@ class PositionModel:
 
         return mean_pred, std_pred
 
+    def compute_ensemble_diversity(
+        self, X: pd.DataFrame,
+    ) -> Dict[str, Any]:
+        """Compute pairwise correlation diversity metrics between base models.
+
+        Per Directive V7 Section 8: a strong ensemble needs component
+        disagreement with independent signal, not just many similar models.
+
+        Returns:
+            Dict with mean_pairwise_correlation, pairwise_correlations,
+            and diversity_score (1 - mean_corr).
+        """
+        keys = [k for k in self.models if self.models[k] is not None]
+        if len(keys) < 2:
+            return {"mean_pairwise_correlation": float("nan"),
+                    "pairwise_correlations": {},
+                    "diversity_score": float("nan")}
+
+        X_np = self._prepare_features(X)
+        preds = {k: self.models[k].predict(X_np) for k in keys}
+
+        correlations = {}
+        corr_values = []
+        for i, k1 in enumerate(keys):
+            for k2 in keys[i + 1:]:
+                corr = float(np.corrcoef(preds[k1], preds[k2])[0, 1])
+                if np.isfinite(corr):
+                    correlations[f"{k1}_vs_{k2}"] = round(corr, 4)
+                    corr_values.append(corr)
+
+        mean_corr = float(np.mean(corr_values)) if corr_values else float("nan")
+        return {
+            "mean_pairwise_correlation": round(mean_corr, 4),
+            "pairwise_correlations": correlations,
+            "diversity_score": round(1.0 - mean_corr, 4) if np.isfinite(mean_corr) else float("nan"),
+        }
+
     def get_calibrated_interval(
         self, X: pd.DataFrame, level: float = 0.90
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
