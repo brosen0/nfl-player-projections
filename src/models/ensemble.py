@@ -84,14 +84,25 @@ def _warn_if_feature_version_mismatch() -> None:
 class EnsemblePredictor:
     """
     Main prediction interface that coordinates position-specific models.
-    
+
     Handles:
     - Loading appropriate models per position
     - Making predictions for 1-18 week horizons
-    - Providing uncertainty estimates
+    - Providing uncertainty estimates (tier-specific)
+    - Adaptive ensemble weight adjustment based on recent performance
+    - TD regression (mean-reversion) adjustments
     - Batch predictions for multiple players
     """
-    
+
+    # Tier-specific uncertainty multipliers: higher tiers have tighter CIs
+    # because elite players are more consistent; low-tier players are volatile.
+    TIER_UNCERTAINTY_MULTIPLIERS: Dict[str, Dict[str, float]] = {
+        "QB": {"Elite": 0.80, "Strong": 0.90, "Average": 1.00, "Below Average": 1.15, "Low": 1.30},
+        "RB": {"Elite": 0.75, "Strong": 0.85, "Average": 1.00, "Below Average": 1.20, "Low": 1.40},
+        "WR": {"Elite": 0.80, "Strong": 0.90, "Average": 1.00, "Below Average": 1.15, "Low": 1.35},
+        "TE": {"Elite": 0.85, "Strong": 0.92, "Average": 1.00, "Below Average": 1.15, "Low": 1.30},
+    }
+
     def __init__(self):
         self.position_models: Dict[str, MultiWeekModel] = {}
         self.single_week_models: Dict[str, PositionModel] = {}
@@ -100,6 +111,7 @@ class EnsemblePredictor:
         self.deep_18w: Dict[str, Any] = {}
         self.qb_target: str = "util"
         self.horizon_availability: Dict[str, Dict[str, Any]] = {}
+        self.adaptive_weights: Dict[str, Dict[str, float]] = {}
         self.is_loaded = False
 
     @staticmethod
@@ -231,10 +243,177 @@ class EnsemblePredictor:
 
         self.is_loaded = len(self.position_models) > 0 or len(self.single_week_models) > 0
 
+        # Load adaptive ensemble weights if available
+        self.adaptive_weights = self._load_adaptive_weights()
+
         if self.is_loaded:
             _warn_if_feature_version_mismatch()
-    
-    def predict(self, player_data: pd.DataFrame, 
+
+    def _load_adaptive_weights(self) -> Dict[str, Dict[str, float]]:
+        """Load persisted adaptive ensemble weights (per-position model weights)."""
+        path = MODELS_DIR / "adaptive_ensemble_weights.json"
+        if not path.exists():
+            return {}
+        try:
+            with open(path) as f:
+                return json.load(f)
+        except Exception:
+            return {}
+
+    @staticmethod
+    def save_adaptive_weights(weights: Dict[str, Dict[str, float]]) -> None:
+        """Persist adaptive ensemble weights after performance evaluation."""
+        path = MODELS_DIR / "adaptive_ensemble_weights.json"
+        with open(path, "w") as f:
+            json.dump(weights, f, indent=2)
+
+    @staticmethod
+    def compute_adaptive_weights(
+        y_true: np.ndarray,
+        model_predictions: Dict[str, np.ndarray],
+        smoothing: float = 0.3,
+        prior_weights: Optional[Dict[str, float]] = None,
+    ) -> Dict[str, float]:
+        """Compute inverse-error ensemble weights from recent prediction residuals.
+
+        Args:
+            y_true: Actual outcomes.
+            model_predictions: {model_name: predictions_array}.
+            smoothing: Blend factor toward prior weights (0=fully new, 1=fully prior).
+            prior_weights: Previous weights to smooth toward.
+
+        Returns:
+            Dict of model_name -> weight (summing to 1).
+        """
+        if len(y_true) < 5:
+            if prior_weights:
+                return prior_weights
+            n = len(model_predictions)
+            return {k: 1.0 / n for k in model_predictions}
+
+        inv_errors = {}
+        for name, preds in model_predictions.items():
+            valid = np.isfinite(y_true) & np.isfinite(preds)
+            if valid.sum() < 3:
+                inv_errors[name] = 0.0
+                continue
+            rmse = np.sqrt(np.mean((y_true[valid] - preds[valid]) ** 2))
+            inv_errors[name] = 1.0 / max(rmse, 0.01)
+
+        total = sum(inv_errors.values())
+        if total == 0:
+            n = len(model_predictions)
+            new_weights = {k: 1.0 / n for k in model_predictions}
+        else:
+            new_weights = {k: v / total for k, v in inv_errors.items()}
+
+        if prior_weights and smoothing > 0:
+            blended = {}
+            for k in new_weights:
+                prior = prior_weights.get(k, new_weights[k])
+                blended[k] = smoothing * prior + (1 - smoothing) * new_weights[k]
+            total_b = sum(blended.values())
+            return {k: v / total_b for k, v in blended.items()}
+
+        return new_weights
+
+    @staticmethod
+    def _get_utilization_tier(score: float) -> str:
+        """Fast tier lookup matching UtilizationScoreCalculator.get_utilization_tier."""
+        if score >= 80:
+            return "Elite"
+        if score >= 70:
+            return "Strong"
+        if score >= 60:
+            return "Average"
+        if score >= 50:
+            return "Below Average"
+        return "Low"
+
+    def _apply_tier_uncertainty(
+        self, results: pd.DataFrame, mask: np.ndarray, position: str
+    ) -> None:
+        """Scale prediction_std by tier-specific multipliers for a position group."""
+        tier_mults = self.TIER_UNCERTAINTY_MULTIPLIERS.get(position)
+        if tier_mults is None:
+            return
+        pred_col = "predicted_utilization" if "predicted_utilization" in results.columns else "predicted_points"
+        for idx in results.index[mask]:
+            score = results.at[idx, pred_col]
+            if not np.isfinite(score):
+                continue
+            tier = self._get_utilization_tier(score)
+            mult = tier_mults.get(tier, 1.0)
+            if mult == 1.0:
+                continue
+            std_val = results.at[idx, "prediction_std"]
+            if np.isfinite(std_val):
+                results.at[idx, "prediction_std"] = std_val * mult
+                z80, z95 = 1.28, 1.96
+                pts = results.at[idx, "predicted_points"]
+                new_std = results.at[idx, "prediction_std"]
+                results.at[idx, "prediction_ci80_lower"] = max(pts - z80 * new_std, 0)
+                results.at[idx, "prediction_ci80_upper"] = pts + z80 * new_std
+                results.at[idx, "prediction_ci95_lower"] = max(pts - z95 * new_std, 0)
+                results.at[idx, "prediction_ci95_upper"] = pts + z95 * new_std
+
+    @staticmethod
+    def _apply_td_regression(results: pd.DataFrame, player_data: pd.DataFrame) -> pd.DataFrame:
+        """Apply TD mean-reversion adjustment to predicted_points.
+
+        Uses opportunity-based expected TDs and regresses actual TD contribution
+        toward expected, adjusting the fantasy point projection accordingly.
+        """
+        try:
+            from src.models.production_model import TouchdownRegressor
+        except ImportError:
+            return results
+
+        regressor = TouchdownRegressor()
+        td_scoring = {"rushing_tds": 6, "receiving_tds": 6, "passing_tds": 4}
+
+        for position in POSITIONS:
+            mask = results["position"] == position
+            if not mask.any():
+                continue
+            pos_player = player_data.loc[mask]
+            rates = regressor.AVG_TD_RATES.get(position, {})
+            if not rates:
+                continue
+            for idx in results.index[mask]:
+                adj = 0.0
+                pid_data = pos_player.loc[idx] if idx in pos_player.index else None
+                if pid_data is None:
+                    continue
+                # Rushing TDs
+                if "rush_td_per_attempt" in rates:
+                    ra = pid_data.get("rushing_attempts") if hasattr(pid_data, "get") else getattr(pid_data, "rushing_attempts", None)
+                    actual_td = pid_data.get("rushing_tds") if hasattr(pid_data, "get") else getattr(pid_data, "rushing_tds", None)
+                    if ra is not None and actual_td is not None and np.isfinite(ra) and np.isfinite(actual_td):
+                        expected = float(ra) * rates["rush_td_per_attempt"]
+                        regressed = regressor.regress_tds(float(actual_td), expected)
+                        adj += (regressed - float(actual_td)) * td_scoring.get("rushing_tds", 6)
+                # Receiving TDs
+                if "rec_td_per_target" in rates:
+                    tgt = pid_data.get("targets") if hasattr(pid_data, "get") else getattr(pid_data, "targets", None)
+                    actual_td = pid_data.get("receiving_tds") if hasattr(pid_data, "get") else getattr(pid_data, "receiving_tds", None)
+                    if tgt is not None and actual_td is not None and np.isfinite(tgt) and np.isfinite(actual_td):
+                        expected = float(tgt) * rates["rec_td_per_target"]
+                        regressed = regressor.regress_tds(float(actual_td), expected)
+                        adj += (regressed - float(actual_td)) * td_scoring.get("receiving_tds", 6)
+                # Passing TDs (QB only)
+                if "pass_td_per_attempt" in rates:
+                    pa = pid_data.get("passing_attempts") if hasattr(pid_data, "get") else getattr(pid_data, "passing_attempts", None)
+                    actual_td = pid_data.get("passing_tds") if hasattr(pid_data, "get") else getattr(pid_data, "passing_tds", None)
+                    if pa is not None and actual_td is not None and np.isfinite(pa) and np.isfinite(actual_td):
+                        expected = float(pa) * rates["pass_td_per_attempt"]
+                        regressed = regressor.regress_tds(float(actual_td), expected)
+                        adj += (regressed - float(actual_td)) * td_scoring.get("passing_tds", 4)
+                if adj != 0.0:
+                    results.at[idx, "predicted_points"] = results.at[idx, "predicted_points"] + adj
+        return results
+
+    def predict(self, player_data: pd.DataFrame,
                 n_weeks: int = 1) -> pd.DataFrame:
         """
         Make predictions for players.
@@ -410,6 +589,16 @@ class EnsemblePredictor:
                 results.loc[mask, "prediction_ci80_upper"] = scaled + z80 * std_scaled
                 results.loc[mask, "prediction_ci95_lower"] = scaled - z95 * std_scaled
                 results.loc[mask, "prediction_ci95_upper"] = scaled + z95 * std_scaled
+
+        # Apply tier-specific uncertainty scaling
+        for position in POSITIONS:
+            mask = results["position"] == position
+            if not mask.any():
+                continue
+            self._apply_tier_uncertainty(results, mask.values, position)
+
+        # Apply TD regression (mean-reversion) adjustments
+        results = self._apply_td_regression(results, player_data)
 
         # Prediction sanity bounds: clip to reasonable fantasy point ranges per position per week
         _BOUNDS_PER_WEEK = {"QB": (0, 65), "RB": (0, 55), "WR": (0, 55), "TE": (0, 45)}
