@@ -223,6 +223,32 @@ class NFLDataRefresher:
                 results['team_stats_backfilled'] = n_backfill
         except Exception as e:
             results['errors'].append(f"Team stats backfill: {e}")
+
+        # Sync rosters and depth charts (offseason transaction tracking)
+        try:
+            from config.settings import SYNC_ROSTERS_ON_REFRESH, SYNC_DEPTH_CHARTS_ON_REFRESH
+        except ImportError:
+            SYNC_ROSTERS_ON_REFRESH = True
+            SYNC_DEPTH_CHARTS_ON_REFRESH = True
+
+        if SYNC_ROSTERS_ON_REFRESH:
+            try:
+                roster_df = self.loader.sync_player_teams(current)
+                results['roster_synced'] = not roster_df.empty
+                if not roster_df.empty:
+                    print(f"✅ Synced roster for {current}: {len(roster_df)} players")
+            except Exception as e:
+                results['errors'].append(f"Roster sync: {e}")
+
+        if SYNC_DEPTH_CHARTS_ON_REFRESH:
+            try:
+                depth_df = self.loader.load_depth_charts(current)
+                if not depth_df.empty:
+                    n_stored = self.db.store_depth_charts(depth_df, current)
+                    results['depth_charts_loaded'] = n_stored
+                    print(f"✅ Stored depth charts for {current}: {n_stored} entries")
+            except Exception as e:
+                results['errors'].append(f"Depth chart sync: {e}")
         
         # Summary
         print("\n" + "="*60)

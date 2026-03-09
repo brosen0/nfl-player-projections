@@ -832,6 +832,63 @@ class DatabaseManager:
         with self._get_connection() as conn:
             return pd.read_sql_query(query, conn, params=[player_id])
     
+    def store_depth_charts(self, depth_df: pd.DataFrame, season: int) -> int:
+        """Store depth chart snapshot in player_team_history table.
+
+        Args:
+            depth_df: DataFrame from NFLDataLoader.load_depth_charts() with
+                      columns: player_id, team, position, depth_rank, expected_utilization
+            season: NFL season year
+
+        Returns:
+            Number of rows inserted/updated.
+        """
+        if depth_df is None or depth_df.empty:
+            return 0
+        count = 0
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            for _, row in depth_df.iterrows():
+                pid = row.get("player_id", "")
+                team = row.get("team", "")
+                if not pid or not team:
+                    continue
+                cursor.execute(
+                    """INSERT INTO player_team_history (player_id, team, season, start_week, end_week)
+                       VALUES (?, ?, ?, 1, 18)
+                       ON CONFLICT(player_id, team, season) DO UPDATE SET end_week=18""",
+                    (pid, team, season),
+                )
+                count += 1
+            conn.commit()
+        return count
+
+    def get_depth_chart(self, season: int, team: str = None,
+                        position: str = None) -> pd.DataFrame:
+        """Query stored depth chart / team history for a season.
+
+        Args:
+            season: NFL season year
+            team: Optional team abbreviation filter
+            position: Optional position filter (requires players table join)
+
+        Returns:
+            DataFrame with player_id, team, season, start_week, end_week
+        """
+        query = "SELECT * FROM player_team_history WHERE season = ?"
+        params: list = [season]
+        if team:
+            query += " AND team = ?"
+            params.append(team)
+        with self._get_connection() as conn:
+            df = pd.read_sql_query(query, conn, params=params)
+        if position and not df.empty:
+            players_query = "SELECT player_id, position FROM players WHERE position = ?"
+            with self._get_connection() as conn:
+                pos_df = pd.read_sql_query(players_query, conn, params=[position])
+            df = df[df["player_id"].isin(pos_df["player_id"])]
+        return df
+
     def get_all_players_for_training(self, position: str = None,
                                       min_games: int = 4) -> pd.DataFrame:
         """Get all player data suitable for model training.

@@ -134,6 +134,14 @@ class PBPStatsAggregator:
         if 'passer_player_id' in pass_plays.columns:
             pass_plays = pass_plays[pass_plays['passer_player_id'].notna()]
         
+        # Red zone passing: compute per-play flags before aggregation
+        if 'is_redzone' in pass_plays.columns:
+            pass_plays['rz_completion'] = (
+                (pass_plays['is_redzone'] == 1) & (pass_plays['complete_pass'] == 1)
+            ).astype(int)
+        else:
+            pass_plays['rz_completion'] = 0
+
         # Aggregate by passer
         agg = {
             'passing_yards': 'sum',
@@ -148,11 +156,14 @@ class PBPStatsAggregator:
             agg['wpa'] = 'sum'
         if 'success' in pass_plays.columns:
             agg['success'] = 'mean'
+        if 'is_redzone' in pass_plays.columns:
+            agg['is_redzone'] = 'sum'
+        agg['rz_completion'] = 'sum'
 
         passing = pass_plays.groupby(
             ['season', 'week', 'passer_player_id', 'passer_player_name', 'posteam']
         ).agg(agg).reset_index()
-        
+
         passing = passing.rename(columns={
             'passer_player_id': 'player_id',
             'passer_player_name': 'name',
@@ -164,6 +175,8 @@ class PBPStatsAggregator:
             'epa': 'pass_epa',
             'wpa': 'pass_wpa',
             'success': 'pass_success_rate',
+            'is_redzone': 'redzone_pass_attempts',
+            'rz_completion': 'redzone_completions',
         })
         if 'passing_attempts' in passing.columns:
             passing['pass_plays'] = passing['passing_attempts']
@@ -211,6 +224,8 @@ class PBPStatsAggregator:
             agg['is_neutral'] = 'sum'
         if 'is_short_yardage' in rush_plays.columns:
             agg['is_short_yardage'] = 'sum'
+        if 'is_redzone' in rush_plays.columns:
+            agg['is_redzone'] = 'sum'
         if 'is_goal_line' in rush_plays.columns:
             agg['is_goal_line'] = 'sum'
         if 'is_high_leverage' in rush_plays.columns:
@@ -233,6 +248,7 @@ class PBPStatsAggregator:
             'success': 'rush_success_rate',
             'is_neutral': 'neutral_rushes',
             'is_short_yardage': 'short_yardage_rushes',
+            'is_redzone': 'redzone_carries',
             'is_goal_line': 'goal_line_rushes',
             'is_high_leverage': 'high_leverage_rushes',
         })
@@ -550,6 +566,23 @@ def _compute_league_neutral_pass_rate(team_week: pd.DataFrame) -> pd.DataFrame:
             (plays["is_neutral"] == 1) & is_run & ~exclude
         ).astype(int)
 
+        # Red zone aggregation flags
+        if "is_redzone" in plays.columns:
+            plays["rz_pass"] = ((plays["is_redzone"] == 1) & is_pass).astype(int)
+            plays["rz_rush"] = ((plays["is_redzone"] == 1) & is_run).astype(int)
+            rz_td = pd.Series(0, index=plays.index)
+            if "pass_touchdown" in plays.columns:
+                rz_td = rz_td + (
+                    (plays["is_redzone"] == 1)
+                    & (plays["pass_touchdown"].fillna(0) == 1)
+                ).astype(int)
+            if "rush_touchdown" in plays.columns:
+                rz_td = rz_td + (
+                    (plays["is_redzone"] == 1)
+                    & (plays["rush_touchdown"].fillna(0) == 1)
+                ).astype(int)
+            plays["rz_score"] = rz_td
+
         agg = {
             "neutral_pass_play": "sum",
             "neutral_run_play": "sum",
@@ -564,6 +597,11 @@ def _compute_league_neutral_pass_rate(team_week: pd.DataFrame) -> pd.DataFrame:
             agg["interception"] = "sum"
         if "fumble_lost" in plays.columns:
             agg["fumble_lost"] = "sum"
+        if "is_redzone" in plays.columns:
+            agg["is_redzone"] = "sum"
+            agg["rz_pass"] = "sum"
+            agg["rz_rush"] = "sum"
+            agg["rz_score"] = "sum"
 
         team_week = plays.groupby(["season", "week", "posteam"]).agg(agg).reset_index()
         team_week = team_week.rename(columns={
@@ -572,6 +610,10 @@ def _compute_league_neutral_pass_rate(team_week: pd.DataFrame) -> pd.DataFrame:
             "neutral_run_play": "neutral_run_plays",
             "is_pass": "pass_attempts",
             "is_run": "rush_attempts",
+            "is_redzone": "team_redzone_plays",
+            "rz_pass": "team_redzone_pass_attempts",
+            "rz_rush": "team_redzone_rush_attempts",
+            "rz_score": "team_redzone_scores",
         })
 
         # Basic totals

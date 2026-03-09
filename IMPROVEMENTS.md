@@ -80,9 +80,7 @@ Our implementation aligns with the **FantasyLife Utilization Score** methodology
 
 ### Data Limitations
 
-1. **Red Zone Data Sometimes Estimated**: Available when in source data, otherwise estimated from TDs
-2. **2025 Season Data**: Not yet available in nfl-data-py (will auto-load when published)
-3. **Real Vegas Lines API**: Using synthetic/estimated lines; a real API integration is needed (`src/models/advanced_models.py:589`)
+1. **2025 Season Data**: Not yet available in nfl-data-py (will auto-load when published)
 
 ### Model Limitations
 
@@ -91,14 +89,19 @@ Our implementation aligns with the **FantasyLife Utilization Score** methodology
 3. **No Player-Tier-Specific Uncertainty**: Same variance model applied to elite starters and backups
 4. **No Coaching/Scheme Change Detection**: Team change features exist but mid-season coaching changes are not detected
 
+### Recently Resolved
+
+1. ~~**Real Vegas Lines API**~~: The Odds API client integrated (`VegasLinesLoader.fetch_live_lines()`)
+2. ~~**Red Zone Data Estimated from TDs**~~: Now PBP-derived (red zone carries, pass attempts, team totals)
+3. ~~**No Offseason Tracking**~~: Roster/depth chart sync wired into auto-refresh pipeline
+
 ### Recommended Future Improvements
 
-1. **Integrate Real Vegas Lines API**: Replace synthetic data with The Odds API or ESPN
-2. **News/Sentiment Pipeline**: Add NLP on news feeds for breaking news impact
-3. **Tier-Specific Uncertainty**: Calibrate confidence intervals by player tier
-4. **Coaching Change Detection**: Detect mid-season OC/HC changes and adjust projections
-5. **K/DST ML Models**: Train XGBoost/LightGBM models for kickers and defenses
-6. **End-to-End Integration Tests**: Add full pipeline tests with live data
+1. **News/Sentiment Pipeline**: Add NLP on news feeds for breaking news impact
+2. **Tier-Specific Uncertainty**: Calibrate confidence intervals by player tier
+3. **Coaching Change Detection**: Detect mid-season OC/HC changes and adjust projections
+4. **K/DST ML Models**: Train XGBoost/LightGBM models for kickers and defenses
+5. **End-to-End Integration Tests**: Add full pipeline tests with live data
 
 ---
 

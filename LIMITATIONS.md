@@ -8,7 +8,7 @@ This document identifies remaining limitations for different prediction horizons
 
 The following items were previously documented as limitations but have since been fully implemented:
 
-- **Data Enrichment**: Injury status integration (`InjuryDataLoader`), weather data (`WeatherDataLoader`), Vegas lines/implied totals (`VegasLinesLoader`), opponent defense rankings (`DefenseRankingsLoader`), snap count integration, air yards/aDOT features
+- **Data Enrichment**: Injury status integration (`InjuryDataLoader`), weather data (`WeatherDataLoader`), Vegas lines/implied totals (`VegasLinesLoader` with live The-Odds-API support), opponent defense rankings (`DefenseRankingsLoader`), snap count integration, air yards/aDOT features, PBP-derived red zone stats (carries, pass attempts, team totals), offseason roster/depth chart sync
 - **Feature Engineering**: Bye week handling (`post_bye`), primetime game adjustment (`is_primetime`), regression to mean (`fp_regression_to_mean_z`), ADP integration (`ADP_POSITION_TIERS`), age/decline curves (`AGE_CURVES`), games played projection (`GAMES_PLAYED_BY_AGE`)
 - **Multi-Week & Season-Long**: Schedule strength analysis (`ScheduleStrengthAnalyzer`), multi-week aggregation model (`MultiWeekAggregator`), injury probability modeling (`predict_injury_probability`), rookie projections (`AdvancedRookieProjector`)
 - **Infrastructure**: Auto-refresh data updates (`NFLDataRefresher`), horizon-specific models (LSTM+ARIMA for 4w, deep residual for 18w), floor/ceiling uncertainty quantification
@@ -36,7 +36,6 @@ The following items were previously documented as limitations but have since bee
 | Limitation | Impact | Recommended Fix |
 |------------|--------|-----------------|
 | **No news/sentiment integration** | Cannot capture breaking news (surprise inactives, role changes) | Add NLP pipeline on news feeds for real-time impact |
-| **Red zone data sometimes estimated** | When not available from source, red zone opportunities are estimated from TDs | Integrate a dedicated red zone opportunity data source |
 
 #### Data Scientist Perspective
 
@@ -93,7 +92,7 @@ The following items were previously documented as limitations but have since bee
 
 | Limitation | Impact | Recommended Fix |
 |------------|--------|-----------------|
-| **No offseason changes tracking** | Free agency signings, trades, and depth chart changes not tracked | Build offseason transaction tracking system |
+| **Limited offseason changes tracking** | Roster/depth chart sync active but no real-time transaction ledger | Add transaction event tracking (trades, signings, cuts) |
 | **No suspension risk modeling** | Suspension status values exist in the validator but are not predicted | Add suspension probability model based on player history |
 
 #### Data Scientist Perspective
@@ -112,8 +111,6 @@ The following items were previously documented as limitations but have since bee
 | Issue | Current State | Needed |
 |-------|---------------|--------|
 | **2025 season data** | Pending in nflverse | Will auto-load when available |
-| **Red zone data** | Available when in source data, sometimes estimated from TDs | Dedicated red zone opportunity data source |
-| **Real Vegas lines API** | Using synthetic/estimated lines (TODO at `src/models/advanced_models.py:589`) | Integrate The Odds API or ESPN for live lines |
 
 ### Model Limitations
 
@@ -137,7 +134,7 @@ The following items were previously documented as limitations but have since bee
 ### For Weekly Start/Sit (1 Week)
 1. **HIGH**: News/sentiment integration (NLP pipeline)
 2. **MEDIUM**: Tier-specific confidence intervals
-3. **LOW**: Real Vegas lines API (currently synthetic)
+3. ~~**LOW**: Real Vegas lines API~~ (resolved — The Odds API integrated)
 
 ### For Trade Analysis (5 Weeks)
 1. **HIGH**: Coaching/scheme change detection
@@ -145,7 +142,7 @@ The following items were previously documented as limitations but have since bee
 3. **MEDIUM**: Adaptive ensemble weighting by horizon
 
 ### For Draft Preparation (18 Weeks)
-1. **HIGH**: Offseason changes tracking
+1. ~~**HIGH**: Offseason changes tracking~~ (resolved — roster/depth chart sync active)
 2. **MEDIUM**: Suspension risk modeling
 3. **MEDIUM**: Opportunity share projection model
 
@@ -154,9 +151,9 @@ The following items were previously documented as limitations but have since bee
 ## Implementation Roadmap
 
 ### Phase 1: Remaining Data Gaps
-- [ ] Integrate real Vegas lines API (replace synthetic data)
-- [ ] Add dedicated red zone opportunity data source
-- [ ] Build offseason transaction tracking system
+- [x] Integrate real Vegas lines API (The Odds API client with env-var key)
+- [x] Add PBP-derived red zone stats (carries, pass attempts, team totals)
+- [x] Activate offseason roster/depth chart sync in auto-refresh pipeline
 
 ### Phase 2: Model Refinements
 - [ ] Add player-tier-specific uncertainty calibration

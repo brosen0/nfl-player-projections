@@ -28,6 +28,11 @@ USER_AGENT_POOL = [
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 13_6; rv:122.0) Gecko/20100101 Firefox/122.0",
 ]
 SCRAPER_CACHE_TTL_HOURS = 24  # Reuse cached HTTP responses within this window
+
+# Vegas lines API (The Odds API)
+VEGAS_API_KEY = os.environ.get("VEGAS_API_KEY", "")
+VEGAS_API_ENDPOINT = "https://api.the-odds-api.com/v4/sports/americanfootball_nfl/odds/"
+VEGAS_CACHE_TTL_HOURS = 4
 SCRAPER_CACHE_SUBDIR = "http_cache"
 from datetime import datetime
 
@@ -417,3 +422,7 @@ AGE_CURVE_DEFAULT = {"peak": 27, "coefficient": 0.005}
 
 # Minimum samples required to enable converter hyperparameter tuning
 CONVERTER_TUNING_MIN_SAMPLES = 200
+
+# Offseason tracking: sync rosters and depth charts during auto-refresh
+SYNC_ROSTERS_ON_REFRESH = True
+SYNC_DEPTH_CHARTS_ON_REFRESH = True

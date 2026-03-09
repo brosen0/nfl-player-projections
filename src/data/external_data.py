@@ -493,20 +493,43 @@ class WeatherDataLoader:
 # VEGAS LINES INTEGRATION
 # =============================================================================
 
+# Mapping from The Odds API team names to nfl-data-py abbreviations
+ODDS_API_TEAM_MAP = {
+    "Arizona Cardinals": "ARI", "Atlanta Falcons": "ATL",
+    "Baltimore Ravens": "BAL", "Buffalo Bills": "BUF",
+    "Carolina Panthers": "CAR", "Chicago Bears": "CHI",
+    "Cincinnati Bengals": "CIN", "Cleveland Browns": "CLE",
+    "Dallas Cowboys": "DAL", "Denver Broncos": "DEN",
+    "Detroit Lions": "DET", "Green Bay Packers": "GB",
+    "Houston Texans": "HOU", "Indianapolis Colts": "IND",
+    "Jacksonville Jaguars": "JAX", "Kansas City Chiefs": "KC",
+    "Las Vegas Raiders": "LV", "Los Angeles Chargers": "LAC",
+    "Los Angeles Rams": "LA", "Miami Dolphins": "MIA",
+    "Minnesota Vikings": "MIN", "New England Patriots": "NE",
+    "New Orleans Saints": "NO", "New York Giants": "NYG",
+    "New York Jets": "NYJ", "Philadelphia Eagles": "PHI",
+    "Pittsburgh Steelers": "PIT", "San Francisco 49ers": "SF",
+    "Seattle Seahawks": "SEA", "Tampa Bay Buccaneers": "TB",
+    "Tennessee Titans": "TEN", "Washington Commanders": "WAS",
+}
+
+
 class VegasLinesLoader:
     """
     Load and process Vegas betting lines.
-    
+
     Vegas lines provide:
     - Implied team totals (expected points)
     - Game pace expectations
     - Blowout risk (affects garbage time)
-    
-    Uses nfl-data-py's spread/line data when available.
+
+    Uses nfl-data-py's spread/line data for historical games.
+    Optionally fetches live lines from The Odds API when VEGAS_API_KEY is set.
     """
-    
-    def __init__(self):
-        pass
+
+    def __init__(self, api_key: str = None):
+        self.api_key = api_key or os.environ.get("VEGAS_API_KEY", "")
+        self._live_cache: Dict[str, Tuple[datetime, pd.DataFrame]] = {}
     
     def load_vegas_lines(self, seasons: List[int]) -> pd.DataFrame:
         """Load Vegas lines from nfl-data-py."""
@@ -535,7 +558,85 @@ class VegasLinesLoader:
                 pass
             
             return pd.DataFrame()
-    
+
+    def fetch_live_lines(self) -> pd.DataFrame:
+        """
+        Fetch current NFL lines from The Odds API.
+
+        Requires VEGAS_API_KEY environment variable.
+        Caches responses for VEGAS_CACHE_TTL_HOURS to respect rate limits.
+
+        Returns:
+            DataFrame with columns: home_team, away_team, spread_line, total
+            Empty DataFrame if API key not set or request fails.
+        """
+        if not self.api_key:
+            return pd.DataFrame()
+
+        cache_key = "live_lines"
+        cache_ttl_hours = int(os.environ.get("VEGAS_CACHE_TTL_HOURS", "4"))
+        if cache_key in self._live_cache:
+            cached_time, cached_df = self._live_cache[cache_key]
+            if datetime.now() - cached_time < timedelta(hours=cache_ttl_hours):
+                return cached_df
+
+        try:
+            endpoint = os.environ.get(
+                "VEGAS_API_ENDPOINT",
+                "https://api.the-odds-api.com/v4/sports/americanfootball_nfl/odds/",
+            )
+            resp = requests.get(
+                endpoint,
+                params={
+                    "apiKey": self.api_key,
+                    "regions": "us",
+                    "markets": "spreads,totals",
+                    "oddsFormat": "american",
+                },
+                timeout=15,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+        except Exception as e:
+            print(f"  [VegasLinesLoader] Live lines fetch failed: {e}")
+            return pd.DataFrame()
+
+        records = []
+        for game in data:
+            home = ODDS_API_TEAM_MAP.get(game.get("home_team", ""), "")
+            away = ODDS_API_TEAM_MAP.get(game.get("away_team", ""), "")
+            if not home or not away:
+                continue
+
+            spread_line = None
+            total = None
+
+            for bookmaker in game.get("bookmakers", []):
+                for market in bookmaker.get("markets", []):
+                    if market["key"] == "spreads" and spread_line is None:
+                        for outcome in market.get("outcomes", []):
+                            if outcome.get("name") == game.get("home_team"):
+                                spread_line = outcome.get("point")
+                    elif market["key"] == "totals" and total is None:
+                        for outcome in market.get("outcomes", []):
+                            if outcome.get("name") == "Over":
+                                total = outcome.get("point")
+                if spread_line is not None and total is not None:
+                    break
+
+            records.append({
+                "home_team": home,
+                "away_team": away,
+                "spread_line": spread_line if spread_line is not None else 0.0,
+                "total": total if total is not None else 46.0,
+            })
+
+        result = pd.DataFrame(records)
+        self._live_cache[cache_key] = (datetime.now(), result)
+        if not result.empty:
+            print(f"  [VegasLinesLoader] Fetched live lines for {len(result)} games")
+        return result
+
     def calculate_implied_totals(self, lines_df: pd.DataFrame) -> pd.DataFrame:
         """
         Calculate implied team totals from spreads and over/unders.

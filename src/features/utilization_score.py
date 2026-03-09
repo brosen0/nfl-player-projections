@@ -270,7 +270,11 @@ class UtilizationScoreCalculator:
         df["rush_share_pct"] = safe_divide(rushing_attempts, team_rush) * 100
         df["target_share_pct"] = safe_divide(targets, team_targets) * 100
         
-        if "redzone_attempts" in df.columns:
+        if "redzone_carries" in df.columns and "team_redzone_rush_attempts" in df.columns:
+            df["redzone_share_pct"] = safe_divide(
+                df["redzone_carries"], df["team_redzone_rush_attempts"]
+            ) * 100
+        elif "redzone_attempts" in df.columns:
             df["redzone_share_pct"] = safe_divide(
                 df.get("redzone_touches", rushing_tds + receiving_tds),
                 df["redzone_attempts"]
@@ -486,9 +490,15 @@ class UtilizationScoreCalculator:
             df["rushing_attempts"], df["rushing_attempts"] + 5  # Normalize for QBs
         ) * 100
         
-        # Red zone opportunity (from TDs)
-        total_tds = df["passing_tds"] + df["rushing_tds"]
-        df["redzone_opp_pct"] = (total_tds * 12).clip(0, 100)
+        # Red zone opportunity: use PBP-derived red zone attempts when available
+        if "redzone_pass_attempts" in df.columns and "team_redzone_plays" in df.columns:
+            qb_rz_plays = df["redzone_pass_attempts"]
+            if "redzone_carries" in df.columns:
+                qb_rz_plays = qb_rz_plays + df["redzone_carries"]
+            df["redzone_opp_pct"] = safe_divide(qb_rz_plays, df["team_redzone_plays"]) * 100
+        else:
+            total_tds = df["passing_tds"] + df["rushing_tds"]
+            df["redzone_opp_pct"] = (total_tds * 12).clip(0, 100)
         
         # Play volume (total plays normalized)
         df["play_volume_pct"] = (total_plays / 50 * 100).clip(0, 100)

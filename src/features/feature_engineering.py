@@ -878,9 +878,28 @@ class FeatureEngineer:
         else:
             df["team_change_recent_util"] = 0.0
 
+        # Enrich with depth chart data when available
+        try:
+            from src.utils.database import DatabaseManager
+            db = DatabaseManager()
+            seasons = df["season"].unique()
+            for season in seasons:
+                depth = db.get_depth_chart(int(season))
+                if depth.empty:
+                    continue
+                depth_lookup = depth.set_index("player_id")["end_week"]  # proxy for presence
+                mask = (df["season"] == season) & df["player_id"].isin(depth_lookup.index)
+                if mask.any():
+                    df.loc[mask, "has_depth_chart"] = 1
+            if "has_depth_chart" not in df.columns:
+                df["has_depth_chart"] = 0
+            df["has_depth_chart"] = df["has_depth_chart"].fillna(0).astype(int)
+        except Exception:
+            df["has_depth_chart"] = 0
+
         df = df.drop(columns=["_team_change_flag", "_team_stint_id"], errors="ignore")
         return df
-    
+
     def _add_game_script_adjustment(self, df: pd.DataFrame) -> pd.DataFrame:
         """
         Add game script and garbage time adjustment features.
