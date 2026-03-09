@@ -35,6 +35,8 @@ import nfl_data_py as nfl
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
+from src.utils.retry import retry_with_backoff
+
 from config.settings import (
     POSITIONS,
     OFFENSIVE_POSITIONS,
@@ -46,6 +48,29 @@ from src.utils.database import DatabaseManager
 from src.utils.helpers import calculate_fantasy_points
 from src.utils.nfl_calendar import get_current_nfl_season, get_current_nfl_week, current_season_has_weeks_played
 from src.data.schema_validator import validate_weekly_data, validate_schedule_data
+
+
+# ---------------------------------------------------------------------------
+# Retry-wrapped nfl-data-py functions (Directive V7 Section 19)
+# ---------------------------------------------------------------------------
+@retry_with_backoff(max_retries=3, base_delay=2.0)
+def _fetch_weekly_data(seasons):
+    return _fetch_weekly_data(seasons)
+
+
+@retry_with_backoff(max_retries=3, base_delay=2.0)
+def _fetch_snap_counts(seasons):
+    return _fetch_snap_counts(seasons)
+
+
+@retry_with_backoff(max_retries=3, base_delay=2.0)
+def _fetch_schedules(seasons):
+    return _fetch_schedules(seasons)
+
+
+@retry_with_backoff(max_retries=3, base_delay=2.0)
+def _fetch_rosters(seasons):
+    return _fetch_rosters(seasons)
 
 
 def _to_scalar_int(x, default: int = 0) -> int:
@@ -134,7 +159,7 @@ class NFLDataLoader:
                         print(f"  Current season {season}: loaded from PBP ({len(df)} records)")
                         # Optionally merge with weekly if available (prefer weekly for same player/week)
                         try:
-                            weekly_df = nfl.import_weekly_data([season])
+                            weekly_df = _fetch_weekly_data([season])
                             if not weekly_df.empty and len(weekly_df) >= 10:
                                 weekly_df = self._standardize_weekly_columns(weekly_df)
                                 key_cols = ["player_id", "season", "week"]
@@ -150,7 +175,7 @@ class NFLDataLoader:
             # If we don't have current-season PBP data yet, try weekly
             if df.empty:
                 try:
-                    df = nfl.import_weekly_data([season])
+                    df = _fetch_weekly_data([season])
                 except Exception as e:
                     print(f"  Weekly data for {season}: {e}")
                     df = pd.DataFrame()
@@ -536,7 +561,7 @@ class NFLDataLoader:
         print(f"Loading snap counts for seasons: {seasons}")
         
         try:
-            df = nfl.import_snap_counts(seasons)
+            df = _fetch_snap_counts(seasons)
         except Exception as e:
             print(f"Error loading snap counts: {e}")
             return pd.DataFrame()
@@ -562,7 +587,7 @@ class NFLDataLoader:
         print(f"Loading schedules for seasons: {seasons}")
         
         try:
-            df = nfl.import_schedules(seasons)
+            df = _fetch_schedules(seasons)
         except Exception as e:
             print(f"Error loading schedules: {e}")
             return pd.DataFrame()
@@ -614,7 +639,7 @@ class NFLDataLoader:
     def check_schedule_availability(self, season: int) -> bool:
         """Check if schedule is available for a given season."""
         try:
-            df = nfl.import_schedules([season])
+            df = _fetch_schedules([season])
             return len(df) > 0
         except Exception:
             return False
@@ -624,7 +649,7 @@ class NFLDataLoader:
         current = get_current_nfl_season()
         for year in range(current + 1, 2015, -1):
             try:
-                df = nfl.import_weekly_data([year])
+                df = _fetch_weekly_data([year])
                 if len(df) > 0:
                     return year
             except Exception:
@@ -643,7 +668,7 @@ class NFLDataLoader:
         print(f"Loading {season} schedule...")
         
         try:
-            df = nfl.import_schedules([season])
+            df = _fetch_schedules([season])
             if len(df) > 0:
                 print(f"  Found {len(df)} games for {season}")
                 return df
@@ -673,7 +698,7 @@ class NFLDataLoader:
         print(f"Loading rosters for seasons: {seasons}")
         
         try:
-            df = nfl.import_rosters(seasons)
+            df = _fetch_rosters(seasons)
             if len(df) > 0:
                 print(f"  Loaded {len(df)} roster entries")
                 return df

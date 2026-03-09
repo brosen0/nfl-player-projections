@@ -1,13 +1,233 @@
-"""Main pipeline orchestration for NFL prediction workflow."""
+"""Main pipeline orchestration for NFL prediction workflow.
+
+Includes a lightweight DAG-based pipeline orchestrator per Directive V7
+Section 19 (Data Engineering and Pipeline Resilience).
+"""
 import argparse
+import hashlib
+import json
+import logging
+import time
+from datetime import datetime
+from enum import Enum
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, Callable, Dict, List, Optional, Set
 import pandas as pd
 
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from config.settings import POSITIONS, SEASONS_TO_SCRAPE
+
+logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Lightweight DAG Pipeline Orchestrator (Directive V7 Section 19)
+# ---------------------------------------------------------------------------
+
+class StageStatus(str, Enum):
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    SKIPPED = "skipped"
+
+
+class PipelineStage:
+    """A single stage in the pipeline DAG."""
+
+    def __init__(
+        self,
+        name: str,
+        func: Callable[..., Any],
+        depends_on: Optional[List[str]] = None,
+        cache_ttl_seconds: Optional[float] = None,
+    ):
+        self.name = name
+        self.func = func
+        self.depends_on: List[str] = depends_on or []
+        self.cache_ttl_seconds = cache_ttl_seconds
+        self.status = StageStatus.PENDING
+        self.result: Any = None
+        self.error: Optional[str] = None
+        self.duration_seconds: float = 0.0
+
+    def __repr__(self) -> str:
+        return f"PipelineStage({self.name!r}, status={self.status})"
+
+
+class PipelineDAG:
+    """Lightweight DAG-based pipeline with dependency resolution and checkpointing.
+
+    Features per Directive V7 Section 19:
+    - Explicit dependency declarations between stages
+    - Idempotent execution via checkpoint caching
+    - Deterministic execution order (topological sort)
+    - Stage-level retry on failure
+    - Status tracking and logging
+    """
+
+    def __init__(
+        self,
+        name: str = "pipeline",
+        cache_dir: Optional[Path] = None,
+        max_retries: int = 1,
+    ):
+        self.name = name
+        self.stages: Dict[str, PipelineStage] = {}
+        self.cache_dir = cache_dir or Path("data/pipeline_cache")
+        self.max_retries = max_retries
+        self._execution_log: List[Dict[str, Any]] = []
+
+    def add_stage(
+        self,
+        name: str,
+        func: Callable[..., Any],
+        depends_on: Optional[List[str]] = None,
+        cache_ttl_seconds: Optional[float] = None,
+    ) -> "PipelineDAG":
+        """Register a pipeline stage."""
+        stage = PipelineStage(name, func, depends_on, cache_ttl_seconds)
+        self.stages[name] = stage
+        return self
+
+    def _topological_sort(self) -> List[str]:
+        """Return stages in dependency-respecting order."""
+        visited: Set[str] = set()
+        order: List[str] = []
+
+        def _visit(name: str) -> None:
+            if name in visited:
+                return
+            visited.add(name)
+            stage = self.stages[name]
+            for dep in stage.depends_on:
+                if dep not in self.stages:
+                    raise ValueError(
+                        f"Stage {name!r} depends on unknown stage {dep!r}"
+                    )
+                _visit(dep)
+            order.append(name)
+
+        for name in self.stages:
+            _visit(name)
+        return order
+
+    def _check_cache(self, stage: PipelineStage, config_hash: str) -> bool:
+        """Check if a stage has a fresh cached result."""
+        if stage.cache_ttl_seconds is None:
+            return False
+        cache_file = self.cache_dir / f"{stage.name}_{config_hash}.json"
+        if not cache_file.exists():
+            return False
+        try:
+            meta = json.loads(cache_file.read_text())
+            cached_at = meta.get("completed_at", 0)
+            age = time.time() - cached_at
+            return age < stage.cache_ttl_seconds
+        except (json.JSONDecodeError, KeyError):
+            return False
+
+    def _write_cache(self, stage: PipelineStage, config_hash: str) -> None:
+        """Write cache marker for a completed stage."""
+        if stage.cache_ttl_seconds is None:
+            return
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
+        cache_file = self.cache_dir / f"{stage.name}_{config_hash}.json"
+        cache_file.write_text(json.dumps({
+            "stage": stage.name,
+            "completed_at": time.time(),
+            "duration_seconds": stage.duration_seconds,
+        }))
+
+    def run(self, config: Optional[Dict[str, Any]] = None, **kwargs) -> Dict[str, Any]:
+        """Execute the pipeline in topological order.
+
+        Args:
+            config: Optional config dict used for cache key computation.
+            **kwargs: Passed to each stage function.
+
+        Returns:
+            Dict with stage statuses and execution summary.
+        """
+        config = config or {}
+        config_hash = hashlib.md5(
+            json.dumps(config, sort_keys=True, default=str).encode()
+        ).hexdigest()[:12]
+
+        order = self._topological_sort()
+        logger.info("Pipeline %s: executing %d stages: %s", self.name, len(order), order)
+
+        for stage_name in order:
+            stage = self.stages[stage_name]
+
+            # Check dependencies
+            failed_deps = [
+                d for d in stage.depends_on
+                if self.stages[d].status == StageStatus.FAILED
+            ]
+            if failed_deps:
+                stage.status = StageStatus.SKIPPED
+                stage.error = f"Skipped: dependencies failed: {failed_deps}"
+                logger.warning("Stage %s skipped (deps failed: %s)", stage_name, failed_deps)
+                continue
+
+            # Check cache
+            if self._check_cache(stage, config_hash):
+                stage.status = StageStatus.SKIPPED
+                logger.info("Stage %s: cached result still fresh, skipping", stage_name)
+                continue
+
+            # Execute with retry
+            stage.status = StageStatus.RUNNING
+            last_error = None
+            for attempt in range(self.max_retries + 1):
+                try:
+                    start = time.monotonic()
+                    stage.result = stage.func(**kwargs)
+                    stage.duration_seconds = time.monotonic() - start
+                    stage.status = StageStatus.COMPLETED
+                    self._write_cache(stage, config_hash)
+                    logger.info(
+                        "Stage %s completed in %.1fs",
+                        stage_name, stage.duration_seconds,
+                    )
+                    break
+                except Exception as exc:
+                    last_error = exc
+                    if attempt < self.max_retries:
+                        logger.warning(
+                            "Stage %s attempt %d failed: %s, retrying",
+                            stage_name, attempt + 1, exc,
+                        )
+                    else:
+                        stage.status = StageStatus.FAILED
+                        stage.error = str(exc)
+                        logger.error("Stage %s failed after %d attempts: %s",
+                                     stage_name, self.max_retries + 1, exc)
+
+            self._execution_log.append({
+                "stage": stage_name,
+                "status": stage.status.value,
+                "duration_seconds": round(stage.duration_seconds, 2),
+                "error": stage.error,
+                "timestamp": datetime.now().isoformat(),
+            })
+
+        summary = {
+            "pipeline": self.name,
+            "stages": {s.name: s.status.value for s in self.stages.values()},
+            "completed": sum(1 for s in self.stages.values() if s.status == StageStatus.COMPLETED),
+            "failed": sum(1 for s in self.stages.values() if s.status == StageStatus.FAILED),
+            "skipped": sum(1 for s in self.stages.values() if s.status == StageStatus.SKIPPED),
+            "total_duration_seconds": round(
+                sum(s.duration_seconds for s in self.stages.values()), 2
+            ),
+            "execution_log": self._execution_log,
+        }
+        logger.info("Pipeline %s complete: %s", self.name, summary["stages"])
+        return summary
 from src.scrapers.run_scrapers import run_all_scrapers
 from src.models.train import train_models
 from src.predict import NFLPredictor
