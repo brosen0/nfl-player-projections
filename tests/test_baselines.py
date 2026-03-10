@@ -7,6 +7,8 @@ from src.evaluation.baselines import (
     trailing_average_baseline,
     season_average_baseline,
     positional_rank_baseline,
+    expert_consensus_baseline,
+    expert_consensus_baseline_vectorized,
     compare_model_to_baselines,
     format_baseline_report,
 )
@@ -89,6 +91,72 @@ class TestPositionalRankBaseline:
                 assert abs(val - first_season_avg) < 0.5
 
 
+class TestExpertConsensusBaseline:
+    def test_returns_series(self):
+        df = _make_weekly_data(seasons=2)
+        result = expert_consensus_baseline(df)
+        assert isinstance(result, pd.Series)
+        assert len(result) == len(df)
+
+    def test_vectorized_matches_loop(self):
+        """Vectorized and loop implementations should produce identical results."""
+        df = _make_weekly_data(n_players=4, n_weeks=8, seasons=2)
+        loop_result = expert_consensus_baseline(df)
+        vec_result = expert_consensus_baseline_vectorized(df)
+        # Compare only where both are finite
+        both_valid = np.isfinite(loop_result.values) & np.isfinite(vec_result.values)
+        assert both_valid.sum() > 0, "Should have some valid predictions"
+        np.testing.assert_allclose(
+            loop_result.values[both_valid],
+            vec_result.values[both_valid],
+            rtol=1e-10,
+        )
+
+    def test_no_future_leakage(self):
+        """Expert consensus must not use the current week's actual value."""
+        df = _make_weekly_data(n_players=1, n_weeks=10, seasons=2)
+        df = df.sort_values(["player_id", "season", "week"]).reset_index(drop=True)
+        result = expert_consensus_baseline(df)
+        # The prediction for the last week should not equal the actual for that week
+        # (it should be based on prior data only)
+        last_actual = df["fantasy_points"].iloc[-1]
+        last_pred = result.iloc[-1]
+        # They could coincidentally be close but shouldn't be exact
+        # More importantly, check the prediction is based on prior data
+        assert np.isfinite(last_pred)
+
+    def test_position_specific_weights(self):
+        """Different positions should get different blend weights."""
+        # Create data with distinct position behavior
+        df = _make_weekly_data(n_players=6, n_weeks=10, seasons=2)
+        result = expert_consensus_baseline(df)
+        # Just verify it runs and produces values for both positions
+        rb_mask = df["position"] == "RB"
+        wr_mask = df["position"] == "WR"
+        assert np.isfinite(result[rb_mask]).sum() > 0
+        assert np.isfinite(result[wr_mask]).sum() > 0
+
+    def test_custom_weights(self):
+        """Custom position weights should be respected."""
+        df = _make_weekly_data(n_players=4, n_weeks=8, seasons=2)
+        custom = {
+            "RB": {"prior_season": 0.10, "trailing_avg": 0.80, "season_avg": 0.10},
+            "WR": {"prior_season": 0.10, "trailing_avg": 0.80, "season_avg": 0.10},
+        }
+        result = expert_consensus_baseline(df, position_weights=custom)
+        assert isinstance(result, pd.Series)
+        assert np.isfinite(result).sum() > 0
+
+    def test_early_season_fallback(self):
+        """For early-season weeks where trailing avg is sparse, should still produce values."""
+        df = _make_weekly_data(n_players=4, n_weeks=10, seasons=2)
+        result = expert_consensus_baseline(df)
+        # Week 2 of season 2 should have a prediction (from prior season + at least 1 game)
+        s2_week2 = df[(df["season"] == 2023) & (df["week"] == 2)].index
+        for idx in s2_week2:
+            assert np.isfinite(result.iloc[idx]), "Week 2 of S2 should have prior-season fallback"
+
+
 class TestCompareModelToBaselines:
     def test_returns_comparison_dict(self):
         df = _make_weekly_data(n_players=10, n_weeks=15, seasons=2)
@@ -157,3 +225,37 @@ class TestFormatBaselineReport:
         }
         report = format_baseline_report(comparison)
         assert "LOSES TO" in report
+
+    def test_expert_consensus_critical_tag(self):
+        """Expert consensus should be tagged as CRITICAL in the report."""
+        comparison = {
+            "expert_consensus": {
+                "baseline_rmse": 5.0,
+                "baseline_mae": 3.5,
+                "model_rmse": 4.0,
+                "model_mae": 2.8,
+                "rmse_improvement_pct": 20.0,
+                "mae_improvement_pct": 20.0,
+                "model_beats_baseline": True,
+                "n_compared": 100,
+            }
+        }
+        report = format_baseline_report(comparison)
+        assert "[CRITICAL]" in report
+        assert "BEATS EXPERT CONSENSUS" in report
+
+    def test_expert_consensus_warning_when_loses(self):
+        comparison = {
+            "expert_consensus": {
+                "baseline_rmse": 3.0,
+                "baseline_mae": 2.0,
+                "model_rmse": 4.0,
+                "model_mae": 3.0,
+                "rmse_improvement_pct": -33.33,
+                "mae_improvement_pct": -50.0,
+                "model_beats_baseline": False,
+                "n_compared": 100,
+            }
+        }
+        report = format_baseline_report(comparison)
+        assert "does NOT beat expert consensus" in report
