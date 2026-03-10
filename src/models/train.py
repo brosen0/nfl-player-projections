@@ -728,8 +728,13 @@ def _run_backtest_after_training(trainer, test_data: pd.DataFrame,
         test_data.loc[pos_mask, "predicted_utilization"] = preds
         # Default: set points equal to raw model output.
         test_data.loc[pos_mask, "predicted_points"] = preds
-        # Convert utilization -> fantasy points for skill positions and QB(util mode).
-        should_convert = position in converters and (position != "QB" or qb_target == "util")
+        # Convert utilization -> fantasy points only for positions trained on util targets.
+        # Positions configured with target_type="fp" predict FP directly and skip conversion.
+        pos_target_cfg = MODEL_CONFIG.get("position_target_type", {})
+        pos_target_type = pos_target_cfg.get(position, "util")
+        should_convert = (position in converters
+                          and pos_target_type != "fp"
+                          and (position != "QB" or qb_target == "util"))
         if should_convert:
             eff_df = pos_test.copy()
             eff_df["utilization_score"] = preds
@@ -802,8 +807,11 @@ def _run_backtest_after_training(trainer, test_data: pd.DataFrame,
                     elif "target_util_1w" in pos_train.columns:
                         train_actual = pos_train["target_util_1w"]
                 if train_actual is not None:
-                    # Apply same util->FP conversion for consistency
-                    should_convert = position in converters and (position != "QB" or qb_target == "util")
+                    # Apply same util->FP conversion for consistency (skip for FP-trained positions)
+                    _ptc = MODEL_CONFIG.get("position_target_type", {})
+                    should_convert = (position in converters
+                                      and _ptc.get(position, "util") != "fp"
+                                      and (position != "QB" or qb_target == "util"))
                     preds_for_cal = train_preds
                     if should_convert:
                         eff_df = pos_train.copy()
@@ -1346,7 +1354,10 @@ def _run_one_fold(
         preds = multi_model.predict(pos_test, n_weeks=1)
         test_data.loc[pos_mask, "predicted_utilization"] = preds
         test_data.loc[pos_mask, "predicted_points"] = preds
-        should_convert = position in converters and (position != "QB" or qb_target == "util")
+        _ptc2 = MODEL_CONFIG.get("position_target_type", {})
+        should_convert = (position in converters
+                          and _ptc2.get(position, "util") != "fp"
+                          and (position != "QB" or qb_target == "util"))
         if should_convert:
             eff_df = pos_test.copy()
             eff_df["utilization_score"] = preds

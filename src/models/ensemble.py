@@ -506,10 +506,13 @@ class EnsemblePredictor:
                             pass
                 results.loc[mask, "predicted_utilization"] = predictions
                 results.loc[mask, "predicted_points"] = predictions
-                # RB/WR/TE always convert utilization->FP; QB converts only when QB target is utilization.
+                # Convert util->FP only for positions trained on utilization targets.
+                # Positions with target_type="fp" predict FP directly and skip conversion.
+                _ptc = MODEL_CONFIG.get("position_target_type", {})
                 should_convert = (
                     position in self.util_to_fp
                     and self.util_to_fp[position].is_fitted
+                    and _ptc.get(position, "util") != "fp"
                     and (position != "QB" or self.qb_target == "util")
                 )
                 if should_convert:
@@ -568,10 +571,12 @@ class EnsemblePredictor:
                 base_pred = model.predict(pos_data)
                 scaled = base_pred * n_weeks
                 results.loc[mask, "predicted_utilization"] = scaled
-                # Apply utilization-to-FP conversion for RB/WR/TE (base_pred is utilization 0-100)
+                # Apply utilization-to-FP conversion only for positions trained on util targets.
+                _ptc2 = MODEL_CONFIG.get("position_target_type", {})
                 should_convert = (
                     position in self.util_to_fp
                     and self.util_to_fp[position].is_fitted
+                    and _ptc2.get(position, "util") != "fp"
                     and (position != "QB" or self.qb_target == "util")
                 )
                 if should_convert:
@@ -811,12 +816,18 @@ class ModelTrainer:
             
             # Single model path (RB, WR, TE or QB fallback)
             multi_model = MultiWeekModel(position)
-            
-            # Prepare targets: primary = utilization (target_util_*), optional FP (target_*w)
+
+            # Determine target type from config: "fp" = direct fantasy points, "util" = utilization score
+            pos_target_cfg = MODEL_CONFIG.get("position_target_type", {})
+            target_type = pos_target_cfg.get(position, "util")
+            if position == "QB":
+                target_type = "fp"  # QB always uses FP (or dual-train above)
+
+            # Prepare targets
             y_dict = {}
             for n_weeks in n_weeks_list:
-                # QB fallback target is fantasy points (owner objective) when dual-test path is unavailable.
-                if position == "QB":
+                if target_type == "fp":
+                    # Train directly on fantasy points (end-to-end, no utilization intermediary)
                     target_col = f"target_{n_weeks}w"
                     if target_col in pos_data.columns:
                         y_dict[n_weeks] = pos_data[target_col]
@@ -825,6 +836,7 @@ class ModelTrainer:
                             lambda x: x.shift(-1) if n_weeks == 1 else x.shift(-1).rolling(window=n_weeks, min_periods=1).sum()
                         )
                 else:
+                    # Original two-stage: predict utilization, then convert to FP
                     util_col = f"target_util_{n_weeks}w" if n_weeks > 1 else "target_util_1w"
                     if util_col in pos_data.columns:
                         y_dict[n_weeks] = pos_data[util_col]
@@ -836,6 +848,9 @@ class ModelTrainer:
                             y_dict[n_weeks] = pos_data.groupby("player_id")["utilization_score"].transform(
                                 lambda x: x.shift(-1) if n_weeks == 1 else x.shift(-1).rolling(window=n_weeks, min_periods=1).mean()
                             )
+
+            if target_type == "fp":
+                print(f"  {position}: training directly on fantasy points (end-to-end)")
             
             # Get feature columns - exclude non-numeric, metadata, and LEAK columns
             exclude_cols = [
