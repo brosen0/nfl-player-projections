@@ -953,6 +953,22 @@
         '</tr>';
       });
       html += '</tbody></table></div>';
+      // Add honest performance caveat based on R² values
+      var hasNegR2 = posKeys.some(function (pos) { return bt[pos].r2 != null && bt[pos].r2 < 0; });
+      var hasWeakR2 = posKeys.some(function (pos) { return bt[pos].r2 != null && bt[pos].r2 < 0.2; });
+      if (hasNegR2) {
+        html += '<div class="notice notice--info" style="margin-top:0.75rem;border-left:3px solid #f59e0b;background:#1a1400">' +
+          '<strong>Performance Note:</strong> Negative R\u00b2 values (WR, TE) indicate the model performs worse than ' +
+          'simply predicting the position average. Weekly fantasy scoring has high inherent variance that limits predictability. ' +
+          'Treat these projections as one input among many \u2014 not as authoritative forecasts. ' +
+          'The model captures some ranking signal (positive correlations) but point-level accuracy is limited.' +
+        '</div>';
+      } else if (hasWeakR2) {
+        html += '<div class="notice notice--info" style="margin-top:0.75rem;border-left:3px solid #f59e0b;background:#1a1400">' +
+          '<strong>Performance Note:</strong> Low R\u00b2 values indicate limited point-level predictive power. ' +
+          'Weekly fantasy scoring has high inherent variance. Use projections as directional guidance, not precise forecasts.' +
+        '</div>';
+      }
     }
     html += '</div>';
 

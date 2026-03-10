@@ -182,7 +182,7 @@ MODEL_CONFIG = {
     "n_optuna_trials": 100,
     "early_stopping_rounds": 25,
     "validation_pct": 0.2,       # Fraction of training data for ensemble weight optimization
-    "n_features_per_position": 50,  # Max features after selection (per position)
+    "n_features_per_position": 15,  # Max features after selection (per position); reduced from 50 to combat overfitting with ~250 samples/position
     "correlation_threshold": 0.92,  # Drop one of pair if correlation exceeds this
     "vif_threshold": 10,  # Iteratively drop features with VIF above this
     "adaptive_feature_count": True,  # Scale n_features_per_position by sqrt(n_samples)
@@ -192,6 +192,10 @@ MODEL_CONFIG = {
     # If a horizon is missing, falls back to recency_decay_halflife.
     "horizon_recency_halflife": {1: 2.0, 4: 3.0, 18: 4.0},
     "cv_gap_seasons": 1,  # Gap between train and val for purged CV (1 = purge last season before test)
+    # Per-position target override: "fp" trains directly on fantasy points (no util conversion),
+    # "util" trains on utilization score then converts to FP (original two-stage approach).
+    # Default WR/TE to "fp" because the two-stage approach produces negative R² for these positions.
+    "position_target_type": {"QB": "auto", "RB": "util", "WR": "fp", "TE": "fp"},
     # Horizon-specific models (per requirements): 4w LSTM+ARIMA, 18w deep feedforward
     "use_4w_hybrid": True,   # Use Hybrid4WeekModel for n_weeks in 4w band when TF available
     "use_18w_deep": True,   # Use DeepSeasonLongModel for long horizon when TF available

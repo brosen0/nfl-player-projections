@@ -156,20 +156,27 @@ def get_hero() -> Dict[str, Any]:
     record_count = stats.get("row_count", 0) or (len(df_eda) if df_eda is not None and not df_eda.empty else 0)
     res = load_advanced_model_results()
     backlist = load_backtest_results()
+    # Report honest metrics: use actual correlation values, not sqrt(clamped R²).
+    import numpy as np
     correlation = None
+    r2 = None
     if res and res.get("backtest_results"):
         by_pos = res["backtest_results"]
-        r2_list = [by_pos[p].get("r2") for p in by_pos if isinstance(by_pos[p], dict)]
+        corr_list = [by_pos[p].get("correlation") for p in by_pos
+                     if isinstance(by_pos[p], dict) and by_pos[p].get("correlation") is not None]
+        r2_list = [by_pos[p].get("r2") for p in by_pos
+                   if isinstance(by_pos[p], dict) and by_pos[p].get("r2") is not None]
+        if corr_list:
+            correlation = round(float(np.mean(corr_list)) * 100, 1)
         if r2_list:
-            import numpy as np
-            correlation = round(float(np.sqrt(max(0, np.mean(r2_list)))) * 100, 1)
+            r2 = round(float(np.mean(r2_list)), 3)
     if correlation is None and backlist:
         latest = backlist[0]
         metrics = latest.get("metrics", {})
         corr = metrics.get("correlation")
         if corr is not None:
             correlation = round(float(corr) * 100, 1)
-    return {"record_count": record_count, "correlation": correlation}
+    return {"record_count": record_count, "correlation": correlation, "r2": r2}
 
 
 # -----------------------------------------------------------------------------
