@@ -2,7 +2,7 @@
 Strong baselines for NFL fantasy-point prediction.
 
 Production-readiness requires demonstrating that the ML model beats realistic
-alternatives. This module provides three baseline strategies:
+alternatives. This module provides baseline strategies:
 
 1. **Naive historical**: Player's trailing N-game rolling average.
 2. **Season average**: Player's expanding season-to-date mean (shift(1) to avoid
@@ -10,6 +10,10 @@ alternatives. This module provides three baseline strategies:
 3. **Market-implied / ADP-based**: Position-rank historical expectation —
    maps a player's prior-season positional rank to expected fantasy points
    from historical data.
+4. **Expert consensus**: Simulates expert projections by blending prior-season
+   rank with recent in-season performance, weighted by position-specific
+   factors.  This is the strongest non-ML baseline and is critical for
+   determining whether the model provides real value.
 
 Each baseline produces per-player, per-week point estimates that can be
 compared directly to the ML model using the same metrics (RMSE, MAE,
@@ -120,6 +124,149 @@ def positional_rank_baseline(
 
 
 # ---------------------------------------------------------------------------
+# Expert consensus baseline
+# ---------------------------------------------------------------------------
+
+# Position-specific blend weights: how much weight an "expert" gives to
+# prior-season rank vs recent in-season form.  QBs are more stable year-
+# over-year so prior rank gets more weight; RBs are more volatile.
+_EXPERT_POSITION_WEIGHTS = {
+    "QB": {"prior_season": 0.40, "trailing_avg": 0.35, "season_avg": 0.25},
+    "RB": {"prior_season": 0.25, "trailing_avg": 0.45, "season_avg": 0.30},
+    "WR": {"prior_season": 0.30, "trailing_avg": 0.40, "season_avg": 0.30},
+    "TE": {"prior_season": 0.35, "trailing_avg": 0.35, "season_avg": 0.30},
+}
+_EXPERT_DEFAULT_WEIGHTS = {"prior_season": 0.30, "trailing_avg": 0.40, "season_avg": 0.30}
+
+
+def expert_consensus_baseline(
+    df: pd.DataFrame,
+    target_col: str = "fantasy_points",
+    trailing_window: int = 4,
+    position_weights: Optional[Dict[str, Dict[str, float]]] = None,
+) -> pd.Series:
+    """Simulated expert consensus projection baseline.
+
+    Real expert projections (e.g. FantasyPros ECR) are not freely available
+    at scale for historical seasons.  This baseline approximates them by
+    blending three information sources that any expert would use:
+
+    1. **Prior-season rank**: Pre-season expectation (ADP-like).
+    2. **Trailing N-game average**: Recent performance trend.
+    3. **Season-to-date average**: Overall season form.
+
+    The blend is position-specific: QBs are more predictable from prior
+    season, while RBs depend more on recent usage.
+
+    For early-season weeks where trailing/season averages are unavailable,
+    the baseline falls back gracefully to prior-season expectations only.
+
+    This is designed as the *strongest* realistic non-ML baseline. If the ML
+    model cannot beat this, it is not providing meaningful value over what a
+    human expert would produce.
+
+    Args:
+        df: DataFrame with player weekly data (must include player_id,
+            season, week, position, and target_col).
+        target_col: Column with actual fantasy points.
+        trailing_window: Window for the trailing-average component (default 4).
+        position_weights: Optional override for position-specific blend weights.
+            Keys are positions, values are dicts with keys
+            "prior_season", "trailing_avg", "season_avg" summing to 1.0.
+
+    Returns:
+        Series of expert consensus predictions aligned to df index.
+    """
+    weights = position_weights or _EXPERT_POSITION_WEIGHTS
+
+    # Compute the three component predictions
+    prior = positional_rank_baseline(df, target_col=target_col)
+    trailing = trailing_average_baseline(df, n_weeks=trailing_window, target_col=target_col)
+    season = season_average_baseline(df, target_col=target_col)
+
+    # Build per-row weights based on position
+    positions = df["position"] if "position" in df.columns else pd.Series("UNK", index=df.index)
+    w_prior = positions.map(lambda p: weights.get(p, _EXPERT_DEFAULT_WEIGHTS)["prior_season"])
+    w_trail = positions.map(lambda p: weights.get(p, _EXPERT_DEFAULT_WEIGHTS)["trailing_avg"])
+    w_season = positions.map(lambda p: weights.get(p, _EXPERT_DEFAULT_WEIGHTS)["season_avg"])
+
+    # Where in-season components are missing (early weeks), redistribute
+    # their weight to prior-season expectations
+    trail_valid = np.isfinite(trailing.values)
+    season_valid = np.isfinite(season.values)
+    prior_valid = np.isfinite(prior.values)
+
+    # Start with the ideal weighted blend
+    result = np.full(len(df), np.nan)
+
+    for idx in range(len(df)):
+        components = []
+        total_w = 0.0
+
+        if prior_valid[idx]:
+            components.append(("prior", float(w_prior.iloc[idx]), float(prior.iloc[idx])))
+            total_w += float(w_prior.iloc[idx])
+        if trail_valid[idx]:
+            components.append(("trail", float(w_trail.iloc[idx]), float(trailing.iloc[idx])))
+            total_w += float(w_trail.iloc[idx])
+        if season_valid[idx]:
+            components.append(("season", float(w_season.iloc[idx]), float(season.iloc[idx])))
+            total_w += float(w_season.iloc[idx])
+
+        if total_w > 0:
+            result[idx] = sum(w * v / total_w for _, w, v in components)
+
+    return pd.Series(result, index=df.index)
+
+
+def expert_consensus_baseline_vectorized(
+    df: pd.DataFrame,
+    target_col: str = "fantasy_points",
+    trailing_window: int = 4,
+    position_weights: Optional[Dict[str, Dict[str, float]]] = None,
+) -> pd.Series:
+    """Vectorized version of expert_consensus_baseline for large datasets.
+
+    Identical logic but avoids per-row Python loop for performance.
+    """
+    weights = position_weights or _EXPERT_POSITION_WEIGHTS
+
+    prior = positional_rank_baseline(df, target_col=target_col).values.astype(float)
+    trailing = trailing_average_baseline(df, n_weeks=trailing_window, target_col=target_col).values.astype(float)
+    season = season_average_baseline(df, target_col=target_col).values.astype(float)
+
+    positions = df["position"] if "position" in df.columns else pd.Series("UNK", index=df.index)
+    w_prior = positions.map(lambda p: weights.get(p, _EXPERT_DEFAULT_WEIGHTS)["prior_season"]).values.astype(float)
+    w_trail = positions.map(lambda p: weights.get(p, _EXPERT_DEFAULT_WEIGHTS)["trailing_avg"]).values.astype(float)
+    w_season = positions.map(lambda p: weights.get(p, _EXPERT_DEFAULT_WEIGHTS)["season_avg"]).values.astype(float)
+
+    # Zero out weights where component is NaN
+    prior_valid = np.isfinite(prior)
+    trail_valid = np.isfinite(trailing)
+    season_valid = np.isfinite(season)
+
+    ew_prior = np.where(prior_valid, w_prior, 0.0)
+    ew_trail = np.where(trail_valid, w_trail, 0.0)
+    ew_season = np.where(season_valid, w_season, 0.0)
+
+    total_w = ew_prior + ew_trail + ew_season
+
+    # Replace NaN with 0 for safe multiplication
+    prior_safe = np.where(prior_valid, prior, 0.0)
+    trail_safe = np.where(trail_valid, trailing, 0.0)
+    season_safe = np.where(season_valid, season, 0.0)
+
+    with np.errstate(divide="ignore", invalid="ignore"):
+        result = np.where(
+            total_w > 0,
+            (ew_prior * prior_safe + ew_trail * trail_safe + ew_season * season_safe) / total_w,
+            np.nan,
+        )
+
+    return pd.Series(result, index=df.index)
+
+
+# ---------------------------------------------------------------------------
 # Comparison framework
 # ---------------------------------------------------------------------------
 
@@ -160,6 +307,11 @@ def compare_model_to_baselines(
 
     # 3. Positional rank / ADP baseline
     baselines["prior_season_rank"] = positional_rank_baseline(df, target_col=target_col).values
+
+    # 4. Expert consensus baseline (strongest non-ML baseline)
+    baselines["expert_consensus"] = expert_consensus_baseline_vectorized(
+        df, target_col=target_col
+    ).values
 
     # Evaluate each
     results: Dict[str, Dict[str, float]] = {}
@@ -230,17 +382,26 @@ def format_baseline_report(comparison: Dict[str, Dict[str, float]]) -> str:
     ]
 
     any_beaten = False
+    beats_expert = False
     for name, metrics in comparison.items():
         beaten = metrics["model_beats_baseline"]
         any_beaten = any_beaten or beaten
+        if name == "expert_consensus" and beaten:
+            beats_expert = True
         marker = "BEATS" if beaten else "LOSES TO"
-        lines.append(f"  {name}:")
+        tag = " [CRITICAL]" if name == "expert_consensus" else ""
+        lines.append(f"  {name}{tag}:")
         lines.append(f"    Baseline RMSE: {metrics['baseline_rmse']:.3f}  |  Model RMSE: {metrics['model_rmse']:.3f}")
         lines.append(f"    Improvement:   {metrics['rmse_improvement_pct']:+.1f}% RMSE  |  {metrics['mae_improvement_pct']:+.1f}% MAE")
         lines.append(f"    Verdict:       Model {marker} this baseline  (n={metrics['n_compared']})")
         lines.append("")
 
     lines.append("-" * 70)
+    if beats_expert:
+        lines.append("MODEL BEATS EXPERT CONSENSUS — provides real value over human projections.")
+    elif "expert_consensus" in comparison:
+        lines.append("WARNING: Model does NOT beat expert consensus baseline.")
+        lines.append("The model may not provide value over human expert projections.")
     if any_beaten:
         lines.append("MODEL DEMONSTRATES EDGE over at least one strong baseline.")
     else:
