@@ -20,6 +20,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from src.features.utilization_score import calculate_utilization_scores
 from config.settings import UTILIZATION_WEIGHTS
+from src.features.feature_policy_registry import FeaturePolicyRegistry
 
 
 class UtilizationCalculator:
@@ -405,7 +406,12 @@ def engineer_all_features(
     
     print(f"  Added playoff/week features: is_playoff_week, is_super_bowl, season_phase, etc.")
     
-    # Fill NaN values
+    # Apply policy registry for grouped missing-data handling + indicator flags
+    policy_registry = FeaturePolicyRegistry.from_config()
+    fail_policy = bool(require_bounds and not allow_autoload_bounds)
+    policy_registry.apply(df, context="utilization_engineering", fail_on_threshold=fail_policy)
+
+    # Fill remaining NaN values (non-policy features)
     numeric_cols = df.select_dtypes(include=[np.number]).columns
     df[numeric_cols] = df[numeric_cols].fillna(0)
     

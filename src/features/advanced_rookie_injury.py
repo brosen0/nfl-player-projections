@@ -23,6 +23,7 @@ import numpy as np
 from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass
 from pathlib import Path
+from src.features.feature_policy_registry import FeaturePolicyRegistry
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -1394,6 +1395,10 @@ def add_advanced_rookie_injury_features(df: pd.DataFrame, fit_injury_classifier:
     # when called on combined train+test data via _apply_with_temporal_context
     injury_predictor = AdvancedInjuryPredictor()
     df = injury_predictor.add_advanced_injury_features(df, fit_classifier=fit_injury_classifier)
+
+    # Apply grouped missing-data policies consistently with other feature builders.
+    policy_registry = FeaturePolicyRegistry.from_config()
+    policy_registry.apply(df, context="advanced_rookie_injury", fail_on_threshold=False)
 
     print(f"\nAdded advanced rookie, combine, and injury features")
 
