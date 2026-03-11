@@ -215,6 +215,96 @@ class ResearchLoop:
             return None
         return min(pending, key=lambda h: h.priority)
 
+    def generate_hypotheses(
+        self,
+        training_metrics: Dict[str, Dict[str, Any]],
+        positions: List[str],
+        feature_version: str = "",
+    ) -> List[Hypothesis]:
+        """Generate research hypotheses from training results.
+
+        Per Directive V7 Section 14: hypothesis generation based on
+        residual analysis, feature importance, and performance patterns.
+
+        Args:
+            training_metrics: Per-position metrics from training.
+            positions: Positions that were trained.
+            feature_version: Current feature version.
+
+        Returns:
+            List of generated hypotheses added to queue.
+        """
+        generated = []
+
+        # Identify underperforming positions
+        rmses = {
+            pos: m.get("rmse", float("inf"))
+            for pos, m in training_metrics.items()
+            if m.get("rmse") is not None
+        }
+        if rmses:
+            worst_pos = max(rmses, key=rmses.get)
+            best_pos = min(rmses, key=rmses.get)
+            avg_rmse = sum(rmses.values()) / len(rmses)
+
+            # If worst position is >25% worse than average, suggest investigation
+            if rmses[worst_pos] > avg_rmse * 1.25:
+                h = self.add_hypothesis(
+                    description=(
+                        f"{worst_pos} RMSE ({rmses[worst_pos]:.2f}) is >25% worse than "
+                        f"average ({avg_rmse:.2f}). Investigate position-specific features "
+                        f"or model architecture changes."
+                    ),
+                    category="model",
+                    priority=2,
+                )
+                generated.append(h)
+
+            # If best and worst differ by >50%, suggest transfer learning
+            if rmses[worst_pos] > rmses[best_pos] * 1.5:
+                h = self.add_hypothesis(
+                    description=(
+                        f"Large performance gap: {best_pos} RMSE={rmses[best_pos]:.2f} vs "
+                        f"{worst_pos} RMSE={rmses[worst_pos]:.2f}. Consider what makes "
+                        f"{best_pos} features effective and apply similar patterns to {worst_pos}."
+                    ),
+                    category="feature",
+                    priority=3,
+                )
+                generated.append(h)
+
+        # Check for positions with poor R² (model explains <50% of variance)
+        for pos, m in training_metrics.items():
+            r2 = m.get("r2")
+            if r2 is not None and r2 < 0.50:
+                h = self.add_hypothesis(
+                    description=(
+                        f"{pos} R²={r2:.2f} indicates the model explains <50% of variance. "
+                        f"Consider adding interaction features, non-linear transforms, "
+                        f"or more recent training data."
+                    ),
+                    category="feature",
+                    priority=3,
+                )
+                generated.append(h)
+
+        # Suggest periodic feature audit
+        h = self.add_hypothesis(
+            description=(
+                f"Feature version {feature_version}: run feature importance stability "
+                f"check. Retire features that have dropped out of top-20 for 3+ "
+                f"consecutive training runs."
+            ),
+            category="feature",
+            priority=5,
+        )
+        generated.append(h)
+
+        if generated:
+            logger.info("Generated %d research hypotheses from training results", len(generated))
+
+        return generated
+
     def complete_hypothesis(
         self,
         hypothesis_id: str,

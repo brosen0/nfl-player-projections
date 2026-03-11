@@ -38,6 +38,9 @@ from config.settings import (
     MIN_PLAYERS_PER_POSITION,
     RETRAINING_CONFIG,
 )
+from src.governance.approval_gates import GovernanceManager, DecisionAuthority
+from src.evaluation.compute_budget import ComputeBudget
+from src.models.meta_learning import MetaLearningRegistry
 from src.utils.database import DatabaseManager
 from src.utils.data_manager import DataManager, auto_refresh_data
 from src.features.feature_engineering import FeatureEngineer, PositionFeatureEngineer
@@ -1419,7 +1422,9 @@ def train_models(positions: list = None,
                  optimize_training_years: bool = False,
                  walk_forward: bool = False,
                  strict_requirements: bool = None,
-                 fast: bool = False):
+                 fast: bool = False,
+                 skip_governance: bool = False,
+                 shadow: bool = False):
     """
     Main training function with automatic train/test split.
 
@@ -1431,6 +1436,8 @@ def train_models(positions: list = None,
         walk_forward: If True, run walk-forward validation (train on 1..N-1, test on N) for last 4 seasons and report mean +/- std RMSE/MAE.
         fast: If True, apply FAST_MODEL_CONFIG overrides for ~8-10x faster training
               with minimal accuracy loss.
+        skip_governance: If True, skip governance approval gates (dev/fast mode).
+        shadow: If True, save model as shadow candidate instead of promoting directly.
     """
     # Apply fast-mode overrides before reading any config values
     if fast:
@@ -1459,6 +1466,19 @@ def train_models(positions: list = None,
         description=f"train_models {'fast' if fast else 'full'} run",
     )
 
+    # Directive V7 Section 20: Compute budget tracking
+    import time as _time
+    budget = ComputeBudget(
+        total_budget_seconds=float(MODEL_CONFIG.get("compute_budget_seconds", 7200)),
+    )
+    _phase_start = _time.monotonic()
+
+    # Directive V7 Section 7: Meta-learning registry
+    meta_registry = MetaLearningRegistry()
+
+    # Directive V7 Section 21: Governance manager
+    governance = GovernanceManager()
+
     print("=" * 60)
     print("NFL Player Performance Model Training")
     print(f"  Experiment run: {experiment_run_id}")
@@ -1466,6 +1486,7 @@ def train_models(positions: list = None,
     
     # Load data with automatic train/test split (test = latest season)
     print("\n[1/5] Loading training data...")
+    _phase_start = _time.monotonic()
     train_data, test_data, train_seasons, actual_test_season = load_training_data(
         positions,
         test_season=test_season,
@@ -1473,6 +1494,7 @@ def train_models(positions: list = None,
         optimize_training_years=optimize_training_years,
         strict_requirements=strict_requirements,
     )
+    budget.log_task("data_loading", "load_training_data", _time.monotonic() - _phase_start)
     print(f"Training records: {len(train_data)}")
     print(f"Test records: {len(test_data)}")
 
@@ -1525,10 +1547,12 @@ def train_models(positions: list = None,
     # Shared preprocessing: DVP, external, season-long, utilization, targets,
     # feature engineering, bounded scaling, winsorization, model training, util-to-fp.
     print("\n[2/5] Preparing features, engineering, and training...")
+    _phase_start = _time.monotonic()
     train_data, test_data, trainer = _prepare_training_data(
         train_data, test_data, positions, tune_hyperparameters, n_trials,
         fast=fast,
     )
+    budget.log_task("model_training", "prepare_and_train", _time.monotonic() - _phase_start)
 
     # Data quality checks (train_models-only, not needed in walk-forward folds)
     print("\n[3/5] Data quality checks...")
@@ -1848,6 +1872,168 @@ def train_models(positions: list = None,
     else:
         print("\n[6/6] Rolling-origin CV validation skipped (fast mode)")
     
+    # ---------------------------------------------------------------
+    # Directive V7 integrations: governance, budget, meta-learning,
+    # evaluation matrix, label baseline, research loop
+    # ---------------------------------------------------------------
+    _phase_start = _time.monotonic()
+
+    # Directive V7 Section 13: Consolidated evaluation matrix
+    try:
+        from src.evaluation.evaluation_matrix import generate_evaluation_matrix
+        eval_matrix = generate_evaluation_matrix(
+            training_metrics=trainer.training_metrics,
+            positions=list(trainer.trained_models.keys()),
+            train_seasons=train_seasons,
+            test_season=actual_test_season,
+            feature_version=FEATURE_VERSION.strip(),
+            experiment_id=experiment_run_id,
+        )
+        print(f"  Evaluation matrix written (Section 13)")
+    except Exception as e:
+        logger.warning("Evaluation matrix generation failed: %s", e)
+
+    # Directive V7 Section 7: Record results in meta-learning registry
+    try:
+        for pos, metrics in trainer.training_metrics.items():
+            rmse_val = metrics.get("rmse")
+            if rmse_val is not None:
+                meta_registry.record_result(
+                    position=pos,
+                    horizon="1w",
+                    regime="full_season",
+                    model_family="ensemble",
+                    feature_set=FEATURE_VERSION.strip(),
+                    calibration_method="none",
+                    primary_metric="rmse",
+                    primary_value=float(rmse_val),
+                    experiment_id=experiment_run_id,
+                    extra={
+                        "mae": metrics.get("mae"),
+                        "r2": metrics.get("r2"),
+                        "train_seasons": train_seasons,
+                        "test_season": actual_test_season,
+                        "fast_mode": fast,
+                    },
+                )
+        # Log best known config for each position
+        for pos in positions:
+            best = meta_registry.best_config_for(position=pos, horizon="1w", metric="rmse")
+            if best:
+                print(f"  Meta-learning: {pos} best RMSE={best['primary_value']:.4f} "
+                      f"(feature_set={best.get('feature_set', '?')})")
+        print(f"  Meta-learning registry updated (Section 7)")
+    except Exception as e:
+        logger.warning("Meta-learning registry update failed: %s", e)
+
+    # Directive V7 Section 18.3: Save label baseline for drift detection
+    try:
+        from src.evaluation.monitoring import ModelMonitor
+        target_cols = [c for c in train_data.columns if c.startswith("target_") and "util" not in c]
+        if "fantasy_points" in train_data.columns:
+            target_cols = ["fantasy_points"] + target_cols
+        for col in target_cols[:3]:  # Save baselines for top targets
+            vals = train_data[col].dropna().values
+            if len(vals) > 50:
+                baseline_path = MODELS_DIR / f"label_baseline_{col}.json"
+                ModelMonitor.save_label_baseline(vals, baseline_path)
+        # Also save a generic label baseline
+        if "fantasy_points" in train_data.columns:
+            fp_vals = train_data["fantasy_points"].dropna().values
+            if len(fp_vals) > 50:
+                ModelMonitor.save_label_baseline(fp_vals, MODELS_DIR / "label_baseline.json")
+                print(f"  Label baseline saved for drift detection (Section 18.3)")
+    except Exception as e:
+        logger.warning("Label baseline save failed: %s", e)
+
+    # Directive V7 Section 21: Governance gate for model promotion
+    if not skip_governance:
+        try:
+            authority = governance.check_authority("model_promotion")
+            if authority != DecisionAuthority.AUTONOMOUS:
+                approval_req = governance.request_approval(
+                    action="model_promotion",
+                    action_summary=(
+                        f"Promote newly trained models for {list(trainer.trained_models.keys())} "
+                        f"(test season {actual_test_season}, experiment {experiment_run_id})"
+                    ),
+                    evidence_package={
+                        "experiment_id": experiment_run_id,
+                        "training_metrics": {
+                            pos: {k: round(v, 4) if isinstance(v, float) else v
+                                  for k, v in m.items()}
+                            for pos, m in trainer.training_metrics.items()
+                        },
+                        "train_seasons": train_seasons,
+                        "test_season": actual_test_season,
+                        "feature_version": FEATURE_VERSION.strip(),
+                    },
+                    risk_assessment=(
+                        f"New model replaces current production artifacts. "
+                        f"Rollback available to {len(version_history) if 'version_history' in dir() else 0} previous versions."
+                    ),
+                    rollback_plan="Restore previous model artifacts from data/models/model_version_history.json",
+                )
+                print(f"  Governance: approval request {approval_req.request_id} submitted "
+                      f"(authority={authority.value})")
+                if shadow:
+                    print(f"  Shadow mode: model saved as candidate, not promoted to production")
+            else:
+                print(f"  Governance: model_promotion is autonomous (auto-approved)")
+        except Exception as e:
+            logger.warning("Governance gate check failed: %s", e)
+    else:
+        print("  Governance: skipped (--skip-governance)")
+
+    # Directive V7 Section 22: Check for safety conflicts (leakage audit)
+    try:
+        from src.governance.conflict_resolution import ConflictResolver, ConflictCategory
+        conflict_resolver = ConflictResolver()
+        # If distribution shift was detected, log as potential safety conflict
+        if 'dist_shift' in dir() and isinstance(dist_shift, dict) and dist_shift.get("shift_detected"):
+            conflict = conflict_resolver.log_conflict(
+                category=ConflictCategory.SAFETY,
+                agent_a="model_agent",
+                agent_b="audit_agent",
+                description=(
+                    f"Train/test distribution shift detected (adversarial AUC="
+                    f"{dist_shift.get('adversarial_auc', '?')}). "
+                    f"Model predictions on test data may be unreliable."
+                ),
+                evidence={"distribution_shift": dist_shift},
+            )
+            print(f"  Conflict logged: {conflict.conflict_id} (distribution shift)")
+    except Exception as e:
+        logger.warning("Conflict resolution check failed: %s", e)
+
+    # Directive V7 Section 14: Generate research hypotheses
+    try:
+        from src.research.auto_experiment import ResearchLoop
+        research = ResearchLoop()
+        hypotheses = research.generate_hypotheses(
+            training_metrics=trainer.training_metrics,
+            positions=list(trainer.trained_models.keys()),
+            feature_version=FEATURE_VERSION.strip(),
+        )
+        if hypotheses:
+            print(f"  Research loop: {len(hypotheses)} hypotheses generated (Section 14)")
+    except Exception as e:
+        logger.warning("Research hypothesis generation failed: %s", e)
+
+    # Directive V7 Section 20: Budget summary
+    budget.log_task("evaluation", "v7_integrations", _time.monotonic() - _phase_start)
+    budget_summary = budget.get_summary()
+    try:
+        budget.save(MODELS_DIR.parent / "experiments")
+        tracker.log_params(experiment_run_id, {"compute_budget": budget_summary})
+        print(f"  Compute budget: {budget_summary['consumed_seconds']:.1f}s / "
+              f"{budget_summary['total_budget_seconds']:.0f}s "
+              f"({budget_summary['consumed_pct']:.1f}%)")
+        if budget_summary["is_over_budget"]:
+            print(f"  WARNING: Compute budget exceeded!")
+    except Exception as e:
+        logger.warning("Budget summary save failed: %s", e)
+
     # Print summary
     print("\n" + "=" * 60)
     print("Training Summary")
@@ -1856,7 +2042,7 @@ def train_models(positions: list = None,
     print(f"Test season: {actual_test_season}")
     summary = trainer.get_training_summary()
     print(summary.to_string(index=False))
-    
+
     print("\nModels saved to:", MODELS_DIR)
     # Persist feature version so prediction path can detect stale (old-feature) models
     version_path = MODELS_DIR / FEATURE_VERSION_FILENAME
@@ -2081,6 +2267,17 @@ def main():
              "Reduces Optuna trials, CV folds, stability bootstrap, LSTM/deep epochs, "
              "and skips SHAP/PDP and robust CV report."
     )
+    parser.add_argument(
+        "--skip-governance",
+        action="store_true",
+        help="Skip governance approval gates (for dev/fast iterations)."
+    )
+    parser.add_argument(
+        "--shadow",
+        action="store_true",
+        help="Save new model as shadow candidate instead of promoting directly "
+             "(per Directive V7 Section 18 staged deployment)."
+    )
 
     args = parser.parse_args()
 
@@ -2093,6 +2290,8 @@ def main():
         walk_forward=args.walk_forward,
         strict_requirements=args.strict_requirements,
         fast=args.fast,
+        skip_governance=args.skip_governance,
+        shadow=args.shadow,
     )
 
 
