@@ -230,6 +230,8 @@ MODEL_CONFIG = {
     "stability_n_bootstrap": 30,
     # SHAP/PDP explainability (can be slow on large models)
     "enable_shap_pdp": True,
+    # Directive V7 Section 20: Compute budget (wall-clock seconds per training cycle)
+    "compute_budget_seconds": 7200,  # 2 hours default
 }
 
 # -----------------------------------------------------------------------------

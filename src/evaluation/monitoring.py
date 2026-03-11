@@ -224,6 +224,151 @@ class ModelMonitor:
         return alerts
 
     # ------------------------------------------------------------------
+    # Label drift detection (Directive V7 Section 18.3, 3rd drift axis)
+    # ------------------------------------------------------------------
+
+    def check_label_drift(
+        self,
+        recent_targets: np.ndarray,
+        baseline_path: Optional[Path] = None,
+        psi_threshold: float = 0.20,
+        base_rate_shift_threshold: float = 0.20,
+    ) -> List[Dict[str, Any]]:
+        """Detect label/prior drift by comparing target distributions.
+
+        Per Directive V7 Section 18.3: monitor the rolling base rate of the
+        target variable and compare to the training-era base rate.
+
+        Args:
+            recent_targets: Recent actual target values.
+            baseline_path: Path to training-era label baseline JSON.
+            psi_threshold: PSI threshold for alert (default 0.2).
+            base_rate_shift_threshold: Relative base rate shift (default 20%).
+
+        Returns:
+            List of alert dicts.
+        """
+        alerts: List[Dict[str, Any]] = []
+        targets = np.asarray(recent_targets, dtype=float)
+        targets = targets[np.isfinite(targets)]
+        if len(targets) < 10:
+            return alerts
+
+        # Load training-era baseline
+        baseline_path = baseline_path or (self.alert_dir.parent / "models" / "label_baseline.json")
+        if not baseline_path.exists():
+            logger.debug("No label baseline found at %s; skipping label drift check", baseline_path)
+            return alerts
+
+        import json as _json
+        try:
+            with open(baseline_path, encoding="utf-8") as f:
+                baseline = _json.load(f)
+        except (IOError, _json.JSONDecodeError):
+            return alerts
+
+        # Base rate shift check
+        baseline_mean = baseline.get("mean")
+        if baseline_mean is not None and baseline_mean > 0:
+            current_mean = float(np.mean(targets))
+            relative_shift = abs(current_mean - baseline_mean) / baseline_mean
+            if relative_shift > base_rate_shift_threshold:
+                alerts.append(self._make_alert(
+                    AlertLevel.WARNING,
+                    f"Label drift detected: mean={current_mean:.2f} vs "
+                    f"baseline={baseline_mean:.2f} ({relative_shift:.1%} shift)",
+                    {
+                        "current_mean": current_mean,
+                        "baseline_mean": baseline_mean,
+                        "relative_shift": round(relative_shift, 4),
+                        "drift_axis": "label_drift",
+                    },
+                ))
+
+        # PSI check (Population Stability Index)
+        baseline_bins = baseline.get("histogram_bins")
+        baseline_freqs = baseline.get("histogram_freqs")
+        if baseline_bins and baseline_freqs:
+            try:
+                bins = np.array(baseline_bins)
+                expected = np.array(baseline_freqs, dtype=float)
+                observed = np.histogram(targets, bins=bins)[0].astype(float)
+                # Normalize to proportions
+                expected = expected / max(expected.sum(), 1)
+                observed = observed / max(observed.sum(), 1)
+                # Add small epsilon to avoid log(0)
+                eps = 1e-6
+                expected = np.clip(expected, eps, None)
+                observed = np.clip(observed, eps, None)
+                psi = float(np.sum((observed - expected) * np.log(observed / expected)))
+                if psi > psi_threshold:
+                    alerts.append(self._make_alert(
+                        AlertLevel.WARNING,
+                        f"Label PSI drift: PSI={psi:.3f} exceeds threshold {psi_threshold}",
+                        {
+                            "psi": round(psi, 4),
+                            "threshold": psi_threshold,
+                            "drift_axis": "label_drift",
+                        },
+                    ))
+            except Exception as e:
+                logger.debug("PSI computation failed: %s", e)
+
+        for alert in alerts:
+            self._emit_alert(alert)
+
+        self._log_metrics({
+            "timestamp": datetime.now().isoformat(),
+            "type": "label_drift_check",
+            "n_targets": len(targets),
+            "current_mean": float(np.mean(targets)),
+            "baseline_mean": baseline.get("mean"),
+        })
+
+        return alerts
+
+    @staticmethod
+    def save_label_baseline(
+        targets: np.ndarray,
+        output_path: Path,
+        n_bins: int = 20,
+    ) -> Dict[str, Any]:
+        """Save training-era target distribution as baseline for drift detection.
+
+        Should be called during training to capture the label distribution.
+
+        Args:
+            targets: Training target values.
+            output_path: Where to save the baseline JSON.
+            n_bins: Number of histogram bins.
+
+        Returns:
+            Baseline dict.
+        """
+        targets = np.asarray(targets, dtype=float)
+        targets = targets[np.isfinite(targets)]
+        hist, bin_edges = np.histogram(targets, bins=n_bins)
+
+        baseline = {
+            "mean": round(float(np.mean(targets)), 4),
+            "std": round(float(np.std(targets)), 4),
+            "median": round(float(np.median(targets)), 4),
+            "min": round(float(np.min(targets)), 4),
+            "max": round(float(np.max(targets)), 4),
+            "n_samples": len(targets),
+            "histogram_bins": [round(float(b), 4) for b in bin_edges],
+            "histogram_freqs": [int(h) for h in hist],
+            "generated_at": datetime.now().isoformat(),
+        }
+
+        import json as _json
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(output_path, "w", encoding="utf-8") as f:
+            _json.dump(baseline, f, indent=2)
+
+        return baseline
+
+    # ------------------------------------------------------------------
     # Alert summary
     # ------------------------------------------------------------------
 
@@ -381,6 +526,11 @@ class ModelMonitor:
                 "prediction_std_drift": self.prediction_std_drift_threshold,
                 "feature_drift_ks": self.feature_drift_ks_threshold,
                 "error_rmse_degradation": self.error_rmse_degradation_threshold,
+            },
+            "drift_axes": {
+                "data_drift": "KS test on features (check_feature_drift)",
+                "concept_drift": "RMSE degradation (check_actuals)",
+                "label_drift": "PSI + base rate shift (check_label_drift)",
             },
         }
 

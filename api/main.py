@@ -35,6 +35,22 @@ if str(_PROJECT_ROOT) not in sys.path:
 
 from config.settings import MODELS_DIR
 
+# Directive V7 Section 1/18: Circuit breaker for prediction quality
+from src.evaluation.monitoring import ModelMonitor as _ModelMonitor
+
+_model_monitor = _ModelMonitor()
+
+# Load reference stats for circuit breaker from model metadata
+_reference_stats: Dict[str, Any] = {}
+try:
+    _meta_path = _PROJECT_ROOT / "data" / "models" / "model_metadata.json"
+    if _meta_path.exists():
+        import json as _json_init
+        with open(_meta_path, encoding="utf-8") as _f:
+            _reference_stats = _json_init.load(_f)
+except Exception:
+    pass
+
 from src.app_data import (
     load_advanced_model_results,
     load_backtest_results,
@@ -393,7 +409,39 @@ def get_predictions(
 ):
     """Predictions table from parquet as JSON. Returns only prediction-target (upcoming) week rows. Optional filter by position, name (substring), and horizon."""
     try:
-        return _get_predictions_impl(position=position, name=name, horizon=horizon)
+        result = _get_predictions_impl(position=position, name=name, horizon=horizon)
+
+        # Directive V7 Section 1/18: Circuit breaker — check prediction quality
+        rows = result.get("rows", [])
+        if rows:
+            import numpy as _np
+            proj_key = "projected_points"
+            pred_values = [r.get(proj_key) or r.get("predicted_points") for r in rows]
+            pred_values = [v for v in pred_values if v is not None]
+            if pred_values:
+                preds_arr = _np.array(pred_values, dtype=float)
+                ref_mean = None
+                # Extract reference mean from metadata per-position metrics
+                metrics = _reference_stats.get("training_metrics", {})
+                if position and position.upper() in metrics:
+                    pos_m = metrics[position.upper()]
+                    ref_mean = pos_m.get("mean_predicted") or pos_m.get("mean_actual")
+                cb_result = _model_monitor.circuit_breaker(
+                    preds_arr,
+                    position=position or "ALL",
+                    reference_mean=ref_mean,
+                )
+                if not cb_result.get("allow_predictions", True):
+                    return JSONResponse(
+                        status_code=503,
+                        content={
+                            "detail": "Circuit breaker tripped: predictions disabled due to quality degradation",
+                            "reasons": cb_result.get("reasons", []),
+                            "timestamp": cb_result.get("timestamp"),
+                        },
+                    )
+
+        return result
     except Exception as e:
         logger.exception("Predictions endpoint failed: %s", e)
         return JSONResponse(
@@ -637,6 +685,31 @@ def monitoring_dashboard() -> Dict[str, Any]:
         }
     else:
         dashboard["api_latency"] = {"recent_requests": 0}
+
+    # Directive V7 Section 22: Conflict resolution status
+    try:
+        from src.governance.conflict_resolution import ConflictResolver
+        conflict_resolver = ConflictResolver()
+        dashboard["conflict_status"] = conflict_resolver.get_summary()
+    except Exception:
+        dashboard["conflict_status"] = {"available": False}
+
+    # Directive V7 Section 18: Deployment status
+    try:
+        from src.deployment.staged_deployment import StagedDeploymentManager
+        deployer = StagedDeploymentManager()
+        dashboard["deployment_status"] = deployer.get_deployment_summary()
+    except Exception:
+        dashboard["deployment_status"] = {"available": False}
+
+    # Directive V7 Section 21: Governance pending requests
+    try:
+        from src.governance.approval_gates import GovernanceManager
+        gov = GovernanceManager()
+        pending = gov.get_pending_requests()
+        dashboard["governance"] = {"pending_approvals": len(pending)}
+    except Exception:
+        dashboard["governance"] = {"available": False}
 
     return dashboard
 
