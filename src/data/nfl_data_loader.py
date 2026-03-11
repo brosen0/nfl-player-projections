@@ -48,6 +48,7 @@ from src.utils.database import DatabaseManager
 from src.utils.helpers import calculate_fantasy_points
 from src.utils.nfl_calendar import get_current_nfl_season, get_current_nfl_week, current_season_has_weeks_played
 from src.data.schema_validator import validate_weekly_data, validate_schedule_data
+from src.data.entity_resolver import resolver
 
 
 # ---------------------------------------------------------------------------
@@ -279,6 +280,15 @@ class NFLDataLoader:
             df['rush_plays'] = df['rushing_attempts']
         if 'recv_targets' not in df.columns and 'targets' in df.columns:
             df['recv_targets'] = df['targets']
+        normalized = resolver.build_keys(df, source="pbp_weekly", name_col="name")
+        df = normalized.dataframe
+        if 'canonical_player_id' in df.columns:
+            fill_mask = df['player_id'].isna() | (df['player_id'].astype(str).str.strip() == '')
+            df.loc[fill_mask, 'player_id'] = df.loc[fill_mask, 'canonical_player_id']
+        if 'team_norm' in df.columns:
+            df['team'] = df['team_norm'].where(df['team_norm'] != '', df.get('team', ''))
+        if 'opponent_norm' in df.columns and 'opponent' in df.columns:
+            df['opponent'] = df['opponent_norm'].where(df['opponent_norm'] != '', df['opponent'])
         return df
     
     def _standardize_weekly_columns(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -357,7 +367,15 @@ class NFLDataLoader:
             df['home_away'] = np.where(df['team'] == df['home_team'], 'home', 'away')
         else:
             df['home_away'] = 'unknown'
-        
+
+        normalized = resolver.build_keys(df, source="weekly", name_col="name")
+        df = normalized.dataframe
+        fill_mask = df['player_id'].isna() | (df['player_id'].astype(str).str.strip() == '')
+        df.loc[fill_mask, 'player_id'] = df.loc[fill_mask, 'canonical_player_id']
+        df['team'] = df['team_norm'].where(df['team_norm'] != '', df['team'])
+        if 'opponent' in df.columns:
+            df['opponent'] = df['opponent_norm'].where(df['opponent_norm'] != '', df['opponent'])
+
         return df
 
     def _merge_advanced_pbp_features(self, df: pd.DataFrame, pbp_df: pd.DataFrame) -> pd.DataFrame:
