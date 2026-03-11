@@ -27,7 +27,9 @@ import sys
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from src.utils.database import DatabaseManager
+from config.settings import MODELS_DIR
 from src.data.nfl_data_loader import NFLDataLoader
+from src.data.quality_gates import run_db_quality_gates
 from src.utils.nfl_calendar import (
     get_current_nfl_season as get_current_nfl_season_calendar,
     get_current_nfl_week,
@@ -224,6 +226,16 @@ class NFLDataRefresher:
         except Exception as e:
             results['errors'].append(f"Team stats backfill: {e}")
         
+        # Data quality gates
+        try:
+            dq_path = MODELS_DIR / "data_quality_gate_refresh.json"
+            dq_result = run_db_quality_gates(report_path=dq_path)
+            results["quality_gates"] = {"passed": dq_result.passed, "report_path": str(dq_path)}
+            if not dq_result.passed:
+                results["errors"].append("Data quality gates failed after refresh")
+        except Exception as e:
+            results["errors"].append(f"Data quality gate execution failed: {e}")
+
         # Summary
         print("\n" + "="*60)
         print("Refresh Complete")
@@ -238,6 +250,9 @@ class NFLDataRefresher:
             print(f"✅ Loaded schedules: {results['schedules_loaded']}")
         if results.get('team_stats_backfilled', 0) > 0:
             print(f"✅ Team stats backfilled: {results['team_stats_backfilled']} rows")
+        if results.get("quality_gates"):
+            gate_state = "✅ PASSED" if results["quality_gates"]["passed"] else "❌ FAILED"
+            print(f"{gate_state} Data quality gates ({results['quality_gates']['report_path']})")
         if results['errors']:
             for error in results['errors']:
                 print(f"❌ {error}")

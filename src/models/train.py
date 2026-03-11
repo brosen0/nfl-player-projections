@@ -55,6 +55,7 @@ from src.models.ensemble import ModelTrainer
 from src.models.robust_validation import RobustTimeSeriesCV
 from src.evaluation.backtester import ModelBacktester
 from src.models.utilization_to_fp import train_utilization_to_fp_per_position
+from src.data.quality_gates import run_quality_gates
 from src.evaluation.explainability import (
     get_top10_feature_importance_per_position,
     explain_with_shap,
@@ -1452,6 +1453,13 @@ def train_models(positions: list = None,
     )
     print(f"Training records: {len(train_data)}")
     print(f"Test records: {len(test_data)}")
+
+    dq_report_path = MODELS_DIR / "data_quality_gate_training.json"
+    dq_result = run_quality_gates(pd.concat([train_data, test_data], ignore_index=True), report_path=dq_report_path)
+    dq_status = "PASSED" if dq_result.passed else "FAILED"
+    print(f"Data quality gates: {dq_status} ({dq_report_path})")
+    if not dq_result.passed:
+        raise ValueError(f"Pre-modeling data quality gates failed. See report: {dq_report_path}")
 
     # Optional walk-forward validation: train on 1..N-1, test on N for last 4 seasons
     if walk_forward:
