@@ -19,7 +19,7 @@ import pandas as pd
 import numpy as np
 import os
 import warnings
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional, Tuple, Any
 from pathlib import Path
 
 import sys
@@ -33,6 +33,7 @@ from src.utils.helpers import (
     rolling_average, exponential_weighted_average,
     create_lag_features, safe_divide
 )
+from src.features.feature_policy_registry import FeaturePolicyRegistry
 
 # Rolling/aggregation on sparse early-season windows can emit this benign warning.
 warnings.filterwarnings("ignore", message="Mean of empty slice", category=RuntimeWarning)
@@ -45,6 +46,8 @@ class FeatureEngineer:
         self.rolling_windows = ROLLING_WINDOWS
         self.lag_weeks = LAG_WEEKS
         self.feature_columns = []
+        self.policy_registry = FeaturePolicyRegistry.from_config()
+        self.last_imputation_report: Dict[str, Any] = {}
     
     def create_features(self, df: pd.DataFrame, 
                         include_target: bool = True) -> pd.DataFrame:
@@ -108,8 +111,22 @@ class FeatureEngineer:
         
         # Check missing rate per feature (requirement: max 5% acceptable); log exceedances
         self._check_missing_rate(df, threshold_pct=5.0)
+
+        # Group policy-based imputations + indicator flags.
+        fail_policy = os.getenv("NFL_FEATURE_POLICY_FAIL_ON_THRESHOLD", "0") == "1"
+        policy_result = self.policy_registry.apply(
+            df,
+            context="feature_engineering",
+            fail_on_threshold=fail_policy,
+        )
+
         # Final imputation: no NaN/inf in numeric columns so pipelines are robust
         df = self._impute_missing(df)
+        self.last_imputation_report = {
+            "rates": policy_result.rates,
+            "warn_features": policy_result.flagged_warn,
+            "fail_features": policy_result.flagged_fail,
+        }
         
         # Store feature column names
         self._update_feature_columns(df)
