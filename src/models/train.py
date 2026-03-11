@@ -62,6 +62,7 @@ from src.data.lineage import (
     utc_now_iso,
 )
 from src.models.utilization_to_fp import train_utilization_to_fp_per_position
+from src.data.quality_gates import run_quality_gates
 from src.evaluation.explainability import (
     get_top10_feature_importance_per_position,
     explain_with_shap,

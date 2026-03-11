@@ -57,22 +57,22 @@ from src.data.lineage import persist_dataframe_artifact, set_artifact_id
 # ---------------------------------------------------------------------------
 @retry_with_backoff(max_retries=3, base_delay=2.0)
 def _fetch_weekly_data(seasons):
-    return _fetch_weekly_data(seasons)
+    return nfl.import_weekly_data(seasons)
 
 
 @retry_with_backoff(max_retries=3, base_delay=2.0)
 def _fetch_snap_counts(seasons):
-    return _fetch_snap_counts(seasons)
+    return nfl.import_snap_counts(seasons)
 
 
 @retry_with_backoff(max_retries=3, base_delay=2.0)
 def _fetch_schedules(seasons):
-    return _fetch_schedules(seasons)
+    return nfl.import_schedules(seasons)
 
 
 @retry_with_backoff(max_retries=3, base_delay=2.0)
 def _fetch_rosters(seasons):
-    return _fetch_rosters(seasons)
+    return nfl.import_seasonal_rosters(seasons)
 
 
 def _to_scalar_int(x, default: int = 0) -> int:
@@ -240,6 +240,7 @@ class NFLDataLoader:
                 ):
                     df = self._merge_advanced_pbp_features(df, pbp_adv_df)
                 df = self._standardize_weekly_columns(df)
+                validate_weekly_data(df, strict=True)
                 # nfl_data_py weekly data only has offensive positions
                 df = df[df['position'].isin(OFFENSIVE_POSITIONS)]
                 df['fantasy_points'] = df.apply(
@@ -278,7 +279,7 @@ class NFLDataLoader:
 
         # Schema validation before processing (Directive V7, Section 19)
         for i, chunk_df in enumerate(all_dfs):
-            issues = validate_weekly_data(chunk_df)
+            issues = validate_weekly_data(chunk_df, strict=True)
             for issue in issues:
                 print(f"  Schema validation [{i}]: {issue}")
 
@@ -311,6 +312,15 @@ class NFLDataLoader:
             df['rush_plays'] = df['rushing_attempts']
         if 'recv_targets' not in df.columns and 'targets' in df.columns:
             df['recv_targets'] = df['targets']
+        normalized = resolver.build_keys(df, source="pbp_weekly", name_col="name")
+        df = normalized.dataframe
+        if 'canonical_player_id' in df.columns:
+            fill_mask = df['player_id'].isna() | (df['player_id'].astype(str).str.strip() == '')
+            df.loc[fill_mask, 'player_id'] = df.loc[fill_mask, 'canonical_player_id']
+        if 'team_norm' in df.columns:
+            df['team'] = df['team_norm'].where(df['team_norm'] != '', df.get('team', ''))
+        if 'opponent_norm' in df.columns and 'opponent' in df.columns:
+            df['opponent'] = df['opponent_norm'].where(df['opponent_norm'] != '', df['opponent'])
         return df
     
     def _standardize_weekly_columns(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -389,7 +399,15 @@ class NFLDataLoader:
             df['home_away'] = np.where(df['team'] == df['home_team'], 'home', 'away')
         else:
             df['home_away'] = 'unknown'
-        
+
+        normalized = resolver.build_keys(df, source="weekly", name_col="name")
+        df = normalized.dataframe
+        fill_mask = df['player_id'].isna() | (df['player_id'].astype(str).str.strip() == '')
+        df.loc[fill_mask, 'player_id'] = df.loc[fill_mask, 'canonical_player_id']
+        df['team'] = df['team_norm'].where(df['team_norm'] != '', df['team'])
+        if 'opponent' in df.columns:
+            df['opponent'] = df['opponent_norm'].where(df['opponent_norm'] != '', df['opponent'])
+
         return df
 
     def _merge_advanced_pbp_features(self, df: pd.DataFrame, pbp_df: pd.DataFrame) -> pd.DataFrame:
@@ -447,6 +465,7 @@ class NFLDataLoader:
     def _store_weekly_data(self, df: pd.DataFrame):
         """Store weekly data in the database."""
         print("  Storing in database...")
+        validate_weekly_data(df, strict=True)
         # Avoid duplicate column names (e.g. from merge/concat) so row values are scalars
         if df.columns.duplicated().any():
             df = df.loc[:, ~df.columns.duplicated(keep="first")]
@@ -585,6 +604,7 @@ class NFLDataLoader:
         df = df[df["position"].isin(POSITIONS)]
         if "fantasy_points" not in df.columns or df["fantasy_points"].isna().any():
             df["fantasy_points"] = df.apply(self._calculate_fantasy_points, axis=1)
+        validate_weekly_data(df, strict=True)
         self._store_weekly_data(df)
 
     def load_snap_counts(self, seasons: List[int], 
@@ -634,7 +654,7 @@ class NFLDataLoader:
     def _store_schedules(self, df: pd.DataFrame):
         """Store schedule data in database. Maps game_type to week 19-22 for playoffs (SB=22)."""
         # Schema validation (Directive V7, Section 19)
-        issues = validate_schedule_data(df)
+        issues = validate_schedule_data(df, strict=True)
         for issue in issues:
             print(f"  Schedule schema: {issue}")
         print("  Storing schedules in database...")

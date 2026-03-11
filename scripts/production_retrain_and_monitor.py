@@ -15,6 +15,7 @@ import time
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from config.settings import DATA_DIR, MODELS_DIR, RETRAINING_CONFIG
+from src.data.quality_gates import run_db_quality_gates
 
 BACKTEST_RESULTS_DIR = DATA_DIR / "backtest_results"
 DRIFT_THRESHOLD_PCT = float(RETRAINING_CONFIG.get("degradation_threshold_pct", 20.0))
@@ -131,6 +132,21 @@ def run_weekly_retrain(force: bool = False) -> bool:
         status.update({"completed": False, "error": f"data_refresh_failed: {e}"})
         _write_retrain_status(status, start)
         return False
+    dq_path = MODELS_DIR / "data_quality_gate_retrain.json"
+    try:
+        dq_result = run_db_quality_gates(report_path=dq_path)
+        status["data_quality_gates"] = {"passed": dq_result.passed, "report_path": str(dq_path)}
+        if not dq_result.passed and not force:
+            print(f"Pre-training quality gates failed. See {dq_path}")
+            status.update({"completed": False, "skipped": True, "reason": "data_quality_gates_failed"})
+            _write_retrain_status(status, start)
+            return False
+    except Exception as e:
+        print(f"Data quality gate execution failed: {e}")
+        status.update({"completed": False, "error": f"data_quality_gate_failed: {e}"})
+        _write_retrain_status(status, start)
+        return False
+
     try:
         from src.models.train import train_models
         train_models(tune_hyperparameters=False)
