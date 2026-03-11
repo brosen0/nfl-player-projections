@@ -21,6 +21,7 @@ Advantages over scraping:
 import os
 import ssl
 import certifi
+import uuid
 from typing import List, Optional
 import pandas as pd
 import numpy as np
@@ -48,7 +49,7 @@ from src.utils.database import DatabaseManager
 from src.utils.helpers import calculate_fantasy_points
 from src.utils.nfl_calendar import get_current_nfl_season, get_current_nfl_week, current_season_has_weeks_played
 from src.data.schema_validator import validate_weekly_data, validate_schedule_data
-from src.data.entity_resolver import resolver
+from src.data.lineage import persist_dataframe_artifact, set_artifact_id
 
 
 # ---------------------------------------------------------------------------
@@ -111,6 +112,7 @@ class NFLDataLoader:
     
     def __init__(self):
         self.db = DatabaseManager()
+        self.lineage_run_id = f"load_{uuid.uuid4().hex[:8]}"
     
     def load_weekly_data(self, seasons: List[int], 
                          store_in_db: bool = True,
@@ -213,6 +215,22 @@ class NFLDataLoader:
                     print(f"  PBP fallback for {season}: {e2}")
             if df.empty:
                 continue
+
+            bronze_meta = persist_dataframe_artifact(
+                df.copy(),
+                layer="bronze",
+                table="weekly_player_stats",
+                run_id=self.lineage_run_id,
+                metadata={
+                    "source": "nflverse_weekly_stats",
+                    "seasons": [int(season)],
+                    "week_window": {
+                        "start": int(df["week"].min()) if "week" in df.columns and len(df) else None,
+                        "end": int(df["week"].max()) if "week" in df.columns and len(df) else None,
+                    },
+                    "pulled_at": pd.Timestamp.utcnow().isoformat(),
+                },
+            )
             
             if not df.empty:
                 # Merge advanced PBP-derived columns into weekly data (if available)
@@ -228,6 +246,19 @@ class NFLDataLoader:
                 df['fantasy_points'] = df.apply(
                     lambda row: self._calculate_fantasy_points(row), axis=1
                 )
+                silver_meta = persist_dataframe_artifact(
+                    df.copy(),
+                    layer="silver",
+                    table="weekly_player_stats_canonical",
+                    run_id=self.lineage_run_id,
+                    metadata={
+                        "source": "nflverse_weekly_stats",
+                        "seasons": [int(season)],
+                        "normalization": "standardize_weekly_columns + offensive position filter + fantasy points derivation",
+                    },
+                    parent_artifact_ids=[bronze_meta["artifact_id"]],
+                )
+                df = set_artifact_id(df, silver_meta["artifact_id"])
                 all_dfs.append(df)
 
                 # Persist team-level advanced PBP stats when enabled

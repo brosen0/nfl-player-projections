@@ -1,81 +1,95 @@
 # Data Lineage and Provenance
 
-Per Agent Directive V7 Section 5 — documents the data transformation
-pipeline from raw sources to model-ready features.
+This project uses a formal **Bronze → Silver → Gold** artifact flow so model outputs can be traced back to exact source pulls.
 
----
+## Artifact Root
 
-## Data Sources
+All persisted artifacts are written under:
 
-| Source | Module | Frequency | Availability Timing |
-|--------|--------|-----------|-------------------|
-| nflverse weekly stats | `src/data/nfl_data_loader.py` | Weekly | Monday night / Tuesday |
-| Play-by-play data | `src/data/pbp_stats_aggregator.py` | Weekly | Monday morning |
-| Snap counts | `src/data/nfl_data_loader.py` | Weekly | Tuesday |
-| Schedule/matchups | `src/data/nfl_data_loader.py` | Pre-season | Available pre-season |
-| ESPN Fantasy API | `src/integrations/espn_fantasy.py` | Real-time | Live during games |
+- `data/artifacts/bronze/`
+- `data/artifacts/silver/`
+- `data/artifacts/gold/`
+- `data/artifacts/manifest.jsonl` (append-only index)
 
-## Transformation Pipeline
+## File Naming Convention
 
-```
-Raw Data Sources
-    │
-    ▼
-┌─────────────────────────────────┐
-│ 1. Data Loading & Validation    │  src/data/nfl_data_loader.py
-│    - Schema validation          │  src/data/schema_validator.py
-│    - Raw snapshot to parquet    │  data/snapshots/
-│    - Freshness SLA check       │
-└─────────────┬───────────────────┘
-              │
-              ▼
-┌─────────────────────────────────┐
-│ 2. Feature Engineering          │  src/features/feature_engineering.py
-│    - Rolling averages (shift 1) │  Temporal: lag, roll, EWM
-│    - Matchup adjustments        │  Contextual: opponent, venue
-│    - Utilization scoring        │  src/features/utilization_score.py
-│    - Multi-week features        │  src/features/multiweek_features.py
-│    - Dimensionality reduction   │  src/features/dimensionality_reduction.py
-└─────────────┬───────────────────┘
-              │
-              ▼
-┌─────────────────────────────────┐
-│ 3. Model Training               │  src/models/train.py
-│    - Position-specific models   │  src/models/position_models.py
-│    - Horizon models (1w/4w/18w) │  src/models/horizon_models.py
-│    - Ensemble construction      │  src/models/ensemble.py
-│    - Calibration (conformal)    │
-└─────────────┬───────────────────┘
-              │
-              ▼
-┌─────────────────────────────────┐
-│ 4. Prediction & Decision        │  src/predict.py
-│    - Point predictions          │  src/evaluation/decision_optimizer.py
-│    - Uncertainty estimates      │  src/optimization/lineup_optimizer.py
-│    - VOR rankings               │
-│    - Start/sit recommendations  │
-└─────────────────────────────────┘
-```
+Each artifact writes two files:
 
-## Data Versioning
+- `<artifact_id>.parquet`
+- `<artifact_id>.metadata.json`
 
-- **Dataset hashing**: `ExperimentTracker.log_dataset_hash()` computes
-  SHA-256 of each training DataFrame for reproducibility
-- **Raw snapshots**: Saved to `data/snapshots/` with timestamps
-- **Feature version**: Tracked in `config/settings.py:FEATURE_VERSION`
+Where:
 
-## Point-in-Time Validity
+- `artifact_id = {layer}_{table}_{run_id}_{dataset_hash12}`
+- `layer ∈ {bronze, silver, gold}`
+- `dataset_hash12` is the first 12 hex characters of the DataFrame SHA-256 content hash.
 
-All rolling/lag features use `shift(1)` to ensure only data from prior
-weeks is used. The `src/utils/leakage.py` module enforces:
+## Bronze Layer (raw source pulls)
 
-- No future data in training (temporal split enforcement)
-- No target encoding without proper fold isolation
-- Identifier columns (`id`, `player_id`) excluded from features
-- `sos_next_*` features use lagged opponent stats only
+Bronze persists untouched source pulls per run.
 
-## Survivorship Bias Considerations
+### Required metadata fields
 
-- Players who are injured/cut may disappear from later weeks
-- Rookie projections lack historical data (handled by rookie features)
-- Mid-season trades change team context (handled by `auto_refresh.py`)
+- `artifact_id`
+- `layer` = `bronze`
+- `table`
+- `run_id`
+- `source`
+- `seasons` (list[int])
+- `week_window` (`{"start": int|null, "end": int|null}`)
+- `pulled_at` (UTC ISO-8601)
+- `created_at` (UTC ISO-8601)
+- `row_count`
+- `column_count`
+- `schema_hash` (SHA-256 over ordered `column:dtype`)
+- `dataset_hash` (SHA-256 dataframe fingerprint)
+- `parent_artifact_ids` (usually empty for Bronze)
+- `parquet_path`
+
+## Silver Layer (canonical/normalized tables)
+
+Silver persists standardized canonical tables after cleaning/normalization.
+
+### Required metadata fields
+
+All common fields above, plus:
+
+- `normalization` (human-readable normalization summary)
+- `parent_artifact_ids` MUST include upstream Bronze artifact IDs.
+
+## Gold Layer (model training matrix)
+
+Gold persists the model training matrix used for fitting.
+
+### Required metadata fields
+
+All common fields above, plus:
+
+- `feature_version` (from `config.settings.FEATURE_VERSION`)
+- `target_definition` (explicit semantics for 1w/4w/18w targets)
+- `parent_artifact_ids` MUST include Silver + originating Bronze IDs.
+
+## Dataset Hash Logging Extension
+
+`ExperimentTracker.log_dataset_hash()` now accepts `parent_artifact_ids`.
+
+For each training run, the tracker logs:
+
+- `training_matrix_gold`
+- `holdout_matrix_gold`
+
+with `parent_artifact_ids` populated so each gold hash can be traced to exact upstream Bronze files.
+
+## Module Ownership
+
+- `src/data/lineage.py`
+  - artifact/hash helpers
+  - parquet + metadata persistence
+  - manifest append
+  - artifact ID propagation helpers (`set_artifact_id`, `get_artifact_id`)
+- `src/data/nfl_data_loader.py`
+  - Bronze + Silver persistence for source pulls and canonical weekly tables
+- `src/models/train.py`
+  - Silver persistence for training features
+  - Gold persistence for training matrix
+  - dataset hash logging with lineage parents
