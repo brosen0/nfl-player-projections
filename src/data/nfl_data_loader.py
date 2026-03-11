@@ -222,6 +222,7 @@ class NFLDataLoader:
                 ):
                     df = self._merge_advanced_pbp_features(df, pbp_adv_df)
                 df = self._standardize_weekly_columns(df)
+                validate_weekly_data(df, strict=True)
                 # nfl_data_py weekly data only has offensive positions
                 df = df[df['position'].isin(OFFENSIVE_POSITIONS)]
                 df['fantasy_points'] = df.apply(
@@ -247,7 +248,7 @@ class NFLDataLoader:
 
         # Schema validation before processing (Directive V7, Section 19)
         for i, chunk_df in enumerate(all_dfs):
-            issues = validate_weekly_data(chunk_df)
+            issues = validate_weekly_data(chunk_df, strict=True)
             for issue in issues:
                 print(f"  Schema validation [{i}]: {issue}")
 
@@ -433,6 +434,7 @@ class NFLDataLoader:
     def _store_weekly_data(self, df: pd.DataFrame):
         """Store weekly data in the database."""
         print("  Storing in database...")
+        validate_weekly_data(df, strict=True)
         # Avoid duplicate column names (e.g. from merge/concat) so row values are scalars
         if df.columns.duplicated().any():
             df = df.loc[:, ~df.columns.duplicated(keep="first")]
@@ -571,6 +573,7 @@ class NFLDataLoader:
         df = df[df["position"].isin(POSITIONS)]
         if "fantasy_points" not in df.columns or df["fantasy_points"].isna().any():
             df["fantasy_points"] = df.apply(self._calculate_fantasy_points, axis=1)
+        validate_weekly_data(df, strict=True)
         self._store_weekly_data(df)
 
     def load_snap_counts(self, seasons: List[int], 
@@ -620,7 +623,7 @@ class NFLDataLoader:
     def _store_schedules(self, df: pd.DataFrame):
         """Store schedule data in database. Maps game_type to week 19-22 for playoffs (SB=22)."""
         # Schema validation (Directive V7, Section 19)
-        issues = validate_schedule_data(df)
+        issues = validate_schedule_data(df, strict=True)
         for issue in issues:
             print(f"  Schedule schema: {issue}")
         print("  Storing schedules in database...")
