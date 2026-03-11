@@ -18,6 +18,7 @@ from datetime import datetime
 
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+from src.data.entity_resolver import resolver
 from config.settings import (
     RAW_DATA_DIR,
     PBP_ADVANCED_FEATURES_ENABLED,
@@ -171,6 +172,10 @@ class PBPStatsAggregator:
             passing['pass_plays'] = 0
         
         passing['position'] = 'QB'
+        resolved = resolver.build_keys(passing, source="pbp_passing", name_col="name")
+        passing = resolved.dataframe
+        passing['player_id'] = passing['canonical_player_id'].where(passing['canonical_player_id'] != '', passing['player_id'])
+        passing['team'] = passing['team_norm'].where(passing['team_norm'] != '', passing['team'])
         return passing
     
     def aggregate_rushing_stats(self, pbp: pd.DataFrame = None) -> pd.DataFrame:
@@ -241,6 +246,10 @@ class PBPStatsAggregator:
         else:
             rushing['rush_plays'] = 0
         
+        resolved = resolver.build_keys(rushing, source="pbp_rushing", name_col="name")
+        rushing = resolved.dataframe
+        rushing['player_id'] = rushing['canonical_player_id'].where(rushing['canonical_player_id'] != '', rushing['player_id'])
+        rushing['team'] = rushing['team_norm'].where(rushing['team_norm'] != '', rushing['team'])
         return rushing
     
     def aggregate_receiving_stats(self, pbp: pd.DataFrame = None) -> pd.DataFrame:
@@ -315,6 +324,10 @@ class PBPStatsAggregator:
         else:
             receiving['recv_targets'] = 0
         
+        resolved = resolver.build_keys(receiving, source="pbp_receiving", name_col="name")
+        receiving = resolved.dataframe
+        receiving['player_id'] = receiving['canonical_player_id'].where(receiving['canonical_player_id'] != '', receiving['player_id'])
+        receiving['team'] = receiving['team_norm'].where(receiving['team_norm'] != '', receiving['team'])
         return receiving
     
     def merge_with_snaps(self, stats_df: pd.DataFrame) -> pd.DataFrame:
@@ -323,7 +336,9 @@ class PBPStatsAggregator:
             return stats_df
         
         snap_pos = self.snap_data[['season', 'week', 'player', 'team', 'position', 'offense_snaps', 'offense_pct']].copy()
+        snap_pos = resolver.build_keys(snap_pos, source="snap_counts", player_id_col="player", name_col="player", team_col="team", opponent_col=None).dataframe
         snap_pos = snap_pos.rename(columns={'player': 'name'})
+        snap_pos['team'] = snap_pos['team_norm'].where(snap_pos['team_norm'] != '', snap_pos['team'])
         snap_pos['snap_count'] = snap_pos['offense_snaps'].fillna(0).astype(int)
         team_snaps = (
             snap_pos.groupby(['season', 'week', 'team'], as_index=False)['offense_snaps']

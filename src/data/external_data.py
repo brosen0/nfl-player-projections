@@ -32,6 +32,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from src.utils.database import DatabaseManager
+from src.data.entity_resolver import resolver
 
 
 # =============================================================================
@@ -126,6 +127,11 @@ class InjuryDataLoader:
         if 'gsis_id' in df.columns:
             result = df[available_cols].copy()
             result = result.rename(columns={'gsis_id': 'player_id'})
+            normalized = resolver.build_keys(result, source="injuries", name_col="player_id", team_col="team" if 'team' in result.columns else 'player_id', opponent_col=None)
+            result = normalized.dataframe
+            result['player_id'] = result['canonical_player_id'].where(result['canonical_player_id'] != '', result['player_id'])
+            result['injury_resolution_status'] = result['resolution_status']
+            result['injury_unresolved_reason'] = result['resolution_reason']
         else:
             result = pd.DataFrame()
         
@@ -351,6 +357,10 @@ class WeatherDataLoader:
             return df
         
         result = df.copy()
+        result = resolver.build_keys(result, source="weather_target", name_col="name").dataframe
+        result['team'] = result['team_norm'].where(result['team_norm'] != '', result.get('team', ''))
+        if 'opponent' in result.columns:
+            result['opponent'] = result['opponent_norm'].where(result['opponent_norm'] != '', result['opponent'])
         result['weather_data_available'] = 0
         
         # Determine if game is in dome based on home team
@@ -417,6 +427,8 @@ class WeatherDataLoader:
                     home_weather = sched[weather_cols + [home_col]].rename(columns={home_col: 'team'})
                     away_weather = sched[weather_cols + [away_col]].rename(columns={away_col: 'team'})
                     weather_lookup = pd.concat([home_weather, away_weather], ignore_index=True)
+                    weather_lookup = resolver.build_keys(weather_lookup, source="weather_schedule", player_id_col='team', name_col='team', team_col='team', opponent_col=None).dataframe
+                    weather_lookup['team'] = weather_lookup['team_norm'].where(weather_lookup['team_norm'] != '', weather_lookup['team'])
                     weather_lookup = weather_lookup.drop_duplicates(subset=['season', 'week', 'team'], keep='first')
                     
                     if 'team' in result.columns and 'season' in result.columns and 'week' in result.columns:
@@ -736,6 +748,10 @@ class ExternalDataIntegrator:
                 injury_status = self.injury_loader.get_player_injury_status(injuries)
                 if not injury_status.empty:
                     result['injury_data_available'] = 1
+                    result = resolver.build_keys(result, source="external_target", name_col="name").dataframe
+                    injury_status = resolver.build_keys(injury_status, source="injury_source", name_col="player_id", team_col="team" if 'team' in injury_status.columns else 'player_id', opponent_col=None).dataframe
+                    result['player_id'] = result['canonical_player_id'].where(result['canonical_player_id'] != '', result['player_id'])
+                    injury_status['player_id'] = injury_status['canonical_player_id'].where(injury_status['canonical_player_id'] != '', injury_status['player_id'])
                     result = result.merge(
                         injury_status[['player_id', 'season', 'week', 'injury_score', 'is_injured']],
                         on=['player_id', 'season', 'week'],
@@ -841,6 +857,8 @@ class ExternalDataIntegrator:
                    'weather_data_available', 'vegas_data_available',
                    'external_data_quality']
         
+        result['entity_unresolved'] = (result.get('resolution_status', 'resolved') != 'resolved').astype(int) if 'resolution_status' in result.columns else 0
+        result['entity_unresolved_reason'] = result.get('resolution_reason', '') if 'resolution_reason' in result.columns else ''
         added = [c for c in new_cols if c in result.columns]
         print(f"\n✅ Added {len(added)} external features: {added}")
 
