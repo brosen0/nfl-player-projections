@@ -55,22 +55,22 @@ from src.data.schema_validator import validate_weekly_data, validate_schedule_da
 # ---------------------------------------------------------------------------
 @retry_with_backoff(max_retries=3, base_delay=2.0)
 def _fetch_weekly_data(seasons):
-    return _fetch_weekly_data(seasons)
+    return nfl.import_weekly_data(seasons)
 
 
 @retry_with_backoff(max_retries=3, base_delay=2.0)
 def _fetch_snap_counts(seasons):
-    return _fetch_snap_counts(seasons)
+    return nfl.import_snap_counts(seasons)
 
 
 @retry_with_backoff(max_retries=3, base_delay=2.0)
 def _fetch_schedules(seasons):
-    return _fetch_schedules(seasons)
+    return nfl.import_schedules(seasons)
 
 
 @retry_with_backoff(max_retries=3, base_delay=2.0)
 def _fetch_rosters(seasons):
-    return _fetch_rosters(seasons)
+    return nfl.import_seasonal_rosters(seasons)
 
 
 def _to_scalar_int(x, default: int = 0) -> int:
