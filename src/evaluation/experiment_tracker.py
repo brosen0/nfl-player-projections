@@ -100,7 +100,13 @@ class ExperimentTracker:
             {k: self._serialize(v) for k, v in params.items()}
         )
 
-    def log_dataset_hash(self, run_id: str, df, label: str = "training_data") -> str:
+    def log_dataset_hash(
+        self,
+        run_id: str,
+        df,
+        label: str = "training_data",
+        parent_artifact_ids: Optional[List[str]] = None,
+    ) -> str:
         """Compute and log a deterministic hash of a DataFrame for data lineage.
 
         Per Agent Directive V7 Section 5: dataset snapshots must be versioned
@@ -143,6 +149,7 @@ class ExperimentTracker:
                 "rows": len(df),
                 "columns": len(df.columns),
                 "column_names": cols_sorted,
+                "parent_artifact_ids": sorted(set(parent_artifact_ids or [])),
             }
         logger.info("Dataset hash for '%s': %s (%d rows, %d cols)",
                      label, digest[:12], len(df), len(df.columns))

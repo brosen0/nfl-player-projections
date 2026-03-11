@@ -54,6 +54,13 @@ from src.features.dimensionality_reduction import PositionDimensionalityReducer
 from src.models.ensemble import ModelTrainer
 from src.models.robust_validation import RobustTimeSeriesCV
 from src.evaluation.backtester import ModelBacktester
+from src.data.lineage import (
+    find_artifact_ids,
+    get_artifact_id,
+    persist_dataframe_artifact,
+    set_artifact_id,
+    utc_now_iso,
+)
 from src.models.utilization_to_fp import train_utilization_to_fp_per_position
 from src.evaluation.explainability import (
     get_top10_feature_importance_per_position,
@@ -1241,6 +1248,21 @@ def _prepare_training_data(
         lambda d: add_advanced_features(add_engineered_features(d)),
         "feature engineering",
     )
+
+    parent_silver_ids = [i for i in [get_artifact_id(train_data), get_artifact_id(test_data)] if i]
+    silver_train_meta = persist_dataframe_artifact(
+        train_data.copy(),
+        layer="silver",
+        table="training_features",
+        run_id=f"trainprep_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+        metadata={
+            "source": "feature_engineering_pipeline",
+            "seasons": sorted({int(s) for s in train_data["season"].dropna().unique()}) if "season" in train_data.columns else [],
+            "normalization": "post temporal-context feature engineering + utilization/targets",
+        },
+        parent_artifact_ids=parent_silver_ids,
+    )
+    train_data = set_artifact_id(train_data, silver_train_meta["artifact_id"])
     _apply_bounded_scaling(
         train_data, test_data, MODELS_DIR / "feature_scaler_bounded.joblib",
     )
@@ -1452,6 +1474,13 @@ def train_models(positions: list = None,
     )
     print(f"Training records: {len(train_data)}")
     print(f"Test records: {len(test_data)}")
+
+    bronze_parent_ids = find_artifact_ids(
+        layer="bronze",
+        source="nflverse_weekly_stats",
+        seasons=sorted(set(train_seasons) | {actual_test_season}),
+    )
+    tracker.log_params(experiment_run_id, {"bronze_parent_artifact_ids": bronze_parent_ids})
 
     # Optional walk-forward validation: train on 1..N-1, test on N for last 4 seasons
     if walk_forward:
@@ -1933,6 +1962,58 @@ def train_models(positions: list = None,
         print(f"Monitoring report written: {monitoring_path.name}")
     except Exception as e:
         print(f"Model metadata write skipped: {e}")
+    # Log explicit dataset hashes and gold artifact lineage
+    try:
+        train_lineage_parents = [
+            i for i in [get_artifact_id(train_data)] + find_artifact_ids(
+                layer="bronze",
+                source="nflverse_weekly_stats",
+                seasons=train_seasons,
+            ) if i
+        ]
+        test_lineage_parents = [
+            i for i in [get_artifact_id(test_data)] + find_artifact_ids(
+                layer="bronze",
+                source="nflverse_weekly_stats",
+                seasons=[actual_test_season],
+            ) if i
+        ]
+        tracker.log_dataset_hash(
+            experiment_run_id,
+            train_data,
+            label="training_matrix_gold",
+            parent_artifact_ids=train_lineage_parents,
+        )
+        tracker.log_dataset_hash(
+            experiment_run_id,
+            test_data,
+            label="holdout_matrix_gold",
+            parent_artifact_ids=test_lineage_parents,
+        )
+
+        target_definition = {
+            "1w": "target_util_1w for non-QB; QB trainer-selected util/fp",
+            "4w": "target_util_4w preferred over target_4w",
+            "18w": "target_util_18w preferred over target_18w",
+        }
+        gold_train_meta = persist_dataframe_artifact(
+            train_data.copy(),
+            layer="gold",
+            table="model_training_matrix",
+            run_id=experiment_run_id,
+            metadata={
+                "source": "src.models.train.train_models",
+                "seasons": train_seasons,
+                "feature_version": FEATURE_VERSION.strip(),
+                "target_definition": target_definition,
+                "pulled_at": utc_now_iso(),
+            },
+            parent_artifact_ids=train_lineage_parents,
+        )
+        tracker.log_params(experiment_run_id, {"gold_training_artifact_id": gold_train_meta["artifact_id"]})
+    except Exception as e:
+        logger.warning("Dataset hash/artifact lineage logging failed: %s", e)
+
     # Log experiment metrics and end tracking run
     try:
         tracker.log_params(experiment_run_id, {
