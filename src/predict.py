@@ -295,6 +295,13 @@ class NFLPredictor:
             results, latest_data, n_weeks, MIN_GAMES_FOR_PREDICTION
         )
         
+        # Carry through matchup columns for downstream consumers (generate_app_data)
+        for matchup_col in ["opponent", "home_away"]:
+            if matchup_col in latest_data.columns and matchup_col not in results.columns:
+                col_map = latest_data.set_index("player_id")[matchup_col].to_dict()
+                if "player_id" in results.columns:
+                    results[matchup_col] = results["player_id"].map(col_map)
+
         # Add useful columns (primary = utilization)
         results["predicted_ppg"] = results["predicted_points"] / n_weeks
         results["n_weeks"] = n_weeks

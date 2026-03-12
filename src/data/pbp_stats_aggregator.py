@@ -465,20 +465,43 @@ class PBPStatsAggregator:
             if col in all_stats.columns:
                 all_stats[col] = all_stats[col].fillna(0)
         
+        # Extract opponent from PBP data
+        if self.pbp_data is not None and 'defteam' in self.pbp_data.columns and 'posteam' in self.pbp_data.columns:
+            opp_map = self.pbp_data.groupby(['season', 'week', 'posteam'])['defteam'].agg(
+                lambda x: x.dropna().mode().iloc[0] if len(x.dropna().mode()) else ''
+            ).reset_index()
+            opp_map = opp_map.rename(columns={'posteam': 'team', 'defteam': 'opponent'})
+            if 'opponent' in all_stats.columns:
+                all_stats = all_stats.drop(columns=['opponent'])
+            all_stats = all_stats.merge(opp_map, on=['season', 'week', 'team'], how='left')
+            all_stats['opponent'] = all_stats['opponent'].fillna('')
+
+        # Extract home_away from PBP data
+        if self.pbp_data is not None and 'home_team' in self.pbp_data.columns and 'posteam' in self.pbp_data.columns:
+            ha_map = self.pbp_data.groupby(['season', 'week', 'posteam'])['home_team'].agg(
+                lambda x: x.dropna().mode().iloc[0] if len(x.dropna().mode()) else ''
+            ).reset_index()
+            ha_map['home_away'] = np.where(ha_map['posteam'] == ha_map['home_team'], 'home', 'away')
+            ha_map = ha_map.rename(columns={'posteam': 'team'})[['season', 'week', 'team', 'home_away']]
+            if 'home_away' in all_stats.columns:
+                all_stats = all_stats.drop(columns=['home_away'])
+            all_stats = all_stats.merge(ha_map, on=['season', 'week', 'team'], how='left')
+            all_stats['home_away'] = all_stats['home_away'].fillna('unknown')
+
         # Merge with snap data for positions
         all_stats = self.merge_with_snaps(all_stats)
-        
+
         # Infer position if not from snaps
         if 'position' not in all_stats.columns or all_stats['position'].isna().any():
             all_stats['position'] = all_stats.apply(self._infer_position, axis=1)
-        
+
         # Calculate fantasy points
         all_stats = self.calculate_fantasy_points(all_stats)
-        
+
         # Filter to fantasy-relevant positions
         all_stats = all_stats[all_stats['position'].isin(['QB', 'RB', 'WR', 'TE', 'FB', 'HB'])]
         all_stats.loc[all_stats['position'].isin(['FB', 'HB']), 'position'] = 'RB'
-        
+
         return all_stats
     
     def _infer_position(self, row) -> str:

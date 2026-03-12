@@ -102,6 +102,53 @@ def _to_scalar_str(x, default: str = "") -> str:
     return str(x)
 
 
+def _enrich_team_stats_from_schedule(team_df: pd.DataFrame, sched_df: pd.DataFrame) -> pd.DataFrame:
+    """Merge schedule-derived points_scored, points_allowed, home_away into PBP team stats."""
+    if sched_df.empty or 'home_team' not in sched_df.columns:
+        return team_df
+
+    rows = []
+    for _, g in sched_df.iterrows():
+        home = g.get('home_team', '')
+        away = g.get('away_team', '')
+        season = g.get('season', 0)
+        week = g.get('week', 0)
+        home_score = g.get('home_score', None)
+        away_score = g.get('away_score', None)
+        if pd.notna(home) and home:
+            rows.append({'team': home, 'season': int(season), 'week': int(week),
+                        'points_scored': home_score, 'points_allowed': away_score, 'home_away': 'home'})
+        if pd.notna(away) and away:
+            rows.append({'team': away, 'season': int(season), 'week': int(week),
+                        'points_scored': away_score, 'points_allowed': home_score, 'home_away': 'away'})
+
+    if not rows:
+        return team_df
+    sched_team = pd.DataFrame(rows)
+
+    merge_cols = ['points_scored', 'points_allowed', 'home_away']
+    rename_map = {}
+    for col in merge_cols:
+        if col in team_df.columns:
+            rename_map[col] = f'{col}_sched'
+    if rename_map:
+        sched_team = sched_team.rename(columns=rename_map)
+
+    team_df = team_df.merge(sched_team, on=['team', 'season', 'week'], how='left')
+
+    for col in merge_cols:
+        sched_col = rename_map.get(col, col)
+        if sched_col in team_df.columns:
+            if col in team_df.columns and col != sched_col:
+                team_df[col] = team_df[col].fillna(team_df[sched_col])
+            else:
+                team_df[col] = team_df[sched_col]
+            if sched_col != col:
+                team_df = team_df.drop(columns=[sched_col])
+
+    return team_df
+
+
 class NFLDataLoader:
     """
     Load NFL data from nfl-data-py package and store in database.
@@ -251,6 +298,39 @@ class NFLDataLoader:
                             df = snap_agg.merge_with_snaps(df)
                     except Exception as e:
                         print(f"  Snap merge for {season}: {e}")
+                # Backfill opponent and home_away from schedule when missing
+                has_empty_opp = 'opponent' not in df.columns or df['opponent'].eq('').all() or df['opponent'].isna().all()
+                has_unknown_ha = 'home_away' not in df.columns or df['home_away'].eq('unknown').all() or df['home_away'].isna().all()
+                if has_empty_opp or has_unknown_ha:
+                    try:
+                        sched_df = _fetch_schedules([season])
+                        if sched_df is not None and not sched_df.empty:
+                            sched_rows = []
+                            for _, g in sched_df.iterrows():
+                                home = g.get('home_team', '')
+                                away = g.get('away_team', '')
+                                wk = g.get('week', 0)
+                                if pd.notna(home) and home:
+                                    sched_rows.append({'team': home, 'week': int(wk), 'sched_opponent': away, 'sched_home_away': 'home'})
+                                if pd.notna(away) and away:
+                                    sched_rows.append({'team': away, 'week': int(wk), 'sched_opponent': home, 'sched_home_away': 'away'})
+                            if sched_rows:
+                                sched_lookup = pd.DataFrame(sched_rows)
+                                df = df.merge(sched_lookup, on=['team', 'week'], how='left')
+                                if 'sched_opponent' in df.columns:
+                                    if 'opponent' not in df.columns:
+                                        df['opponent'] = ''
+                                    empty_opp = df['opponent'].eq('') | df['opponent'].isna()
+                                    df.loc[empty_opp, 'opponent'] = df.loc[empty_opp, 'sched_opponent'].fillna('')
+                                    df = df.drop(columns=['sched_opponent'])
+                                if 'sched_home_away' in df.columns:
+                                    if 'home_away' not in df.columns:
+                                        df['home_away'] = 'unknown'
+                                    unknown_ha = df['home_away'].eq('unknown') | df['home_away'].isna()
+                                    df.loc[unknown_ha, 'home_away'] = df.loc[unknown_ha, 'sched_home_away'].fillna('unknown')
+                                    df = df.drop(columns=['sched_home_away'])
+                    except Exception as e:
+                        print(f"  Schedule backfill for {season}: {e}")
                 validate_weekly_data(df, strict=True)
                 # nfl_data_py weekly data only has offensive positions
                 df = df[df['position'].isin(OFFENSIVE_POSITIONS)]
@@ -281,6 +361,12 @@ class NFLDataLoader:
                         from src.data.pbp_stats_aggregator import get_team_stats_from_pbp
                         team_df = get_team_stats_from_pbp(season, use_cache=True)
                         if team_df is not None and not team_df.empty:
+                            try:
+                                sched_df = _fetch_schedules([season])
+                                if sched_df is not None and not sched_df.empty:
+                                    team_df = _enrich_team_stats_from_schedule(team_df, sched_df)
+                            except Exception as e_sched:
+                                print(f"  Schedule enrichment for team stats {season}: {e_sched}")
                             self._store_team_stats_dataframe(team_df)
                     except Exception as e:
                         print(f"  Team PBP stats for {season}: {e}")
@@ -397,12 +483,19 @@ class NFLDataLoader:
         else:
             df['two_point_conversions'] = 0
 
+        # Derive sacks column for QBs (used by qb_features.py for sack_rate)
+        if 'sacks' not in df.columns:
+            if 'times_sacked' in df.columns:
+                df['sacks'] = df['times_sacked'].fillna(0)
+            elif 'sack_fumbles' in df.columns:
+                df['sacks'] = df['sack_fumbles'].fillna(0)
+
         # Fill missing numeric columns with 0
         numeric_cols = [
             'passing_attempts', 'passing_completions', 'passing_yards', 'passing_tds',
             'interceptions', 'rushing_attempts', 'rushing_yards', 'rushing_tds',
             'targets', 'receptions', 'receiving_yards', 'receiving_tds',
-            'fumbles', 'fumbles_lost', 'two_point_conversions',
+            'fumbles', 'fumbles_lost', 'two_point_conversions', 'sacks',
             'pass_plays', 'rush_plays', 'recv_targets',
             'pass_epa', 'rush_epa', 'recv_epa',
             'pass_wpa', 'rush_wpa', 'recv_wpa',
@@ -1058,7 +1151,40 @@ def load_all_historical_data(seasons: List[int] = None):
     for s in db_seasons:
         latest_week = db.get_latest_week_for_season(s)
         print(f"  {s}: through week {latest_week}")
-    
+
+    # Populate utilization_scores table
+    print("\nComputing utilization scores...")
+    try:
+        from src.features.utilization_score import UtilizationScoreCalculator
+        calc = UtilizationScoreCalculator()
+        player_df = db.get_all_players_for_training(min_games=1)
+        team_df_util = pd.DataFrame()
+        try:
+            team_df_util = db.get_team_stats()
+        except Exception:
+            pass
+        if not player_df.empty:
+            scored = calc.calculate_all_scores(player_df, team_df_util)
+            if 'utilization_score' in scored.columns:
+                count = 0
+                for _, row in scored[scored['utilization_score'] > 0].iterrows():
+                    try:
+                        db.insert_utilization_score({
+                            'player_id': str(row['player_id']),
+                            'season': int(row['season']),
+                            'week': int(row['week']),
+                            'utilization_score': float(row['utilization_score']),
+                            'snap_share': float(row.get('snap_share', 0)),
+                            'target_share': float(row.get('target_share', 0)),
+                            'rush_share': float(row.get('rush_share', 0)),
+                        })
+                        count += 1
+                    except Exception:
+                        pass
+                print(f"  Stored {count} utilization scores")
+    except Exception as e:
+        print(f"  Utilization scores: {e}")
+
     return weekly_df
 
 
