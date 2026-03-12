@@ -741,21 +741,16 @@ class DatabaseManager:
 
     def aggregate_team_defense_from_players(self, season: int = None) -> pd.DataFrame:
         """
-        Aggregate team_defense_stats from player_weekly_stats: for each (opponent, season, week),
-        sum fantasy_points by position (QB/RB/WR/TE) to get points allowed per position.
+        Aggregate team_defense_stats from player_weekly_stats and team_stats.
+        Computes fantasy points allowed by position plus real counting stats
+        (yards, sacks, interceptions) from team_stats cross-referenced by opponent.
         """
-        query = """
+        # Fantasy points allowed by position
+        fp_query = """
             SELECT
                 pws.opponent AS team,
                 pws.season,
                 pws.week,
-                0 AS points_allowed,
-                0 AS yards_allowed,
-                0 AS passing_yards_allowed,
-                0 AS rushing_yards_allowed,
-                0 AS sacks,
-                0 AS interceptions,
-                0 AS fumbles_recovered,
                 SUM(CASE WHEN p.position = 'QB' THEN pws.fantasy_points ELSE 0 END) AS fantasy_points_allowed_qb,
                 SUM(CASE WHEN p.position = 'RB' THEN pws.fantasy_points ELSE 0 END) AS fantasy_points_allowed_rb,
                 SUM(CASE WHEN p.position = 'WR' THEN pws.fantasy_points ELSE 0 END) AS fantasy_points_allowed_wr,
@@ -766,29 +761,96 @@ class DatabaseManager:
         """
         params = []
         if season is not None:
-            query += " AND pws.season = ?"
+            fp_query += " AND pws.season = ?"
             params.append(season)
-        query += " GROUP BY pws.opponent, pws.season, pws.week ORDER BY pws.season, pws.week"
+        fp_query += " GROUP BY pws.opponent, pws.season, pws.week ORDER BY pws.season, pws.week"
+
         with self._get_connection() as conn:
-            return pd.read_sql_query(query, conn, params=params)
+            fp_df = pd.read_sql_query(fp_query, conn, params=params)
+
+        if fp_df.empty:
+            return fp_df
+
+        # Yards allowed = opponent's offensive yards from team_stats
+        ts_query = """
+            SELECT team AS offense_team, season, week, opponent,
+                   COALESCE(points_scored, 0) AS opp_points,
+                   COALESCE(total_yards, 0) AS opp_yards,
+                   COALESCE(passing_yards, 0) AS opp_pass_yards,
+                   COALESCE(rushing_yards, 0) AS opp_rush_yards,
+                   COALESCE(sacks_allowed, 0) AS opp_sacks_taken
+            FROM team_stats
+            WHERE opponent IS NOT NULL AND opponent != ''
+        """
+        ts_params = []
+        if season is not None:
+            ts_query += " AND season = ?"
+            ts_params.append(season)
+
+        with self._get_connection() as conn:
+            ts_df = pd.read_sql_query(ts_query, conn, params=ts_params)
+
+        if not ts_df.empty:
+            # Defense team = opponent column in team_stats
+            ts_def = ts_df.rename(columns={
+                'opponent': 'team',
+                'opp_points': 'points_allowed',
+                'opp_yards': 'yards_allowed',
+                'opp_pass_yards': 'passing_yards_allowed',
+                'opp_rush_yards': 'rushing_yards_allowed',
+                'opp_sacks_taken': 'sacks',
+            })
+            fp_df = fp_df.merge(
+                ts_def[['team', 'season', 'week', 'points_allowed', 'yards_allowed',
+                        'passing_yards_allowed', 'rushing_yards_allowed', 'sacks']],
+                on=['team', 'season', 'week'], how='left'
+            )
+            for col in ['points_allowed', 'yards_allowed', 'passing_yards_allowed', 'rushing_yards_allowed', 'sacks']:
+                fp_df[col] = fp_df[col].fillna(0).astype(int)
+        else:
+            for col in ['points_allowed', 'yards_allowed', 'passing_yards_allowed', 'rushing_yards_allowed', 'sacks']:
+                fp_df[col] = 0
+
+        # Interceptions: sum of QB interceptions thrown against this defense
+        int_query = """
+            SELECT opponent AS team, season, week,
+                   SUM(interceptions) AS interceptions
+            FROM player_weekly_stats
+            WHERE opponent IS NOT NULL AND opponent != ''
+        """
+        int_params = []
+        if season is not None:
+            int_query += " AND season = ?"
+            int_params.append(season)
+        int_query += " GROUP BY opponent, season, week"
+
+        with self._get_connection() as conn:
+            int_df = pd.read_sql_query(int_query, conn, params=int_params)
+
+        if not int_df.empty:
+            fp_df = fp_df.merge(int_df, on=['team', 'season', 'week'], how='left', suffixes=('', '_from_players'))
+            if 'interceptions_from_players' in fp_df.columns:
+                fp_df['interceptions'] = fp_df['interceptions_from_players'].fillna(0).astype(int)
+                fp_df = fp_df.drop(columns=['interceptions_from_players'])
+            elif 'interceptions' not in fp_df.columns:
+                fp_df['interceptions'] = 0
+        else:
+            if 'interceptions' not in fp_df.columns:
+                fp_df['interceptions'] = 0
+
+        fp_df['fumbles_recovered'] = 0  # Not reliably derivable from player stats
+
+        return fp_df
 
     def ensure_team_defense_stats(self, season: int = None) -> int:
-        """Populate team_defense_stats from player_weekly_stats. Returns number of rows inserted."""
+        """Populate team_defense_stats from player_weekly_stats. Returns number of rows upserted."""
         agg = self.aggregate_team_defense_from_players(season=season)
         if agg.empty:
             return 0
-        existing = set()
-        with self._get_connection() as conn:
-            cur = conn.cursor()
-            cur.execute("SELECT team, season, week FROM team_defense_stats")
-            existing = set((r[0], r[1], r[2]) for r in cur.fetchall())
         count = 0
         with self._get_connection() as conn:
             cur = conn.cursor()
             for _, row in agg.iterrows():
-                key = (str(row["team"]), int(row["season"]), int(row["week"]))
-                if key in existing:
-                    continue
                 try:
                     cur.execute("""
                         INSERT OR REPLACE INTO team_defense_stats
@@ -809,7 +871,6 @@ class DatabaseManager:
                         float(row.get("fantasy_points_allowed_te", 0)),
                     ))
                     count += 1
-                    existing.add(key)
                 except Exception:
                     pass
             conn.commit()
