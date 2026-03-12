@@ -39,6 +39,7 @@ env/
 
 # Data – large binary files that should NOT be in git
 # (trained model files are too large; predictions are pre-computed in parquets)
+*.db
 *.joblib
 *.pkl
 *.pickle
