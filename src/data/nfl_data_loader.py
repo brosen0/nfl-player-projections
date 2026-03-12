@@ -240,6 +240,17 @@ class NFLDataLoader:
                 ):
                     df = self._merge_advanced_pbp_features(df, pbp_adv_df)
                 df = self._standardize_weekly_columns(df)
+                # Merge snap counts when available (PBP path handles this internally via merge_with_snaps)
+                if 'snap_count' not in df.columns or (df['snap_count'] == 0).all():
+                    try:
+                        snap_df = _fetch_snap_counts([season])
+                        if snap_df is not None and not snap_df.empty:
+                            from src.data.pbp_stats_aggregator import PBPStatsAggregator
+                            snap_agg = PBPStatsAggregator()
+                            snap_agg.snap_data = snap_df
+                            df = snap_agg.merge_with_snaps(df)
+                    except Exception as e:
+                        print(f"  Snap merge for {season}: {e}")
                 validate_weekly_data(df, strict=True)
                 # nfl_data_py weekly data only has offensive positions
                 df = df[df['position'].isin(OFFENSIVE_POSITIONS)]
@@ -369,12 +380,29 @@ class NFLDataLoader:
             df['fumbles_lost'] = df[existing_fumble_cols].fillna(0).sum(axis=1)
         else:
             df['fumbles_lost'] = 0
-        
+
+        # Combine total fumbles (not just lost)
+        total_fumble_cols = ['sack_fumbles', 'rushing_fumbles', 'receiving_fumbles']
+        existing_total_fumble_cols = [c for c in total_fumble_cols if c in df.columns]
+        if existing_total_fumble_cols:
+            df['fumbles'] = df[existing_total_fumble_cols].fillna(0).sum(axis=1)
+        else:
+            df['fumbles'] = df['fumbles_lost']  # fallback: count lost as total
+
+        # Combine two-point conversions
+        two_pt_cols = ['passing_2pt_conversions', 'rushing_2pt_conversions', 'receiving_2pt_conversions']
+        existing_2pt_cols = [c for c in two_pt_cols if c in df.columns]
+        if existing_2pt_cols:
+            df['two_point_conversions'] = df[existing_2pt_cols].fillna(0).sum(axis=1).astype(int)
+        else:
+            df['two_point_conversions'] = 0
+
         # Fill missing numeric columns with 0
         numeric_cols = [
             'passing_attempts', 'passing_completions', 'passing_yards', 'passing_tds',
             'interceptions', 'rushing_attempts', 'rushing_yards', 'rushing_tds',
-            'targets', 'receptions', 'receiving_yards', 'receiving_tds', 'fumbles_lost',
+            'targets', 'receptions', 'receiving_yards', 'receiving_tds',
+            'fumbles', 'fumbles_lost', 'two_point_conversions',
             'pass_plays', 'rush_plays', 'recv_targets',
             'pass_epa', 'rush_epa', 'recv_epa',
             'pass_wpa', 'rush_wpa', 'recv_wpa',
@@ -509,6 +537,11 @@ class NFLDataLoader:
                 'receiving_yards': _to_scalar_int(row.get('receiving_yards', 0), 0),
                 'receiving_tds': _to_scalar_int(row.get('receiving_tds', 0), 0),
                 'fumbles_lost': _to_scalar_int(row.get('fumbles_lost', 0), 0),
+                'fumbles': _to_scalar_int(row.get('fumbles', 0), 0),
+                'two_point_conversions': _to_scalar_int(row.get('two_point_conversions', 0), 0),
+                'snap_count': _to_scalar_int(row.get('snap_count', 0), 0),
+                'snap_share': _to_scalar_float(row.get('snap_share', 0.0), 0.0),
+                'team_snaps': _to_scalar_int(row.get('team_snaps', 0), 0),
                 'pass_plays': _to_scalar_int(row.get('pass_plays', row.get('passing_attempts', 0)), 0),
                 'rush_plays': _to_scalar_int(row.get('rush_plays', row.get('rushing_attempts', 0)), 0),
                 'recv_targets': _to_scalar_int(row.get('recv_targets', row.get('targets', 0)), 0),
