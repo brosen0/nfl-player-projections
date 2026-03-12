@@ -580,6 +580,22 @@ def _compute_league_neutral_pass_rate(team_week: pd.DataFrame) -> pd.DataFrame:
         if "fumble_lost" in plays.columns:
             agg["fumble_lost"] = "sum"
 
+        # Redzone plays (yardline_100 <= 20)
+        if "yardline_100" in plays.columns:
+            plays["is_redzone_play"] = (plays["yardline_100"].fillna(99) <= 20).astype(int)
+            td_col = plays.get("touchdown", pd.Series(0, index=plays.index))
+            if isinstance(td_col, pd.Series):
+                td_col = td_col.fillna(0)
+            plays["is_redzone_score"] = (
+                (plays["is_redzone_play"] == 1) & (td_col == 1)
+            ).astype(int)
+            agg["is_redzone_play"] = "sum"
+            agg["is_redzone_score"] = "sum"
+
+        # Sacks
+        if "sack" in plays.columns:
+            agg["sack"] = "sum"
+
         team_week = plays.groupby(["season", "week", "posteam"]).agg(agg).reset_index()
         team_week = team_week.rename(columns={
             "posteam": "team",
@@ -588,6 +604,13 @@ def _compute_league_neutral_pass_rate(team_week: pd.DataFrame) -> pd.DataFrame:
             "is_pass": "pass_attempts",
             "is_run": "rush_attempts",
         })
+        if "is_redzone_play" in team_week.columns:
+            team_week = team_week.rename(columns={
+                "is_redzone_play": "redzone_attempts",
+                "is_redzone_score": "redzone_scores",
+            })
+        if "sack" in team_week.columns:
+            team_week = team_week.rename(columns={"sack": "sacks_allowed"})
 
         # Basic totals
         team_week["total_plays"] = team_week["pass_attempts"] + team_week["rush_attempts"]
@@ -755,6 +778,17 @@ def _ensure_store_weekly_schema(df: pd.DataFrame) -> pd.DataFrame:
             df[col] = default
         else:
             df[col] = df[col].fillna(default)
+    # Snap columns (set by merge_with_snaps; default to 0 when unavailable)
+    for col in ["snap_count", "team_snaps"]:
+        if col not in df.columns:
+            df[col] = 0
+    if "snap_share" not in df.columns:
+        df["snap_share"] = 0.0
+    # Fumbles and two-point conversions
+    if "fumbles" not in df.columns:
+        df["fumbles"] = df.get("fumbles_lost", pd.Series(0, index=df.index)).fillna(0)
+    if "two_point_conversions" not in df.columns:
+        df["two_point_conversions"] = 0
     return df
 
 
