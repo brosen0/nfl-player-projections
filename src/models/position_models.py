@@ -1084,6 +1084,7 @@ class PositionModel:
             "calibrator": getattr(self, "calibrator", None),
             "_uncertainty_model": getattr(self, "_uncertainty_model", None),
             "_uncertainty_model_type": getattr(self, "_uncertainty_model_type", None),
+            "_uncertainty_scale_factor": getattr(self, "_uncertainty_scale_factor", 1.0),
             "_uncertainty_scale_factors_per_level": getattr(self, "_uncertainty_scale_factors_per_level", {}),
         }
         
@@ -1115,9 +1116,15 @@ class PositionModel:
         model.calibrator = model_data.get("calibrator")
         model._uncertainty_model = model_data.get("_uncertainty_model")
         model._uncertainty_model_type = model_data.get("_uncertainty_model_type")
+        model._uncertainty_scale_factor = model_data.get("_uncertainty_scale_factor", 1.0)
         model._uncertainty_scale_factors_per_level = model_data.get(
             "_uncertainty_scale_factors_per_level", {}
         )
+        # Reconstruct _uncertainty_scale_factor from per-level if missing from older models
+        if model._uncertainty_scale_factor == 1.0 and model._uncertainty_scale_factors_per_level:
+            model._uncertainty_scale_factor = model._uncertainty_scale_factors_per_level.get(
+                0.90, 1.0
+            )
         model.is_fitted = True
         return model
 

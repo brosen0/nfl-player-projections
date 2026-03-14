@@ -120,6 +120,9 @@ class FeatureEngineer:
             fail_on_threshold=fail_policy,
         )
 
+        # Season-relative normalization to reduce train/test distribution shift
+        df = self._normalize_season_relative(df)
+
         # Final imputation: no NaN/inf in numeric columns so pipelines are robust
         df = self._impute_missing(df)
         self.last_imputation_report = {
@@ -293,18 +296,19 @@ class FeatureEngineer:
         # IMPORTANT: Use expanding (causal) position-level aggregates to avoid lookahead bias.
         if "fantasy_points" in df.columns:
             if "position" in df.columns:
-                # Expanding position-level mean/std: only data available up to each row
-                pos_expanding_mean = df.groupby("position")["fantasy_points"].transform(
-                    lambda x: x.shift(1).expanding(min_periods=1).mean()
+                # Bounded rolling position-level mean/std (window=200 ~3 seasons of
+                # position data) to avoid sample-size growth leaking temporal position.
+                pos_rolling_mean = df.groupby("position")["fantasy_points"].transform(
+                    lambda x: x.shift(1).rolling(window=200, min_periods=1).mean()
                 )
                 player_ewm = df.groupby("player_id")["fantasy_points"].transform(
                     lambda x: x.shift(1).ewm(span=8, adjust=False).mean()
                 )
-                new_cols["fp_deviation_from_pos_mean"] = player_ewm - pos_expanding_mean
-                pos_expanding_std = df.groupby("position")["fantasy_points"].transform(
-                    lambda x: x.shift(1).expanding(min_periods=2).std()
+                new_cols["fp_deviation_from_pos_mean"] = player_ewm - pos_rolling_mean
+                pos_rolling_std = df.groupby("position")["fantasy_points"].transform(
+                    lambda x: x.shift(1).rolling(window=200, min_periods=2).std()
                 ).clip(lower=1.0)
-                new_cols["fp_regression_to_mean_z"] = (player_ewm - pos_expanding_mean) / pos_expanding_std
+                new_cols["fp_regression_to_mean_z"] = (player_ewm - pos_rolling_mean) / pos_rolling_std
             # Season-level mean for same player: use expanding mean within each
             # (player, season) group to avoid using future games within the season.
             if "season" in df.columns:
@@ -1704,6 +1708,29 @@ class FeatureEngineer:
                 UserWarning,
                 stacklevel=2,
             )
+
+    def _normalize_season_relative(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Reduce temporal leakage by season-relative normalization.
+
+        Addresses adversarial-validation AUC ≈ 0.957 by preventing features
+        from encoding absolute temporal position (era, season count, stat
+        magnitude drift across NFL rule changes).
+        """
+        # 1. Cap nfl_experience_years to reduce long-tail temporal signal
+        if "nfl_experience_years" in df.columns:
+            df["nfl_experience_years"] = df["nfl_experience_years"].clip(upper=12)
+
+        # 2. Season-normalize rolling stat means to remove era-level magnitude drift
+        if "season" in df.columns and "position" in df.columns:
+            roll_mean_cols = [c for c in df.columns
+                             if "_roll" in c and "_mean" in c]
+            for col in roll_mean_cols:
+                grp = df.groupby(["season", "position"])[col]
+                season_pos_mean = grp.transform("mean")
+                season_pos_std = grp.transform("std").clip(lower=0.01)
+                df[col] = (df[col] - season_pos_mean) / season_pos_std
+
+        return df
 
     def _impute_missing(self, df: pd.DataFrame) -> pd.DataFrame:
         """
