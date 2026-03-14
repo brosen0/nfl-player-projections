@@ -12,7 +12,6 @@ os.environ['REQUESTS_CA_BUNDLE'] = certifi.where()
 
 import pandas as pd
 import numpy as np
-import nfl_data_py as nfl
 from pathlib import Path
 from datetime import datetime
 
@@ -40,6 +39,7 @@ class PBPStatsAggregator:
     
     def load_data(self, season: int) -> "PBPStatsAggregator":
         """Load PBP (required) and snap count (optional) data for a season. PBP-only path when snaps unavailable."""
+        import nfl_data_py as nfl
         print(f"Loading play-by-play data for {season}...")
         self.pbp_data = nfl.import_pbp_data([season])
         print(f"  Loaded {len(self.pbp_data)} plays")
