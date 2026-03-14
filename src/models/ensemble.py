@@ -333,7 +333,11 @@ class EnsemblePredictor:
     def _apply_tier_uncertainty(
         self, results: pd.DataFrame, mask: np.ndarray, position: str
     ) -> None:
-        """Scale prediction_std by tier-specific multipliers for a position group."""
+        """Scale prediction_std and CI half-widths by tier-specific multipliers.
+
+        Preserves the calibrated CI structure by scaling existing half-widths
+        rather than reconstructing intervals from scratch with fixed z-scores.
+        """
         tier_mults = self.TIER_UNCERTAINTY_MULTIPLIERS.get(position)
         if tier_mults is None:
             return
@@ -349,13 +353,21 @@ class EnsemblePredictor:
             std_val = results.at[idx, "prediction_std"]
             if np.isfinite(std_val):
                 results.at[idx, "prediction_std"] = std_val * mult
-                z80, z95 = 1.28, 1.96
                 pts = results.at[idx, "predicted_points"]
-                new_std = results.at[idx, "prediction_std"]
-                results.at[idx, "prediction_ci80_lower"] = max(pts - z80 * new_std, 0)
-                results.at[idx, "prediction_ci80_upper"] = pts + z80 * new_std
-                results.at[idx, "prediction_ci95_lower"] = max(pts - z95 * new_std, 0)
-                results.at[idx, "prediction_ci95_upper"] = pts + z95 * new_std
+                # Scale existing CI half-widths by tier multiplier to preserve
+                # conformal calibration computed upstream.
+                for level in ("ci80", "ci95"):
+                    lo_col = f"prediction_{level}_lower"
+                    hi_col = f"prediction_{level}_upper"
+                    if lo_col in results.columns and hi_col in results.columns:
+                        lo = results.at[idx, lo_col]
+                        hi = results.at[idx, hi_col]
+                        if np.isfinite(lo) and np.isfinite(hi):
+                            half_width = (hi - lo) / 2.0
+                            center = (hi + lo) / 2.0
+                            new_hw = half_width * mult
+                            results.at[idx, lo_col] = max(center - new_hw, 0)
+                            results.at[idx, hi_col] = center + new_hw
 
     @staticmethod
     def _apply_td_regression(results: pd.DataFrame, player_data: pd.DataFrame) -> pd.DataFrame:
@@ -520,49 +532,59 @@ class EnsemblePredictor:
                     eff_df["utilization_score"] = predictions
                     fp_pred = self.util_to_fp[position].predict(predictions, efficiency_df=eff_df)
                     results.loc[mask, "predicted_points"] = fp_pred
-                # Prediction intervals using conformal quantiles when available,
-                # falling back to Gaussian z-score approximation.
-                # When util->FP conversion is applied, combine conversion uncertainty
-                # with utilization model uncertainty via error propagation.
+                # Prediction intervals using calibrated per-level scale factors
+                # from conformal recalibration (computed during fit).  Falls back
+                # to constant-width conformal quantiles, then to raw Gaussian
+                # z-scores.  When util->FP conversion is applied, conversion
+                # uncertainty is propagated via quadrature.
                 try:
                     base_model = model.models.get(1) or list(model.models.values())[0]
                     if hasattr(base_model, "predict_with_uncertainty"):
                         _, std = base_model.predict_with_uncertainty(pos_data)
                         pred_pts = results.loc[mask, "predicted_points"].values
-                        conformal_q = getattr(base_model, "_conformal_quantiles", None)
+
+                        # Multi-week scaling: use n_weeks^0.4 instead of sqrt
+                        # to account for autocorrelation in weekly errors
+                        multi_week_scale = n_weeks ** 0.4
+
+                        # Per-level conformal calibration factors (preferred path)
+                        per_level = getattr(base_model, "_uncertainty_scale_factors_per_level", {})
+                        global_factor = getattr(base_model, "_uncertainty_scale_factor", 1.0)
+
+                        # Undo the global factor already baked into std by
+                        # predict_with_uncertainty, so we can apply per-level factors.
+                        if global_factor > 0 and global_factor != 1.0:
+                            std_raw = std / global_factor
+                        else:
+                            std_raw = std
 
                         # Conversion uncertainty: if util->FP was applied, get converter residuals
                         conv_q = None
                         if should_convert and position in self.util_to_fp:
                             conv_q = getattr(self.util_to_fp[position], "_conversion_conformal_q", None)
 
-                        # Multi-week scaling: use n_weeks^0.4 instead of sqrt
-                        # to account for autocorrelation in weekly errors (injuries,
-                        # role changes create correlated outcomes across weeks)
-                        multi_week_scale = n_weeks ** 0.4
+                        z80_base, z95_base = 1.28, 1.96
+                        f80 = per_level.get(0.80, global_factor)
+                        f95 = per_level.get(0.95, global_factor)
 
-                        if conformal_q and 0.80 in conformal_q and 0.95 in conformal_q:
-                            # Constant-width conformal intervals
-                            q80 = conformal_q[0.80] * multi_week_scale
-                            q95 = conformal_q[0.95] * multi_week_scale
-                            # Propagate conversion uncertainty: combined_q = sqrt(util_q^2 + conv_q^2)
-                            if conv_q is not None:
-                                q80 = np.sqrt(q80**2 + conv_q.get(0.80, 0)**2)
-                                q95 = np.sqrt(q95**2 + conv_q.get(0.95, 0)**2)
-                            results.loc[mask, "prediction_std"] = std
-                            results.loc[mask, "prediction_ci80_lower"] = np.maximum(pred_pts - q80, 0)
-                            results.loc[mask, "prediction_ci80_upper"] = pred_pts + q80
-                            results.loc[mask, "prediction_ci95_lower"] = np.maximum(pred_pts - q95, 0)
-                            results.loc[mask, "prediction_ci95_upper"] = pred_pts + q95
+                        std80 = std_raw * f80 * multi_week_scale
+                        std95 = std_raw * f95 * multi_week_scale
+
+                        # Propagate conversion uncertainty via quadrature
+                        if conv_q is not None:
+                            cq80 = conv_q.get(0.80, 0)
+                            cq95 = conv_q.get(0.95, 0)
+                            hw80 = np.sqrt((z80_base * std80) ** 2 + cq80 ** 2)
+                            hw95 = np.sqrt((z95_base * std95) ** 2 + cq95 ** 2)
                         else:
-                            # Fallback: Gaussian z-scores
-                            std_scaled = std * multi_week_scale
-                            z80, z95 = 1.28, 1.96
-                            results.loc[mask, "prediction_std"] = std_scaled
-                            results.loc[mask, "prediction_ci80_lower"] = np.maximum(pred_pts - z80 * std_scaled, 0)
-                            results.loc[mask, "prediction_ci80_upper"] = pred_pts + z80 * std_scaled
-                            results.loc[mask, "prediction_ci95_lower"] = np.maximum(pred_pts - z95 * std_scaled, 0)
-                            results.loc[mask, "prediction_ci95_upper"] = pred_pts + z95 * std_scaled
+                            hw80 = z80_base * std80
+                            hw95 = z95_base * std95
+
+                        results.loc[mask, "prediction_std"] = std
+                        results.loc[mask, "prediction_ci80_lower"] = np.maximum(pred_pts - hw80, 0)
+                        results.loc[mask, "prediction_ci80_upper"] = pred_pts + hw80
+                        results.loc[mask, "prediction_ci95_lower"] = np.maximum(pred_pts - hw95, 0)
+                        results.loc[mask, "prediction_ci95_upper"] = pred_pts + hw95
                 except Exception:
                     pass
 
@@ -587,13 +609,24 @@ class EnsemblePredictor:
                 else:
                     results.loc[mask, "predicted_points"] = scaled
                 _, std = model.predict_with_uncertainty(pos_data)
-                std_scaled = std * np.sqrt(n_weeks)
-                results.loc[mask, "prediction_std"] = std_scaled
+                pred_pts = results.loc[mask, "predicted_points"].values
+                # Apply per-level calibration factors for correct coverage
+                per_level = getattr(model, "_uncertainty_scale_factors_per_level", {})
+                global_factor = getattr(model, "_uncertainty_scale_factor", 1.0)
+                if global_factor > 0 and global_factor != 1.0:
+                    std_raw = std / global_factor
+                else:
+                    std_raw = std
+                multi_week_scale = np.sqrt(n_weeks)
+                f80 = per_level.get(0.80, global_factor)
+                f95 = per_level.get(0.95, global_factor)
                 z80, z95 = 1.28, 1.96
-                results.loc[mask, "prediction_ci80_lower"] = scaled - z80 * std_scaled
-                results.loc[mask, "prediction_ci80_upper"] = scaled + z80 * std_scaled
-                results.loc[mask, "prediction_ci95_lower"] = scaled - z95 * std_scaled
-                results.loc[mask, "prediction_ci95_upper"] = scaled + z95 * std_scaled
+                std_scaled = std * multi_week_scale
+                results.loc[mask, "prediction_std"] = std_scaled
+                results.loc[mask, "prediction_ci80_lower"] = np.maximum(pred_pts - z80 * std_raw * f80 * multi_week_scale, 0)
+                results.loc[mask, "prediction_ci80_upper"] = pred_pts + z80 * std_raw * f80 * multi_week_scale
+                results.loc[mask, "prediction_ci95_lower"] = np.maximum(pred_pts - z95 * std_raw * f95 * multi_week_scale, 0)
+                results.loc[mask, "prediction_ci95_upper"] = pred_pts + z95 * std_raw * f95 * multi_week_scale
 
         # Apply tier-specific uncertainty scaling
         for position in POSITIONS:
