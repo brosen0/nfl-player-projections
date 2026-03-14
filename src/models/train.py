@@ -486,6 +486,17 @@ def _check_distribution_shift(train_df: pd.DataFrame, test_df: pd.DataFrame,
     except Exception:
         auc = None
 
+    # Feature importance from adversarial classifier for diagnostics
+    top_discriminative = []
+    if auc is not None and auc > 0.55:
+        try:
+            clf.fit(X, y)
+            importances = pd.Series(clf.feature_importances_, index=X.columns)
+            top_discriminative = importances.nlargest(10)
+            print(f"  Top discriminative features: {list(top_discriminative.index)}")
+        except Exception:
+            pass
+
     # Per-feature KS test for top shifted features
     ks_results = []
     try:
@@ -506,6 +517,11 @@ def _check_distribution_shift(train_df: pd.DataFrame, test_df: pd.DataFrame,
         "adversarial_auc": round(auc, 4) if auc is not None else None,
         "shift_detected": auc is not None and auc > 0.85,
         "top_shifted_features": ks_results[:10],
+        "top_discriminative_features": (
+            [{"feature": f, "importance": round(float(v), 4)}
+             for f, v in top_discriminative.items()]
+            if len(top_discriminative) > 0 else []
+        ),
     }
 
     if result["shift_detected"]:
