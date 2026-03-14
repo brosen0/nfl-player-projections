@@ -3,6 +3,8 @@ Performance Tracking System
 Tracks model accuracy week-over-week and displays trending performance.
 """
 
+import re
+
 import pandas as pd
 import numpy as np
 import sqlite3
@@ -12,16 +14,20 @@ from typing import Dict, List, Tuple
 import warnings
 warnings.filterwarnings('ignore')
 
+_VALID_IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
 
 class PerformanceTracker:
     """
     Tracks prediction accuracy by comparing predictions vs actuals.
     Maintains historical performance metrics.
     """
-    
+
     def __init__(self, db_path: str = "../data/nfl_data.db"):
         self.db_path = Path(db_path)
         self.performance_table = "model_performance"
+        if not _VALID_IDENTIFIER.match(self.performance_table):
+            raise ValueError(f"Invalid table name: {self.performance_table!r}")
         self._initialize_performance_table()
     
     def _initialize_performance_table(self):

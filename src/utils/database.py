@@ -1,9 +1,27 @@
 """Database management for NFL data storage."""
+import re
 import sqlite3
 from pathlib import Path
 from typing import Optional, List, Dict, Any
 import pandas as pd
 from contextlib import contextmanager
+
+_VALID_IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+_VALID_DDL_TYPE = re.compile(r"^[A-Z]+ *(DEFAULT *[\w.]+)?$", re.IGNORECASE)
+
+
+def _validate_identifier(name: str) -> str:
+    """Validate a SQL identifier (column/table name) against injection."""
+    if not _VALID_IDENTIFIER.match(name):
+        raise ValueError(f"Invalid SQL identifier: {name!r}")
+    return name
+
+
+def _validate_ddl(ddl: str) -> str:
+    """Validate a DDL type expression (e.g. 'REAL DEFAULT 0')."""
+    if not _VALID_DDL_TYPE.match(ddl):
+        raise ValueError(f"Invalid DDL type expression: {ddl!r}")
+    return ddl
 
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
@@ -127,10 +145,13 @@ class DatabaseManager:
                 }
                 for col, ddl in add_cols.items():
                     if col not in existing_cols:
-                        cursor.execute(f"ALTER TABLE player_weekly_stats ADD COLUMN {col} {ddl}")
+                        cursor.execute(
+                            f"ALTER TABLE player_weekly_stats ADD COLUMN "
+                            f"{_validate_identifier(col)} {_validate_ddl(ddl)}"
+                        )
             except Exception:
                 pass
-            
+
             # Team stats
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS team_stats (
@@ -187,7 +208,10 @@ class DatabaseManager:
                 }
                 for col, ddl in add_team_cols.items():
                     if col not in existing_team_cols:
-                        cursor.execute(f"ALTER TABLE team_stats ADD COLUMN {col} {ddl}")
+                        cursor.execute(
+                            f"ALTER TABLE team_stats ADD COLUMN "
+                            f"{_validate_identifier(col)} {_validate_ddl(ddl)}"
+                        )
             except Exception:
                 pass
             
