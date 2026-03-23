@@ -1715,6 +1715,10 @@ class FeatureEngineer:
         Addresses adversarial-validation AUC ≈ 0.957 by preventing features
         from encoding absolute temporal position (era, season count, stat
         magnitude drift across NFL rule changes).
+
+        Uses expanding backward-looking statistics (shift + expanding) so each
+        row only sees strictly prior weeks within the same season/position,
+        avoiding within-season lookahead bias.
         """
         # 1. Cap nfl_experience_years to reduce long-tail temporal signal
         if "nfl_experience_years" in df.columns:
@@ -1724,11 +1728,25 @@ class FeatureEngineer:
         if "season" in df.columns and "position" in df.columns:
             roll_mean_cols = [c for c in df.columns
                              if "_roll" in c and "_mean" in c]
-            for col in roll_mean_cols:
-                grp = df.groupby(["season", "position"])[col]
-                season_pos_mean = grp.transform("mean")
-                season_pos_std = grp.transform("std").clip(lower=0.01)
-                df[col] = (df[col] - season_pos_mean) / season_pos_std
+            if roll_mean_cols:
+                df = df.sort_values(["season", "position", "week"]).reset_index(drop=True)
+                # Ensure float dtype so z-score values can be stored
+                for col in roll_mean_cols:
+                    df[col] = df[col].astype(float)
+                for col in roll_mean_cols:
+                    grp = df.groupby(["season", "position"])[col]
+                    # shift(1) + expanding so each row sees only prior weeks
+                    expanding_mean = grp.transform(
+                        lambda x: x.shift(1).expanding(min_periods=3).mean()
+                    )
+                    expanding_std = grp.transform(
+                        lambda x: x.shift(1).expanding(min_periods=3).std()
+                    ).clip(lower=0.01)
+                    valid = expanding_mean.notna()
+                    df.loc[valid, col] = (
+                        (df.loc[valid, col] - expanding_mean[valid]) / expanding_std[valid]
+                    )
+                    # Rows without enough prior data (weeks 1-3) are left unnormalized
 
         return df
 

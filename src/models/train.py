@@ -309,10 +309,13 @@ def _create_horizon_targets(df: pd.DataFrame, n_weeks: List[int] = None) -> pd.D
         out[f"target_{nw}w"] = out.groupby(group_cols)["fantasy_points"].transform(
             lambda x, w=nw: _forward_window(x, window=w, agg="sum")
         )
-    if "utilization_score" in out.columns:
-        out["target_util_1w"] = out.groupby(group_cols)["utilization_score"].shift(-1)
+    # Use raw (unnormalized) utilization score for targets when available
+    # to decouple targets from percentile normalization parameters.
+    util_col = "utilization_score_raw" if "utilization_score_raw" in out.columns else "utilization_score"
+    if util_col in out.columns:
+        out["target_util_1w"] = out.groupby(group_cols)[util_col].shift(-1)
         for nw in [w for w in n_weeks if w != 1]:
-            out[f"target_util_{nw}w"] = out.groupby(group_cols)["utilization_score"].transform(
+            out[f"target_util_{nw}w"] = out.groupby(group_cols)[util_col].transform(
                 lambda x, w=nw: _forward_window(x, window=w, agg="mean")
             )
     return out
@@ -1244,7 +1247,13 @@ def _prepare_training_data(
         )
     test_data = calculate_utilization_scores(test_data, team_df=team_df, weights=None, percentile_bounds=loaded_bounds)
 
-    # Horizon targets (season-bounded)
+    # Compute raw (unnormalized) utilization scores for target derivation
+    # to decouple targets from percentile normalization parameters.
+    from src.features.utilization_score import compute_raw_utilization_score
+    train_data = compute_raw_utilization_score(train_data)
+    test_data = compute_raw_utilization_score(test_data)
+
+    # Horizon targets (season-bounded) — uses utilization_score_raw when available
     train_data = _create_horizon_targets(train_data, n_weeks=[1, 4, 18])
     test_data = _create_horizon_targets(test_data, n_weeks=[1, 4, 18])
 
@@ -1256,7 +1265,9 @@ def _prepare_training_data(
     )
     train_data = recalculate_utilization_with_weights(train_data, util_weights)
     test_data = recalculate_utilization_with_weights(test_data, util_weights)
-    # Recompute targets on reweighted utilization scale
+    # Recompute raw scores with optimized weights and rebuild targets
+    train_data = compute_raw_utilization_score(train_data, weights=util_weights)
+    test_data = compute_raw_utilization_score(test_data, weights=util_weights)
     train_data = _create_horizon_targets(train_data, n_weeks=[1, 4, 18])
     test_data = _create_horizon_targets(test_data, n_weeks=[1, 4, 18])
     with open(MODELS_DIR / "utilization_weights.json", "w") as f:
@@ -1304,26 +1315,29 @@ def _prepare_training_data(
     except Exception as e:
         logger.warning("Player embeddings skipped: %s", e)
 
-    # Winsorize targets at 1st/99th percentile per position (train only)
+    # Winsorize targets at 1st/99th percentile per position.
+    # Bounds are derived from train data and applied symmetrically to both
+    # train and test to avoid distribution mismatch during evaluation.
+    winsor_bounds = {}  # (pos, col) -> (lo, hi)
     for pos in ["QB", "RB", "WR", "TE"]:
         mask = train_data["position"] == pos
-        for n_weeks in [1, 4, 18]:
-            col = f"target_{n_weeks}w"
+        target_cols = [f"target_{n}w" for n in [1, 4, 18]] + [
+            "target_util_1w", "target_util_4w", "target_util_18w"]
+        for col in target_cols:
             if col not in train_data.columns:
                 continue
             valid = train_data.loc[mask, col].dropna()
             if len(valid) < 20:
                 continue
             lo, hi = valid.quantile(0.01), valid.quantile(0.99)
+            winsor_bounds[(pos, col)] = (lo, hi)
             train_data.loc[mask, col] = train_data.loc[mask, col].clip(lo, hi)
-        for col in ["target_util_1w", "target_util_4w", "target_util_18w"]:
-            if col not in train_data.columns:
-                continue
-            valid = train_data.loc[mask, col].dropna()
-            if len(valid) < 20:
-                continue
-            lo, hi = valid.quantile(0.01), valid.quantile(0.99)
-            train_data.loc[mask, col] = train_data.loc[mask, col].clip(lo, hi)
+
+    # Apply the same train-derived bounds to test targets
+    for (pos, col), (lo, hi) in winsor_bounds.items():
+        if col in test_data.columns:
+            test_mask = test_data["position"] == pos
+            test_data.loc[test_mask, col] = test_data.loc[test_mask, col].clip(lo, hi)
 
     # Train models (fast mode: skip QB dual-target comparison by withholding test_data)
     trainer = ModelTrainer()
