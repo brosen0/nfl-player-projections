@@ -654,7 +654,46 @@ def calculate_utilization_scores(player_df: pd.DataFrame,
     return calculator.calculate_all_scores(player_df, team_df)
 
 
-def recalculate_utilization_with_weights(df: pd.DataFrame, 
+def compute_raw_utilization_score(df: pd.DataFrame,
+                                   weights: Optional[Dict[str, Dict[str, float]]] = None) -> pd.DataFrame:
+    """
+    Compute utilization_score_raw from raw _pct columns (no percentile normalization).
+
+    Used for target derivation to decouple targets from normalization parameters.
+    Same weight keys as recalculate_utilization_with_weights but maps to _pct columns.
+    """
+    from config.settings import UTILIZATION_WEIGHTS
+
+    result = df.copy()
+    weights = weights or UTILIZATION_WEIGHTS
+    pct_to_key = {
+        "RB": {"snap_share_pct": "snap_share", "rush_share_pct": "rush_share",
+               "target_share_pct": "target_share", "redzone_share_pct": "redzone_share",
+               "touch_share_pct": "touch_share"},
+        "WR": {"target_share_pct": "target_share", "air_yards_share_pct": "air_yards_share",
+               "snap_share_pct": "snap_share", "redzone_targets_pct": "redzone_targets",
+               "route_participation_pct": "route_participation"},
+        "TE": {"target_share_pct": "target_share", "snap_share_pct": "snap_share",
+               "redzone_targets_pct": "redzone_targets", "air_yards_share_pct": "air_yards_share",
+               "inline_rate_pct": "inline_rate"},
+        "QB": {"dropback_rate_pct": "dropback_rate", "rush_share_pct": "rush_attempt_share",
+               "redzone_opp_pct": "redzone_opportunity", "play_volume_pct": "play_volume"},
+    }
+    for position in ["QB", "RB", "WR", "TE"]:
+        mask = result["position"] == position
+        if not mask.any():
+            continue
+        pos_weights = weights.get(position, UTILIZATION_WEIGHTS.get(position, {}))
+        mapping = pct_to_key.get(position, {})
+        score = pd.Series(0.0, index=result.index)
+        for pct_col, key in mapping.items():
+            if pct_col in result.columns and key in pos_weights:
+                score = score + result[pct_col].fillna(0) * pos_weights[key]
+        result.loc[mask, "utilization_score_raw"] = score[mask].clip(0, 100)
+    return result
+
+
+def recalculate_utilization_with_weights(df: pd.DataFrame,
                                          weights: Dict[str, Dict[str, float]]) -> pd.DataFrame:
     """
     Recompute utilization_score from existing _norm columns using new weights.

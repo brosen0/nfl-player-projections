@@ -8,13 +8,13 @@
 
 ## Executive Summary
 
-The pipeline has **strong leakage defenses** overall, including a dedicated `leakage.py` module, season-aware temporal splits, and careful train-only fitting for scalers and embeddings. However, the audit identified **2 confirmed issues** (1 medium severity, 1 low severity) and **1 area to monitor**.
+The pipeline has **strong leakage defenses** overall, including a dedicated `leakage.py` module, season-aware temporal splits, and careful train-only fitting for scalers and embeddings. The audit identified **3 issues** — all have been resolved.
 
 | # | Finding | Severity | Status |
 |---|---------|----------|--------|
-| 1 | Utilization percentile bounds normalize a target-adjacent signal | **Medium** | Needs fix |
-| 2 | Target winsorization is asymmetric (train only, not test) | **Low** | Acceptable |
-| 3 | Season-relative normalization in feature engineering uses full group stats | **Monitor** | Low risk |
+| 1 | Utilization percentile bounds normalize a target-adjacent signal | **Medium** | **Fixed** |
+| 2 | Target winsorization is asymmetric (train only, not test) | **Low** | **Fixed** |
+| 3 | Season-relative normalization uses full-season lookahead stats | **Medium** | **Fixed** |
 
 ---
 
@@ -31,7 +31,7 @@ Data Load (nfl-data-py)
   -> Feature Engineering (rolling/lag with .shift(1), temporal context)
   -> Bounded Scaling (MinMaxScaler, train-only fit)
   -> Player Embeddings (PCA, train-only fit)
-  -> Target Winsorization (train only)
+  -> Target Winsorization (train bounds, applied to both train and test)
   -> Model Training (SeasonAwareTimeSeriesSplit CV)
 ```
 
@@ -56,9 +56,7 @@ The percentile normalization applied to `utilization_score` at line 1231-1238 sh
 
 **Impact:** Modest. The bounds are fit on training data only, so this is not a classic train-test leakage. The risk is that percentile normalization compresses the utilization distribution in a way that makes the target easier to predict from the (identically normalized) utilization features, overstating in-sample metrics.
 
-**Recommendation:**
-- Option A: Compute targets from **raw** utilization scores before percentile normalization, then normalize features separately.
-- Option B: Apply percentile normalization only to the feature version of utilization, keeping the target on the raw scale.
+**Resolution:** Added `compute_raw_utilization_score()` in `utilization_score.py` that computes a weighted sum of raw `_pct` columns (no percentile normalization). `_create_horizon_targets()` now derives `target_util_*` from `utilization_score_raw` instead of the normalized `utilization_score`. The raw column is also blocked by `leakage.py` to prevent accidental use as a feature.
 
 ---
 
@@ -72,21 +70,21 @@ Target winsorization (clipping at 1st/99th percentile) is applied only to traini
 
 **Impact:** Minimal. This is conservative — it prevents extreme values from distorting training but allows the model to be evaluated against actual outcomes. The asymmetry may cause slightly pessimistic test metrics for extreme performances.
 
-**Recommendation:** Acceptable as-is. Document the design choice. If test metrics seem systematically biased at the tails, consider applying the same train-derived bounds to test targets for evaluation consistency.
+**Resolution:** Train-derived winsorization bounds `(lo, hi)` are now stored per (position, target_column) and applied symmetrically to both train and test targets, eliminating the distribution mismatch.
 
 ---
 
-### Finding 3: Season-Relative Normalization Scope
+### Finding 3: Season-Relative Normalization Within-Season Lookahead
 
-**Location:** `src/features/feature_engineering.py:124` (`_normalize_season_relative`)
-**Severity:** Monitor
+**Location:** `src/features/feature_engineering.py:1712-1733` (`_normalize_season_relative`)
+**Severity:** Medium (upgraded from Monitor after deeper analysis)
 
 **Description:**
-The `_normalize_season_relative` method normalizes features relative to season-level statistics. When applied via `_apply_with_temporal_context`, the test data transformation runs on a combined train+test dataframe. If the normalization computes per-season means/stds, test-season rows would use statistics computed only from test-season data (since train seasons have different season values).
+The `_normalize_season_relative` method used `groupby(["season", "position"]).transform("mean"/"std")` which computes statistics across ALL weeks in a season. When applied via `_apply_with_temporal_context` on the combined train+test dataframe, test rows in week N see future weeks' statistics from the same season — confirmed within-season lookahead bias.
 
-**Impact:** Low. This is actually the correct behavior for season-relative normalization (each season normalized to its own stats). However, for the test season, early-week predictions would use stats that include later weeks of the same season, which is a mild form of within-season lookahead.
+**Impact:** Moderate. For a test row in week 10, the normalization mean/std included data from weeks 11-18 of the same season. This leaks future information into feature normalization, potentially inflating test-set metrics.
 
-**Recommendation:** Monitor. If the normalization uses expanding (cumulative) windows rather than full-season stats, this is not an issue. Verify that `_normalize_season_relative` uses only backward-looking statistics.
+**Resolution:** Replaced full-season `groupby.transform("mean"/"std")` with expanding backward-looking statistics: `shift(1).expanding(min_periods=3).mean()/std()`. Each row now only sees strictly prior weeks within the same season/position group. Rows with fewer than 3 prior data points (early season) are left unnormalized, which is safe since the model-layer StandardScaler handles mixed scales.
 
 ---
 
@@ -179,11 +177,18 @@ The pipeline employs multiple layers of leakage prevention:
 
 ---
 
-## Recommendations Summary
+## Resolutions Applied
+
+All three findings have been fixed:
+
+| Finding | Fix | Files Changed |
+|---------|-----|---------------|
+| 1 | Added `compute_raw_utilization_score()` for target derivation; targets now use raw `_pct` scores | `utilization_score.py`, `train.py`, `leakage.py` |
+| 2 | Train-derived winsorization bounds applied symmetrically to both train and test targets | `train.py` |
+| 3 | Replaced full-season normalization with expanding backward-looking `shift(1).expanding(min_periods=3)` | `feature_engineering.py` |
+
+## Remaining Recommendations
 
 | Priority | Action | Effort |
 |----------|--------|--------|
-| 1 | Decouple utilization percentile normalization from target creation (Finding 1) | Medium |
-| 2 | Verify `_normalize_season_relative` uses backward-looking stats only (Finding 3) | Low |
-| 3 | Document asymmetric winsorization as intentional design choice (Finding 2) | Low |
-| 4 | Add automated leakage regression test: assert no feature correlates >0.95 with any target | Low |
+| 1 | Add automated leakage regression test: assert no feature correlates >0.95 with any target | Low |

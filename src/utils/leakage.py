@@ -100,6 +100,10 @@ def is_leakage_feature(col: str, *, ban_utilization_score: bool = True) -> bool:
     if ban_utilization_score and col_l == "utilization_score":
         return True
 
+    # Raw utilization score is only used for target derivation, never as a feature.
+    if col_l == "utilization_score_raw":
+        return True
+
     if _TARGET_COL_RE.match(col_l):
         return True
 
