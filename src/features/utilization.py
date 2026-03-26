@@ -312,6 +312,11 @@ def engineer_all_features(
     df = uncertainty.calculate_risk_adjusted_projection(df)
     
     # Rolling averages for trend detection
+    # NOTE: Rolling windows are grouped by player_id only (not player_id + season).
+    # This is intentional: cross-season carryover gives season-opener weeks a warm
+    # start from the prior year rather than treating them as completely unknown.
+    # The _missing indicator columns (added below) let models learn to discount
+    # stale carried-over values when appropriate.
     df = df.sort_values(['player_id', 'season', 'week'])
     
     for window in [3, 4, 5, 8]:
@@ -410,6 +415,14 @@ def engineer_all_features(
     policy_registry = FeaturePolicyRegistry.from_config()
     fail_policy = bool(require_bounds and not allow_autoload_bounds)
     policy_registry.apply(df, context="utilization_engineering", fail_on_threshold=fail_policy)
+
+    # Add _missing indicator columns for rolling/lag features so models can
+    # distinguish "no prior data" (e.g. season opener) from "zero performance".
+    rolling_lag_cols = [c for c in df.columns
+                        if ('_rolling_' in c or '_lag_' in c or c in ('rolling_volatility', 'rolling_consistency'))
+                        and df[c].dtype.kind in 'fc']
+    for col in rolling_lag_cols:
+        df[f'{col}_missing'] = df[col].isna().astype(np.int8)
 
     # Fill remaining NaN values (non-policy features)
     numeric_cols = df.select_dtypes(include=[np.number]).columns

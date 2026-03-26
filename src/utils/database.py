@@ -678,24 +678,24 @@ class DatabaseManager:
                 COALESCE(SUM(rushing_yards), 0) AS rushing_yards,
                 COALESCE(SUM(passing_yards), 0) + COALESCE(SUM(rushing_yards), 0) AS total_yards,
                 COALESCE(SUM(passing_attempts), 0) + COALESCE(SUM(rushing_attempts), 0) AS total_plays,
-                0 AS points_scored,
-                0 AS points_allowed,
-                0 AS turnovers,
-                0.0 AS time_of_possession,
-                0 AS redzone_attempts,
-                0 AS redzone_scores,
-                0.0 AS third_down_conv,
-                0 AS sacks_allowed,
-                0 AS neutral_pass_plays,
-                0 AS neutral_run_plays,
-                0.0 AS neutral_pass_rate,
-                0.0 AS neutral_pass_rate_lg,
-                0.0 AS neutral_pass_rate_oe,
-                0 AS drive_count,
-                0.0 AS drive_success_rate,
-                0.0 AS avg_drive_epa,
-                0.0 AS points_per_drive,
-                0.0 AS pace_sec_per_play
+                NULL AS points_scored,
+                NULL AS points_allowed,
+                NULL AS turnovers,
+                NULL AS time_of_possession,
+                NULL AS redzone_attempts,
+                NULL AS redzone_scores,
+                NULL AS third_down_conv,
+                NULL AS sacks_allowed,
+                NULL AS neutral_pass_plays,
+                NULL AS neutral_run_plays,
+                NULL AS neutral_pass_rate,
+                NULL AS neutral_pass_rate_lg,
+                NULL AS neutral_pass_rate_oe,
+                NULL AS drive_count,
+                NULL AS drive_success_rate,
+                NULL AS avg_drive_epa,
+                NULL AS points_per_drive,
+                NULL AS pace_sec_per_play
             FROM player_weekly_stats
             WHERE team IS NOT NULL AND team != ''
         """
@@ -709,58 +709,80 @@ class DatabaseManager:
     
     def ensure_team_stats_from_players(self, season: int = None) -> int:
         """
-        Backfill team_stats from player_weekly_stats for rows that don't exist.
-        Skips (team, season, week) that already have team_stats so scraper data is preserved.
-        Returns number of rows inserted.
+        Backfill team_stats from player_weekly_stats for missing rows, and merge
+        player-derived fields (yards, attempts) into existing rows via COALESCE.
+        Fields that cannot be computed from player stats (redzone, drive metrics,
+        neutral pass rate, etc.) are passed as None so that existing PBP-derived
+        values are preserved by the ON CONFLICT … COALESCE logic in insert_team_stats.
+        Returns number of rows inserted or updated.
         """
         agg = self.aggregate_team_stats_from_players(season=season)
         if agg.empty:
             return 0
-        existing = self.get_team_stats()
-        if not existing.empty:
-            existing_keys = set(
-                zip(existing["team"].astype(str), existing["season"].astype(int), existing["week"].astype(int))
-            )
-        else:
-            existing_keys = set()
+
+        def _safe_int(val):
+            if val is None or (isinstance(val, float) and pd.isna(val)):
+                return None
+            return int(val)
+
+        def _safe_float(val):
+            if val is None or (isinstance(val, float) and pd.isna(val)):
+                return None
+            return float(val)
+
         count = 0
         for _, row in agg.iterrows():
-            key = (str(row["team"]), int(row["season"]), int(row["week"]))
-            if key in existing_keys:
-                continue
             self.insert_team_stats({
                 "team": row["team"],
                 "season": int(row["season"]),
                 "week": int(row["week"]),
                 "opponent": row.get("opponent") or "",
                 "home_away": row.get("home_away") or "",
-                "points_scored": int(row.get("points_scored", 0)),
-                "points_allowed": int(row.get("points_allowed", 0)),
-                "total_yards": int(row.get("total_yards", 0)),
-                "passing_yards": int(row.get("passing_yards", 0)),
-                "rushing_yards": int(row.get("rushing_yards", 0)),
-                "turnovers": int(row.get("turnovers", 0)),
-                "time_of_possession": float(row.get("time_of_possession", 0)),
-                "total_plays": int(row.get("total_plays", 0)),
-                "pass_attempts": int(row.get("pass_attempts", 0)),
-                "rush_attempts": int(row.get("rush_attempts", 0)),
-                "redzone_attempts": int(row.get("redzone_attempts", 0)),
-                "redzone_scores": int(row.get("redzone_scores", 0)),
-                "third_down_conv": float(row.get("third_down_conv", 0)),
-                "sacks_allowed": int(row.get("sacks_allowed", 0)),
-                "neutral_pass_plays": int(row.get("neutral_pass_plays", 0)),
-                "neutral_run_plays": int(row.get("neutral_run_plays", 0)),
-                "neutral_pass_rate": float(row.get("neutral_pass_rate", 0.0)),
-                "neutral_pass_rate_lg": float(row.get("neutral_pass_rate_lg", 0.0)),
-                "neutral_pass_rate_oe": float(row.get("neutral_pass_rate_oe", 0.0)),
-                "drive_count": int(row.get("drive_count", 0)),
-                "drive_success_rate": float(row.get("drive_success_rate", 0.0)),
-                "avg_drive_epa": float(row.get("avg_drive_epa", 0.0)),
-                "points_per_drive": float(row.get("points_per_drive", 0.0)),
-                "pace_sec_per_play": float(row.get("pace_sec_per_play", 0.0)),
+                "points_scored": _safe_int(row.get("points_scored")),
+                "points_allowed": _safe_int(row.get("points_allowed")),
+                "total_yards": _safe_int(row.get("total_yards")),
+                "passing_yards": _safe_int(row.get("passing_yards")),
+                "rushing_yards": _safe_int(row.get("rushing_yards")),
+                "turnovers": _safe_int(row.get("turnovers")),
+                "time_of_possession": _safe_float(row.get("time_of_possession")),
+                "total_plays": _safe_int(row.get("total_plays")),
+                "pass_attempts": _safe_int(row.get("pass_attempts")),
+                "rush_attempts": _safe_int(row.get("rush_attempts")),
+                "redzone_attempts": _safe_int(row.get("redzone_attempts")),
+                "redzone_scores": _safe_int(row.get("redzone_scores")),
+                "third_down_conv": _safe_float(row.get("third_down_conv")),
+                "sacks_allowed": _safe_int(row.get("sacks_allowed")),
+                "neutral_pass_plays": _safe_int(row.get("neutral_pass_plays")),
+                "neutral_run_plays": _safe_int(row.get("neutral_run_plays")),
+                "neutral_pass_rate": _safe_float(row.get("neutral_pass_rate")),
+                "neutral_pass_rate_lg": _safe_float(row.get("neutral_pass_rate_lg")),
+                "neutral_pass_rate_oe": _safe_float(row.get("neutral_pass_rate_oe")),
+                "drive_count": _safe_int(row.get("drive_count")),
+                "drive_success_rate": _safe_float(row.get("drive_success_rate")),
+                "avg_drive_epa": _safe_float(row.get("avg_drive_epa")),
+                "points_per_drive": _safe_float(row.get("points_per_drive")),
+                "pace_sec_per_play": _safe_float(row.get("pace_sec_per_play")),
             })
             count += 1
-            existing_keys.add(key)
+        return count
+
+    def nullify_zero_redzone_team_stats(self) -> int:
+        """Set redzone_attempts/redzone_scores to NULL where they are 0.
+
+        This allows a subsequent insert (e.g. from PBP data) to fill them in
+        via the COALESCE logic in insert_team_stats. Only touches rows that
+        are clearly unpopulated (both columns are 0).
+        """
+        query = """
+            UPDATE team_stats
+            SET redzone_attempts = NULL, redzone_scores = NULL
+            WHERE redzone_attempts = 0 AND redzone_scores = 0
+        """
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(query)
+            count = cursor.rowcount
+            conn.commit()
         return count
 
     def aggregate_team_defense_from_players(self, season: int = None) -> pd.DataFrame:
@@ -900,6 +922,46 @@ class DatabaseManager:
             conn.commit()
         return count
     
+    def populate_player_team_history(self) -> int:
+        """Derive player_team_history from player_weekly_stats.
+
+        Groups by (player_id, team, season) to find the first and last week
+        each player was on each team per season. Uses INSERT OR REPLACE to
+        be idempotent.
+        """
+        query = """
+            SELECT player_id, team, season,
+                   MIN(week) AS start_week, MAX(week) AS end_week
+            FROM player_weekly_stats
+            WHERE player_id IS NOT NULL AND team IS NOT NULL AND team != ''
+            GROUP BY player_id, team, season
+        """
+        with self._get_connection() as conn:
+            rows = pd.read_sql_query(query, conn)
+        if rows.empty:
+            return 0
+        count = 0
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            for _, row in rows.iterrows():
+                try:
+                    cursor.execute("""
+                        INSERT OR REPLACE INTO player_team_history
+                        (player_id, team, season, start_week, end_week)
+                        VALUES (?, ?, ?, ?, ?)
+                    """, (
+                        str(row["player_id"]),
+                        str(row["team"]),
+                        int(row["season"]),
+                        int(row["start_week"]),
+                        int(row["end_week"]),
+                    ))
+                    count += 1
+                except Exception:
+                    pass
+            conn.commit()
+        return count
+
     def get_player_with_team_history(self, player_id: str) -> pd.DataFrame:
         """Get player stats joined with their team stats for each week."""
         query = """

@@ -218,6 +218,14 @@ class NFLDataRefresher:
                 except Exception as e:
                     results['errors'].append(f"Error loading schedule: {e}")
         
+        # Repair team_stats rows with zero redzone data so PBP values can fill in
+        try:
+            n_nullified = self.db.nullify_zero_redzone_team_stats()
+            if n_nullified > 0:
+                print(f"  Cleared {n_nullified} zero-redzone team_stats rows for PBP backfill")
+        except Exception as e:
+            results['errors'].append(f"Redzone nullify: {e}")
+
         # Backfill team_stats from player_weekly_stats when missing (no scrapers required)
         try:
             n_backfill = self.db.ensure_team_stats_from_players(season=None)
@@ -225,14 +233,28 @@ class NFLDataRefresher:
                 results['team_stats_backfilled'] = n_backfill
         except Exception as e:
             results['errors'].append(f"Team stats backfill: {e}")
-        
-        # Data quality gates
+
+        # Populate player_team_history from player_weekly_stats
+        try:
+            n_history = self.db.populate_player_team_history()
+            if n_history > 0:
+                results['player_team_history_rows'] = n_history
+        except Exception as e:
+            results['errors'].append(f"Player team history: {e}")
+
+        # Data quality gates — block refresh output if gates fail
         try:
             dq_path = MODELS_DIR / "data_quality_gate_refresh.json"
             dq_result = run_db_quality_gates(report_path=dq_path)
             results["quality_gates"] = {"passed": dq_result.passed, "report_path": str(dq_path)}
             if not dq_result.passed:
-                results["errors"].append("Data quality gates failed after refresh")
+                results["errors"].append("REFRESH BLOCKED: Data quality gates failed after refresh")
+                failures = dq_result.report.get("failures", []) if hasattr(dq_result, 'report') else []
+                for f in failures:
+                    print(f"  ✗ {f}")
+                print(f"  Quality gate report: {dq_path}")
+                results["blocked"] = True
+                return results
         except Exception as e:
             results["errors"].append(f"Data quality gate execution failed: {e}")
 
