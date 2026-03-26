@@ -335,7 +335,14 @@ def auto_refresh_data(force_check: bool = False) -> Dict:
     try:
         from src.data.auto_refresh import NFLDataRefresher
         refresher = NFLDataRefresher()
-        refresher.refresh(force=False)
+        refresh_result = refresher.refresh(force=False)
+        if isinstance(refresh_result, dict) and refresh_result.get("blocked"):
+            import warnings
+            warnings.warn(
+                "Auto-refresh data quality gates FAILED — proceeding with existing DB data. "
+                "Check the quality gate report for details.",
+                UserWarning,
+            )
     except Exception as e:
         # Non-fatal: proceed with whatever is in DB
         import warnings

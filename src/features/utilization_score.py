@@ -153,7 +153,8 @@ class UtilizationScoreCalculator:
         
         # Add _missing indicators for rolling/lag columns before filling
         rolling_lag_cols = [c for c in result.columns
-                            if ('_rolling_' in c or '_lag_' in c)
+                            if ('_rolling_' in c or '_lag_' in c
+                                or c in ('rolling_volatility', 'rolling_consistency'))
                             and result[c].dtype.kind in 'fc']
         for col in rolling_lag_cols:
             result[f'{col}_missing'] = result[col].isna().astype(np.int8)

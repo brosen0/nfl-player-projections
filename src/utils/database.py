@@ -709,16 +709,25 @@ class DatabaseManager:
     
     def ensure_team_stats_from_players(self, season: int = None) -> int:
         """
-        Backfill team_stats from player_weekly_stats for missing rows, and merge
-        player-derived fields (yards, attempts) into existing rows via COALESCE.
+        Backfill team_stats from player_weekly_stats for rows that don't exist.
+        Skips (team, season, week) keys that already have team_stats so that
+        PBP-derived or scraper-sourced values are never overwritten by the
+        less-accurate player-aggregated approximations.
         Fields that cannot be computed from player stats (redzone, drive metrics,
-        neutral pass rate, etc.) are passed as None so that existing PBP-derived
-        values are preserved by the ON CONFLICT … COALESCE logic in insert_team_stats.
-        Returns number of rows inserted or updated.
+        neutral pass rate, etc.) are passed as None so the ON CONFLICT … COALESCE
+        logic in insert_team_stats preserves any existing values.
+        Returns number of rows inserted.
         """
         agg = self.aggregate_team_stats_from_players(season=season)
         if agg.empty:
             return 0
+        existing = self.get_team_stats()
+        if not existing.empty:
+            existing_keys = set(
+                zip(existing["team"].astype(str), existing["season"].astype(int), existing["week"].astype(int))
+            )
+        else:
+            existing_keys = set()
 
         def _safe_int(val):
             if val is None or (isinstance(val, float) and pd.isna(val)):
@@ -732,6 +741,9 @@ class DatabaseManager:
 
         count = 0
         for _, row in agg.iterrows():
+            key = (str(row["team"]), int(row["season"]), int(row["week"]))
+            if key in existing_keys:
+                continue
             self.insert_team_stats({
                 "team": row["team"],
                 "season": int(row["season"]),
@@ -764,6 +776,7 @@ class DatabaseManager:
                 "pace_sec_per_play": _safe_float(row.get("pace_sec_per_play")),
             })
             count += 1
+            existing_keys.add(key)
         return count
 
     def nullify_zero_redzone_team_stats(self) -> int:
