@@ -191,7 +191,7 @@ class NFLDataRefresher:
                             'to_week': new_local
                         })
                 except Exception as e:
-                    pass  # Non-fatal; weekly refresh below may still help
+                    print(f"  WARNING: PBP refresh for in-season {current} failed: {e}")
             if remote_week > local_week:
                 print(f"\nNew weeks available for {current}: {local_week} -> {remote_week}")
                 try:
