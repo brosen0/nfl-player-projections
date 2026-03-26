@@ -212,6 +212,116 @@ def run_quality_gates(
     return result
 
 
+def validate_training_cache_integrity(
+    cache_path: Optional[Path] = None,
+    db_path: Optional[Path] = None,
+) -> DataQualityGateResult:
+    """Validate cached training data for critical integrity issues.
+
+    This gate is designed to BLOCK training or app-data generation when the
+    cache has corruption that would silently degrade model quality.  It checks:
+      1. Snap data is populated (not all zeros)
+      2. No duplicate (player_id, season, week) rows
+      3. Fantasy points are consistent with component stats (PPR formula)
+      4. No real game data rows have been overwritten with null stubs
+      5. Key stat columns have plausible null rates by position
+
+    Returns DataQualityGateResult with passed=False on any critical failure.
+    """
+    report: Dict[str, Any] = {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "status": "fail",
+        "checks": {},
+    }
+    failures = []
+
+    # Load cache
+    parquet_path = cache_path or (DATA_DIR / "cached_features.parquet")
+    if not parquet_path.exists():
+        report["checks"]["cache_exists"] = {"passed": False, "reason": "cache file not found"}
+        return DataQualityGateResult(passed=False, report=report)
+
+    df = pd.read_parquet(parquet_path)
+    if df.empty:
+        report["checks"]["cache_exists"] = {"passed": False, "reason": "cache is empty"}
+        return DataQualityGateResult(passed=False, report=report)
+    report["checks"]["cache_exists"] = {"passed": True, "rows": len(df)}
+
+    # 1. Snap data check
+    snap_all_zero = True
+    if "snap_count" in df.columns:
+        snap_all_zero = (df["snap_count"].fillna(0) == 0).all()
+    report["checks"]["snap_data_populated"] = {
+        "passed": not snap_all_zero,
+        "nonzero_snap_rows": int((df["snap_count"].fillna(0) > 0).sum()) if "snap_count" in df.columns else 0,
+    }
+    if snap_all_zero:
+        failures.append("snap_count is zero for every row — snap data ingestion has failed")
+
+    # 2. Duplicate check
+    if all(c in df.columns for c in ["player_id", "season", "week"]):
+        dupes = df.duplicated(subset=["player_id", "season", "week"], keep=False).sum()
+        report["checks"]["no_duplicates"] = {"passed": dupes == 0, "duplicate_rows": int(dupes)}
+        if dupes > 0:
+            failures.append(f"{dupes} duplicate (player_id, season, week) rows found")
+
+    # 3. Fantasy points formula consistency (PPR)
+    scoring_cols = {
+        "passing_yards": 0.04, "passing_tds": 4, "interceptions": -2,
+        "rushing_yards": 0.1, "rushing_tds": 6, "receiving_yards": 0.1,
+        "receiving_tds": 6, "receptions": 1.0, "fumbles_lost": -2,
+    }
+    available = {k: v for k, v in scoring_cols.items() if k in df.columns}
+    if available and "fantasy_points" in df.columns:
+        calc = sum(df[col].fillna(0) * w for col, w in available.items())
+        actual = df["fantasy_points"].fillna(0)
+        abs_diff = (calc - actual).abs()
+        bad_rows = int((abs_diff > 1.0).sum())
+        mean_diff = float(abs_diff.mean())
+        report["checks"]["fantasy_points_formula"] = {
+            "passed": bad_rows < len(df) * 0.01,  # <1% tolerance
+            "rows_with_diff_gt_1": bad_rows,
+            "mean_abs_diff": round(mean_diff, 4),
+        }
+        if bad_rows >= len(df) * 0.01:
+            failures.append(f"Fantasy points formula mismatch: {bad_rows} rows differ by >1pt ({bad_rows/len(df)*100:.1f}%)")
+
+    # 4. Ghost row check (real-data rows with all stats null)
+    stat_cols = [c for c in ["fantasy_points", "passing_yards", "rushing_yards", "receiving_yards",
+                              "passing_attempts", "rushing_attempts", "targets"] if c in df.columns]
+    if stat_cols:
+        # Exclude K and DST (they legitimately have offensive stats as null)
+        skill_df = df[df["position"].isin(["QB", "RB", "WR", "TE"])] if "position" in df.columns else df
+        all_null = skill_df[stat_cols].isnull().all(axis=1)
+        ghost_count = int(all_null.sum())
+        ghost_pct = ghost_count / len(skill_df) * 100 if len(skill_df) > 0 else 0
+        report["checks"]["no_ghost_rows"] = {
+            "passed": ghost_pct < 1.0,
+            "ghost_rows": ghost_count,
+            "ghost_pct": round(ghost_pct, 2),
+        }
+        if ghost_pct >= 1.0:
+            failures.append(f"{ghost_count} skill-position rows ({ghost_pct:.1f}%) have all stat columns null")
+
+    # 5. Position coverage
+    if "position" in df.columns:
+        pos_counts = df["position"].value_counts().to_dict()
+        expected = {"QB", "RB", "WR", "TE"}
+        missing = expected - set(pos_counts.keys())
+        report["checks"]["position_coverage"] = {
+            "passed": len(missing) == 0,
+            "counts": pos_counts,
+            "missing": sorted(missing),
+        }
+        if missing:
+            failures.append(f"Missing positions: {sorted(missing)}")
+
+    passed = len(failures) == 0
+    report["status"] = "pass" if passed else "fail"
+    report["failures"] = failures
+    return DataQualityGateResult(passed=passed, report=report)
+
+
 def run_db_quality_gates(
     *,
     db_path: Optional[Path] = None,

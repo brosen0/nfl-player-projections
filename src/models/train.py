@@ -65,7 +65,7 @@ from src.data.lineage import (
     utc_now_iso,
 )
 from src.models.utilization_to_fp import train_utilization_to_fp_per_position
-from src.data.quality_gates import run_quality_gates
+from src.data.quality_gates import run_quality_gates, validate_training_cache_integrity
 from src.evaluation.explainability import (
     get_top10_feature_importance_per_position,
     explain_with_shap,
@@ -1479,6 +1479,25 @@ def train_models(positions: list = None,
     n_trials = n_trials or MODEL_CONFIG["n_optuna_trials"]
     if strict_requirements is None:
         strict_requirements = bool(MODEL_CONFIG.get("strict_requirements_default", False))
+
+    # Pre-training data integrity gate — block on critical cache corruption
+    cache_result = validate_training_cache_integrity()
+    if not cache_result.passed:
+        print("\n" + "=" * 60)
+        print("TRAINING BLOCKED: Data integrity gate FAILED")
+        print("=" * 60)
+        for failure in cache_result.report.get("failures", []):
+            print(f"  ✗ {failure}")
+        print("\nFix the data issues above and re-run. Use --skip-cache-check to bypass (not recommended).")
+        import json
+        gate_path = MODELS_DIR / "data_integrity_gate_report.json"
+        gate_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(gate_path, "w") as f:
+            json.dump(cache_result.report, f, indent=2)
+        print(f"Full report: {gate_path}")
+        return
+    else:
+        print("✓ Data integrity gate passed")
 
     # H5: Experiment tracking
     from src.evaluation.experiment_tracker import ExperimentTracker

@@ -295,9 +295,18 @@ class NFLDataLoader:
                             from src.data.pbp_stats_aggregator import PBPStatsAggregator
                             snap_agg = PBPStatsAggregator()
                             snap_agg.snap_data = snap_df
+                            pre_merge_zeros = (df['snap_count'] == 0).sum() if 'snap_count' in df.columns else len(df)
                             df = snap_agg.merge_with_snaps(df)
+                            post_merge_zeros = (df['snap_count'] == 0).sum() if 'snap_count' in df.columns else len(df)
+                            if post_merge_zeros == pre_merge_zeros and pre_merge_zeros > 0:
+                                print(f"  WARNING: Snap merge for {season} matched 0 rows — snap_count still all zeros. Check name/team key alignment.")
+                            else:
+                                filled = pre_merge_zeros - post_merge_zeros
+                                print(f"  Snap merge for {season}: filled {filled}/{pre_merge_zeros} rows")
+                        else:
+                            print(f"  WARNING: No snap count data available for season {season}")
                     except Exception as e:
-                        print(f"  Snap merge for {season}: {e}")
+                        print(f"  WARNING: Snap merge failed for {season}: {e}")
                 # Backfill opponent and home_away from schedule when missing
                 has_empty_opp = 'opponent' not in df.columns or df['opponent'].eq('').all() or df['opponent'].isna().all()
                 has_unknown_ha = 'home_away' not in df.columns or df['home_away'].eq('unknown').all() or df['home_away'].isna().all()
