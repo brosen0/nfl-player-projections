@@ -39,10 +39,22 @@ class DataManager:
         return {"last_check": None, "available_seasons": [], "latest_season": None}
     
     def _save_cache(self):
-        """Save availability cache."""
+        """Save availability cache atomically (write to temp, then rename)."""
+        import tempfile, os
         self.CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
-        with open(self.CACHE_FILE, 'w') as f:
-            json.dump(self._cache, f)
+        fd, tmp_path = tempfile.mkstemp(
+            suffix=".json.tmp", dir=self.CACHE_FILE.parent
+        )
+        try:
+            with os.fdopen(fd, "w") as f:
+                json.dump(self._cache, f)
+            os.replace(tmp_path, self.CACHE_FILE)
+        except BaseException:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+            raise
     
     def _should_recheck(self) -> bool:
         """Check if we should re-check data availability."""

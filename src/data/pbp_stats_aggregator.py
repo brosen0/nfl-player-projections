@@ -520,38 +520,6 @@ class PBPStatsAggregator:
         # Default to WR for receivers
         return 'WR'
 
-
-def _drive_result_to_points(result) -> int:
-    """Map drive_result text to points for drive-level scoring."""
-    if result is None or (isinstance(result, float) and np.isnan(result)):
-        return 0
-    res = str(result).lower()
-    if "touchdown" in res:
-        return 7
-    if "field goal" in res:
-        return 3
-    if "safety" in res:
-        return 2
-    return 0
-
-
-def _compute_league_neutral_pass_rate(team_week: pd.DataFrame) -> pd.DataFrame:
-    """Compute leak-safe league neutral pass rate (expanding, shifted) by season/week."""
-    if team_week.empty:
-        return pd.DataFrame(columns=["season", "week", "neutral_pass_rate_lg"])
-    league_week = team_week.groupby(["season", "week"], as_index=False)[
-        ["neutral_pass_plays", "neutral_run_plays"]
-    ].sum()
-    denom = league_week["neutral_pass_plays"] + league_week["neutral_run_plays"]
-    league_week["neutral_pass_rate"] = np.where(
-        denom > 0, league_week["neutral_pass_plays"] / denom, np.nan
-    )
-    league_week = league_week.sort_values(["season", "week"])
-    league_week["neutral_pass_rate_lg"] = league_week.groupby("season")[
-        "neutral_pass_rate"
-    ].transform(lambda x: x.shift(1).expanding(min_periods=1).mean())
-    return league_week[["season", "week", "neutral_pass_rate_lg"]]
-
     def aggregate_team_stats(self, pbp: pd.DataFrame = None) -> pd.DataFrame:
         """Aggregate team-level neutral pass rate and drive metrics from PBP."""
         pbp = pbp if pbp is not None else self.pbp_data
@@ -728,6 +696,38 @@ def _compute_league_neutral_pass_rate(team_week: pd.DataFrame) -> pd.DataFrame:
         return team_week
 
 
+def _drive_result_to_points(result) -> int:
+    """Map drive_result text to points for drive-level scoring."""
+    if result is None or (isinstance(result, float) and np.isnan(result)):
+        return 0
+    res = str(result).lower()
+    if "touchdown" in res:
+        return 7
+    if "field goal" in res:
+        return 3
+    if "safety" in res:
+        return 2
+    return 0
+
+
+def _compute_league_neutral_pass_rate(team_week: pd.DataFrame) -> pd.DataFrame:
+    """Compute leak-safe league neutral pass rate (expanding, shifted) by season/week."""
+    if team_week.empty:
+        return pd.DataFrame(columns=["season", "week", "neutral_pass_rate_lg"])
+    league_week = team_week.groupby(["season", "week"], as_index=False)[
+        ["neutral_pass_plays", "neutral_run_plays"]
+    ].sum()
+    denom = league_week["neutral_pass_plays"] + league_week["neutral_run_plays"]
+    league_week["neutral_pass_rate"] = np.where(
+        denom > 0, league_week["neutral_pass_plays"] / denom, np.nan
+    )
+    league_week = league_week.sort_values(["season", "week"])
+    league_week["neutral_pass_rate_lg"] = league_week.groupby("season")[
+        "neutral_pass_rate"
+    ].transform(lambda x: x.shift(1).expanding(min_periods=1).mean())
+    return league_week[["season", "week", "neutral_pass_rate_lg"]]
+
+
 def _ensure_store_weekly_schema(df: pd.DataFrame) -> pd.DataFrame:
     """
     Ensure DataFrame has all columns required by NFLDataLoader._store_weekly_data.
@@ -815,6 +815,24 @@ def _ensure_store_weekly_schema(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def _atomic_parquet_write(df: pd.DataFrame, path: Path) -> None:
+    """Write a parquet file atomically (write to temp, then rename)."""
+    import tempfile
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_path = tempfile.mkstemp(suffix=".parquet.tmp", dir=path.parent)
+    try:
+        os.close(fd)
+        df.to_parquet(tmp_path, index=False)
+        os.replace(tmp_path, path)
+    except BaseException:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise
+
+
 def _pbp_cache_paths(season: int) -> tuple:
     """Return cache paths for player and team advanced PBP aggregates."""
     player_cache = RAW_DATA_DIR / f"pbp_advanced_{season}.parquet"
@@ -829,6 +847,10 @@ def get_pbp_advanced_stats(season: int,
     """
     Load or compute advanced PBP-derived player/team stats with caching.
     Returns (player_weekly_df, team_weekly_df).
+
+    For the current in-progress season, the cache is invalidated when the
+    cached data has fewer weeks than the current NFL week so new game data
+    is picked up automatically.
     """
     if include_advanced is None:
         include_advanced = PBP_ADVANCED_FEATURES_ENABLED
@@ -837,16 +859,37 @@ def get_pbp_advanced_stats(season: int,
     player_df = None
     team_df = None
 
+    # Detect whether cached data is stale for the current in-progress season
+    cache_is_stale = False
     if use_cache and player_cache.exists():
         try:
             player_df = pd.read_parquet(player_cache)
         except Exception:
+            print(f"  Warning: corrupt PBP cache for season {season}, rebuilding")
             player_df = None
-    if include_team and use_cache and team_cache.exists():
+        # For the current season, check if cache is missing recent weeks
+        if player_df is not None and "week" in player_df.columns:
+            try:
+                from src.utils.nfl_calendar import get_current_nfl_season, get_current_nfl_week
+                current_season = get_current_nfl_season()
+                if season == current_season:
+                    week_info = get_current_nfl_week()
+                    current_week = int(week_info.get("week_num", 0) or 0)
+                    cached_max_week = int(player_df["week"].max())
+                    if current_week > 0 and cached_max_week < current_week:
+                        print(f"  PBP cache for {season} is stale (cached week {cached_max_week}, current week {current_week}); refreshing")
+                        cache_is_stale = True
+                        player_df = None
+            except Exception:
+                pass
+    if include_team and use_cache and team_cache.exists() and not cache_is_stale:
         try:
             team_df = pd.read_parquet(team_cache)
         except Exception:
+            print(f"  Warning: corrupt team PBP cache for season {season}, rebuilding")
             team_df = None
+    elif cache_is_stale:
+        team_df = None
 
     if player_df is not None and (not include_team or team_df is not None):
         return player_df, team_df
@@ -867,14 +910,14 @@ def get_pbp_advanced_stats(season: int,
     if use_cache:
         if player_df is not None and not player_df.empty:
             try:
-                player_df.to_parquet(player_cache, index=False)
-            except Exception:
-                pass
+                _atomic_parquet_write(player_df, player_cache)
+            except Exception as e:
+                print(f"  Warning: failed to write PBP player cache for {season}: {e}")
         if include_team and team_df is not None and not team_df.empty:
             try:
-                team_df.to_parquet(team_cache, index=False)
-            except Exception:
-                pass
+                _atomic_parquet_write(team_df, team_cache)
+            except Exception as e:
+                print(f"  Warning: failed to write PBP team cache for {season}: {e}")
 
     return player_df, team_df
 

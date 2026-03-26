@@ -315,12 +315,27 @@ def generate_app_data(save_daily: bool = False) -> bool:
             if len(u1) > 0 and len(u18) > 0:
                 print(f"  Validation: projection_1w range [{u1.min():.1f}, {u1.max():.1f}], projection_18w range [{u18.min():.1f}, {u18.max():.1f}]")
 
-    # Save
-    full_df.to_parquet(cached_path, index=False)
+    # Save (atomic write: temp file then rename to prevent corruption on crash)
+    import tempfile, os
+    def _atomic_save(df, path):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fd, tmp = tempfile.mkstemp(suffix=".parquet.tmp", dir=path.parent)
+        try:
+            os.close(fd)
+            df.to_parquet(tmp, index=False)
+            os.replace(tmp, path)
+        except BaseException:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+            raise
+
+    _atomic_save(full_df, cached_path)
     print(f"  Saved to {cached_path}")
 
     if save_daily:
-        full_df.to_parquet(daily_path, index=False)
+        _atomic_save(full_df, daily_path)
         print(f"  Saved to {daily_path}")
 
     print("Done. Web app will use ML projections.")

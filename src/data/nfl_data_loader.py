@@ -214,7 +214,7 @@ class NFLDataLoader:
                                 weekly_df = self._standardize_weekly_columns(weekly_df)
                                 key_cols = ["player_id", "season", "week"]
                                 if all(c in df.columns and c in weekly_df.columns for c in key_cols):
-                                    combined = pd.concat([df, weekly_df], ignore_index=True)
+                                    combined = pd.concat([weekly_df, df], ignore_index=True)
                                     df = combined.drop_duplicates(subset=key_cols, keep="first")
                                     print(f"  Merged weekly data for {season}: {len(df)} records")
                         except Exception:
