@@ -331,11 +331,26 @@ class PBPStatsAggregator:
         return receiving
     
     def merge_with_snaps(self, stats_df: pd.DataFrame) -> pd.DataFrame:
-        """Merge stats with snap count data; set snap_count (offense_snaps) and team_snaps for utilization_score/DB."""
+        """Merge stats with snap count data; set snap_count (offense_snaps) and team_snaps for utilization_score/DB.
+
+        Uses player_id as primary join key (reliable). Falls back to name+team
+        when player_id is unavailable in snap data.
+        """
         if self.snap_data is None:
             return stats_df
-        
-        snap_pos = self.snap_data[['season', 'week', 'player', 'team', 'position', 'offense_snaps', 'offense_pct']].copy()
+
+        required = {'season', 'week', 'player', 'team', 'offense_snaps'}
+        available = set(self.snap_data.columns)
+        if not required.issubset(available):
+            print(f"  WARNING: snap data missing columns {required - available}; skipping merge")
+            return stats_df
+
+        keep_cols = ['season', 'week', 'player', 'team', 'offense_snaps']
+        if 'position' in self.snap_data.columns:
+            keep_cols.append('position')
+        if 'offense_pct' in self.snap_data.columns:
+            keep_cols.append('offense_pct')
+        snap_pos = self.snap_data[keep_cols].copy()
         snap_pos = resolver.build_keys(snap_pos, source="snap_counts", player_id_col="player", name_col="player", team_col="team", opponent_col=None).dataframe
         snap_pos = snap_pos.rename(columns={'player': 'name'})
         snap_pos['team'] = snap_pos['team_norm'].where(snap_pos['team_norm'] != '', snap_pos['team'])
@@ -348,11 +363,31 @@ class PBPStatsAggregator:
         team_snaps['team_snaps'] = team_snaps['team_snaps'].fillna(0).astype(int)
         snap_pos = snap_pos.merge(team_snaps, on=['season', 'week', 'team'], how='left')
         snap_pos['team_snaps'] = snap_pos['team_snaps'].fillna(0).astype(int)
-        merged = stats_df.merge(
-            snap_pos[['season', 'week', 'name', 'team', 'position', 'snap_count', 'team_snaps', 'offense_pct']],
-            on=['season', 'week', 'name', 'team'],
-            how='left'
-        )
+
+        # Build merge-ready snap frame
+        snap_merge_cols = ['snap_count', 'team_snaps']
+        if 'offense_pct' in snap_pos.columns:
+            snap_merge_cols.append('offense_pct')
+
+        # Primary join: player_id + season + week (most reliable)
+        has_player_id = 'player_id' in snap_pos.columns and 'player_id' in stats_df.columns
+        if has_player_id and snap_pos['player_id'].notna().any():
+            join_keys = ['player_id', 'season', 'week']
+            snap_for_merge = snap_pos[join_keys + snap_merge_cols].drop_duplicates(subset=join_keys)
+            merged = stats_df.merge(snap_for_merge, on=join_keys, how='left', suffixes=('', '_snap'))
+        else:
+            # Fallback: name + team + season + week
+            join_keys = ['season', 'week', 'name', 'team']
+            snap_for_merge = snap_pos[join_keys + snap_merge_cols].drop_duplicates(subset=join_keys)
+            merged = stats_df.merge(snap_for_merge, on=join_keys, how='left', suffixes=('', '_snap'))
+
+        # Coalesce suffixed columns from merge
+        for col in snap_merge_cols:
+            snap_col = f'{col}_snap'
+            if snap_col in merged.columns:
+                merged[col] = merged[col].fillna(merged[snap_col])
+                merged = merged.drop(columns=[snap_col])
+
         if 'snap_count' not in merged.columns:
             merged['snap_count'] = 0
         if 'team_snaps' not in merged.columns:
@@ -367,12 +402,17 @@ class PBPStatsAggregator:
         return merged
     
     def calculate_fantasy_points(self, df: pd.DataFrame, ppr: float = 1.0) -> pd.DataFrame:
-        """Calculate fantasy points (PPR scoring)."""
+        """Calculate fantasy points (PPR scoring).
+
+        Uses the same formula as NFLDataLoader._calculate_fantasy_points and
+        config.settings.SCORING so PBP-sourced and weekly-sourced rows produce
+        consistent target values.
+        """
         df = df.copy()
-        
+
         # Initialize
         df['fantasy_points'] = 0.0
-        
+
         # Passing: 0.04 per yard, 4 per TD, -2 per INT
         if 'passing_yards' in df.columns:
             df['fantasy_points'] += df['passing_yards'].fillna(0) * 0.04
@@ -380,13 +420,13 @@ class PBPStatsAggregator:
             df['fantasy_points'] += df['passing_tds'].fillna(0) * 4
         if 'interceptions' in df.columns:
             df['fantasy_points'] -= df['interceptions'].fillna(0) * 2
-        
+
         # Rushing: 0.1 per yard, 6 per TD
         if 'rushing_yards' in df.columns:
             df['fantasy_points'] += df['rushing_yards'].fillna(0) * 0.1
         if 'rushing_tds' in df.columns:
             df['fantasy_points'] += df['rushing_tds'].fillna(0) * 6
-        
+
         # Receiving: 0.1 per yard, 6 per TD, PPR per reception
         if 'receiving_yards' in df.columns:
             df['fantasy_points'] += df['receiving_yards'].fillna(0) * 0.1
@@ -394,9 +434,18 @@ class PBPStatsAggregator:
             df['fantasy_points'] += df['receiving_tds'].fillna(0) * 6
         if 'receptions' in df.columns:
             df['fantasy_points'] += df['receptions'].fillna(0) * ppr
-        
+
+        # Fumbles lost: -2 per fumble (was missing — caused PBP targets to
+        # systematically overstate fantasy points vs weekly-sourced data)
+        if 'fumbles_lost' in df.columns:
+            df['fantasy_points'] -= df['fumbles_lost'].fillna(0) * 2
+
+        # Two-point conversions: +2 each
+        if 'two_point_conversions' in df.columns:
+            df['fantasy_points'] += df['two_point_conversions'].fillna(0) * 2
+
         df['fantasy_points'] = df['fantasy_points'].round(1)
-        
+
         return df
     
     def aggregate_all_stats(self, season: int = None,
@@ -505,52 +554,32 @@ class PBPStatsAggregator:
         return all_stats
     
     def _infer_position(self, row) -> str:
-        """Infer position from stats if not available."""
+        """Infer position from stats if not available.
+
+        Heuristic order: QB (passing attempts) > RB (rush-heavy) > TE vs WR
+        (receiving yards threshold).  Returns empty string when position cannot
+        be determined so callers can detect and handle unknown positions.
+        """
         if pd.notna(row.get('position')):
             return row['position']
-        
+
         # If has passing attempts, likely QB
         if row.get('passing_attempts', 0) > 0:
             return 'QB'
-        
+
         # If has rushing attempts but few/no targets, likely RB
         if row.get('rushing_attempts', 0) > row.get('targets', 0):
             return 'RB'
-        
-        # Default to WR for receivers
+
+        # Distinguish TE from WR: TEs typically have fewer receiving yards per
+        # game than WRs.  This is imperfect but avoids systematically
+        # misclassifying all TEs as WR (the previous default).
+        recv_yards = row.get('receiving_yards', 0) or 0
+        targets = row.get('targets', 0) or 0
+        if targets > 0 and recv_yards / max(targets, 1) < 8:
+            return 'TE'
+
         return 'WR'
-
-
-def _drive_result_to_points(result) -> int:
-    """Map drive_result text to points for drive-level scoring."""
-    if result is None or (isinstance(result, float) and np.isnan(result)):
-        return 0
-    res = str(result).lower()
-    if "touchdown" in res:
-        return 7
-    if "field goal" in res:
-        return 3
-    if "safety" in res:
-        return 2
-    return 0
-
-
-def _compute_league_neutral_pass_rate(team_week: pd.DataFrame) -> pd.DataFrame:
-    """Compute leak-safe league neutral pass rate (expanding, shifted) by season/week."""
-    if team_week.empty:
-        return pd.DataFrame(columns=["season", "week", "neutral_pass_rate_lg"])
-    league_week = team_week.groupby(["season", "week"], as_index=False)[
-        ["neutral_pass_plays", "neutral_run_plays"]
-    ].sum()
-    denom = league_week["neutral_pass_plays"] + league_week["neutral_run_plays"]
-    league_week["neutral_pass_rate"] = np.where(
-        denom > 0, league_week["neutral_pass_plays"] / denom, np.nan
-    )
-    league_week = league_week.sort_values(["season", "week"])
-    league_week["neutral_pass_rate_lg"] = league_week.groupby("season")[
-        "neutral_pass_rate"
-    ].transform(lambda x: x.shift(1).expanding(min_periods=1).mean())
-    return league_week[["season", "week", "neutral_pass_rate_lg"]]
 
     def aggregate_team_stats(self, pbp: pd.DataFrame = None) -> pd.DataFrame:
         """Aggregate team-level neutral pass rate and drive metrics from PBP."""
@@ -728,6 +757,38 @@ def _compute_league_neutral_pass_rate(team_week: pd.DataFrame) -> pd.DataFrame:
         return team_week
 
 
+def _drive_result_to_points(result) -> int:
+    """Map drive_result text to points for drive-level scoring."""
+    if result is None or (isinstance(result, float) and np.isnan(result)):
+        return 0
+    res = str(result).lower()
+    if "touchdown" in res:
+        return 7
+    if "field goal" in res:
+        return 3
+    if "safety" in res:
+        return 2
+    return 0
+
+
+def _compute_league_neutral_pass_rate(team_week: pd.DataFrame) -> pd.DataFrame:
+    """Compute leak-safe league neutral pass rate (expanding, shifted) by season/week."""
+    if team_week.empty:
+        return pd.DataFrame(columns=["season", "week", "neutral_pass_rate_lg"])
+    league_week = team_week.groupby(["season", "week"], as_index=False)[
+        ["neutral_pass_plays", "neutral_run_plays"]
+    ].sum()
+    denom = league_week["neutral_pass_plays"] + league_week["neutral_run_plays"]
+    league_week["neutral_pass_rate"] = np.where(
+        denom > 0, league_week["neutral_pass_plays"] / denom, np.nan
+    )
+    league_week = league_week.sort_values(["season", "week"])
+    league_week["neutral_pass_rate_lg"] = league_week.groupby("season")[
+        "neutral_pass_rate"
+    ].transform(lambda x: x.shift(1).expanding(min_periods=1).mean())
+    return league_week[["season", "week", "neutral_pass_rate_lg"]]
+
+
 def _ensure_store_weekly_schema(df: pd.DataFrame) -> pd.DataFrame:
     """
     Ensure DataFrame has all columns required by NFLDataLoader._store_weekly_data.
@@ -815,6 +876,24 @@ def _ensure_store_weekly_schema(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def _atomic_parquet_write(df: pd.DataFrame, path: Path) -> None:
+    """Write a parquet file atomically (write to temp, then rename)."""
+    import tempfile
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_path = tempfile.mkstemp(suffix=".parquet.tmp", dir=path.parent)
+    try:
+        os.close(fd)
+        df.to_parquet(tmp_path, index=False)
+        os.replace(tmp_path, path)
+    except BaseException:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise
+
+
 def _pbp_cache_paths(season: int) -> tuple:
     """Return cache paths for player and team advanced PBP aggregates."""
     player_cache = RAW_DATA_DIR / f"pbp_advanced_{season}.parquet"
@@ -829,6 +908,10 @@ def get_pbp_advanced_stats(season: int,
     """
     Load or compute advanced PBP-derived player/team stats with caching.
     Returns (player_weekly_df, team_weekly_df).
+
+    For the current in-progress season, the cache is invalidated when the
+    cached data has fewer weeks than the current NFL week so new game data
+    is picked up automatically.
     """
     if include_advanced is None:
         include_advanced = PBP_ADVANCED_FEATURES_ENABLED
@@ -837,16 +920,37 @@ def get_pbp_advanced_stats(season: int,
     player_df = None
     team_df = None
 
+    # Detect whether cached data is stale for the current in-progress season
+    cache_is_stale = False
     if use_cache and player_cache.exists():
         try:
             player_df = pd.read_parquet(player_cache)
         except Exception:
+            print(f"  Warning: corrupt PBP cache for season {season}, rebuilding")
             player_df = None
-    if include_team and use_cache and team_cache.exists():
+        # For the current season, check if cache is missing recent weeks
+        if player_df is not None and "week" in player_df.columns:
+            try:
+                from src.utils.nfl_calendar import get_current_nfl_season, get_current_nfl_week
+                current_season = get_current_nfl_season()
+                if season == current_season:
+                    week_info = get_current_nfl_week()
+                    current_week = int(week_info.get("week_num", 0) or 0)
+                    cached_max_week = int(player_df["week"].max())
+                    if current_week > 0 and cached_max_week < current_week:
+                        print(f"  PBP cache for {season} is stale (cached week {cached_max_week}, current week {current_week}); refreshing")
+                        cache_is_stale = True
+                        player_df = None
+            except Exception:
+                pass
+    if include_team and use_cache and team_cache.exists() and not cache_is_stale:
         try:
             team_df = pd.read_parquet(team_cache)
         except Exception:
+            print(f"  Warning: corrupt team PBP cache for season {season}, rebuilding")
             team_df = None
+    elif cache_is_stale:
+        team_df = None
 
     if player_df is not None and (not include_team or team_df is not None):
         return player_df, team_df
@@ -867,14 +971,14 @@ def get_pbp_advanced_stats(season: int,
     if use_cache:
         if player_df is not None and not player_df.empty:
             try:
-                player_df.to_parquet(player_cache, index=False)
-            except Exception:
-                pass
+                _atomic_parquet_write(player_df, player_cache)
+            except Exception as e:
+                print(f"  Warning: failed to write PBP player cache for {season}: {e}")
         if include_team and team_df is not None and not team_df.empty:
             try:
-                team_df.to_parquet(team_cache, index=False)
-            except Exception:
-                pass
+                _atomic_parquet_write(team_df, team_cache)
+            except Exception as e:
+                print(f"  Warning: failed to write PBP team cache for {season}: {e}")
 
     return player_df, team_df
 

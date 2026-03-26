@@ -303,9 +303,26 @@ def generate_app_data(save_daily: bool = False) -> bool:
         # Align column order: full_df columns, explicitly keeping projection_* in upcoming_rows
         cols_for_upcoming = [c for c in full_df.columns if c in upcoming_rows.columns]
         upcoming_rows = upcoming_rows[cols_for_upcoming]
-        # Avoid duplicate rows for prediction week: drop existing (pred_season, pred_week) from full_df before concat
+        # Avoid duplicate rows for prediction week: only drop existing rows if they
+        # are prediction stubs (all stats null), NOT real game data.
         if "season" in full_df.columns and "week" in full_df.columns:
-            full_df = full_df[~((full_df["season"] == pred_season) & (full_df["week"] == pred_week))]
+            pred_week_mask = (full_df["season"] == pred_season) & (full_df["week"] == pred_week)
+            if pred_week_mask.any():
+                stat_cols = [c for c in ["fantasy_points", "passing_yards", "rushing_yards", "receiving_yards"]
+                             if c in full_df.columns]
+                if stat_cols:
+                    existing_rows = full_df[pred_week_mask]
+                    is_stub = existing_rows[stat_cols].isnull().all(axis=1)
+                    if is_stub.all():
+                        # All existing rows are stubs — safe to replace
+                        full_df = full_df[~pred_week_mask]
+                    else:
+                        # Real game data exists — keep it, only add players not already present
+                        existing_pids = set(full_df.loc[pred_week_mask, "player_id"])
+                        upcoming_rows = upcoming_rows[~upcoming_rows["player_id"].isin(existing_pids)]
+                        print(f"  Preserved {(~is_stub).sum()} real game data rows for {pred_season} week {pred_week}")
+                else:
+                    full_df = full_df[~pred_week_mask]
         full_df = pd.concat([full_df, upcoming_rows], ignore_index=True)
         print(f"  Added {len(upcoming_rows)} prediction-target rows for {pred_season} week {pred_week}")
         # Validation: log that 4w/18w differ from 1w
@@ -315,12 +332,27 @@ def generate_app_data(save_daily: bool = False) -> bool:
             if len(u1) > 0 and len(u18) > 0:
                 print(f"  Validation: projection_1w range [{u1.min():.1f}, {u1.max():.1f}], projection_18w range [{u18.min():.1f}, {u18.max():.1f}]")
 
-    # Save
-    full_df.to_parquet(cached_path, index=False)
+    # Save (atomic write: temp file then rename to prevent corruption on crash)
+    import tempfile, os
+    def _atomic_save(df, path):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fd, tmp = tempfile.mkstemp(suffix=".parquet.tmp", dir=path.parent)
+        try:
+            os.close(fd)
+            df.to_parquet(tmp, index=False)
+            os.replace(tmp, path)
+        except BaseException:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+            raise
+
+    _atomic_save(full_df, cached_path)
     print(f"  Saved to {cached_path}")
 
     if save_daily:
-        full_df.to_parquet(daily_path, index=False)
+        _atomic_save(full_df, daily_path)
         print(f"  Saved to {daily_path}")
 
     print("Done. Web app will use ML projections.")

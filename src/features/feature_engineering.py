@@ -659,8 +659,9 @@ class FeatureEngineer:
                     df = df.merge(mom, on=['team', 'season', 'week'], how='left')
                     df['offensive_momentum_score'] = df['offensive_momentum_score'].fillna(22.0)
         except Exception as e:
-            # Team features are optional - don't fail if unavailable
-            pass
+            # Team features are optional - don't fail if unavailable, but log
+            # so silent degradation is visible in pipeline output.
+            print(f"  WARNING: Team matchup features unavailable ({type(e).__name__}: {e})")
 
         # --- Divisional game and prime-time game indicators (per requirements III.A) ---
         # Populate from nfl-data-py schedule data when available, otherwise keep defaults.
@@ -1121,7 +1122,7 @@ class FeatureEngineer:
                         df.loc[team_mask, 'opponent_rating'] = df.loc[team_mask, 'week'].map(opp_map)
         except Exception as e:
             # Schedule features are optional - don't fail if unavailable
-            pass
+            print(f"  WARNING: Schedule features unavailable ({type(e).__name__}: {e})")
         
         # Fill missing schedule features with neutral values
         if 'team_sos' not in df.columns:
@@ -1796,16 +1797,31 @@ class FeatureEngineer:
             indicator_df = pd.DataFrame(missing_indicator_cols, index=df.index)
             df = pd.concat([df, indicator_df], axis=1)
 
-        # Fill NaN: median per column (avoids distorting distribution), fallback 0
-        # Re-fetch numeric cols since we may have added indicator columns
+        # Fill NaN: position-aware median per column to avoid cross-position
+        # contamination (e.g., filling RB completion_pct with QB median).
+        # Re-fetch numeric cols since we may have added indicator columns.
         numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+        qb_specific_tokens = (
+            "completion", "passer", "passing", "yards_per_attempt",
+            "td_rate", "int_rate", "qb_", "sack_rate", "air_yards_per",
+        )
+        has_position = "position" in df.columns
         for col in numeric_cols:
             if col not in df.columns or not df[col].isna().any():
                 continue
-            med = df[col].median()
-            if pd.isna(med):
-                med = 0.0
-            df[col] = df[col].fillna(med)
+            is_qb_col = any(tok in col.lower() for tok in qb_specific_tokens)
+            if is_qb_col and has_position:
+                # QB-specific columns: fill with QB median for QBs, 0 for others
+                qb_med = df.loc[df["position"] == "QB", col].median()
+                if pd.isna(qb_med):
+                    qb_med = 0.0
+                df.loc[df["position"] == "QB", col] = df.loc[df["position"] == "QB", col].fillna(qb_med)
+                df[col] = df[col].fillna(0.0)
+            else:
+                med = df[col].median()
+                if pd.isna(med):
+                    med = 0.0
+                df[col] = df[col].fillna(med)
         return df
     
     def _update_feature_columns(self, df: pd.DataFrame):

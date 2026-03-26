@@ -151,6 +151,14 @@ class UtilizationScoreCalculator:
         # Concatenate with explicit handling to avoid FutureWarning
         result = pd.concat(result_dfs, ignore_index=True, sort=False)
         
+        # Add _missing indicators for rolling/lag columns before filling
+        rolling_lag_cols = [c for c in result.columns
+                            if ('_rolling_' in c or '_lag_' in c
+                                or c in ('rolling_volatility', 'rolling_consistency'))
+                            and result[c].dtype.kind in 'fc']
+        for col in rolling_lag_cols:
+            result[f'{col}_missing'] = result[col].isna().astype(np.int8)
+
         # Fill any remaining NaN values in numeric columns
         numeric_cols = result.select_dtypes(include=[np.number]).columns
         result[numeric_cols] = result[numeric_cols].fillna(0)

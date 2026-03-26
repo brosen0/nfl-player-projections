@@ -234,18 +234,6 @@ MODEL_CONFIG = {
     "compute_budget_seconds": 7200,  # 2 hours default
 }
 
-# -----------------------------------------------------------------------------
-# PBP ADVANCED FEATURE SETTINGS
-# -----------------------------------------------------------------------------
-PBP_ADVANCED_FEATURES_ENABLED = True
-PBP_ADVANCED_SEASONS = list(range(MIN_HISTORICAL_YEAR, CURRENT_NFL_SEASON + 1))
-NEUTRAL_SCORE_DIFF = 7
-SHORT_YARDAGE_YDSTOGO = 2
-RED_ZONE_YARDLINE = 20
-GOAL_LINE_YARDLINE = 5
-TWO_MINUTE_SECONDS = 120
-PROE_FALLBACK_LG_NEUTRAL_RATE = 0.56
-
 # Fast training overrides: ~8-10x faster with minimal accuracy loss.
 # Applied via `python -m src.models.train --fast`.
 # Reduces Optuna trials, CV folds, stability bootstrap, horizon model
