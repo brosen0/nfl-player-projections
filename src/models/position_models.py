@@ -289,8 +289,45 @@ class PositionModel:
             self.meta_learner = None
             print("  Warning: insufficient OOF predictions for meta-learner, using fixed weights")
 
-        # Compute honest OOF metrics before retraining on all data
+        # Compute OOF metrics on a held-out evaluation split to avoid
+        # meta-learner train/eval overlap. We train the meta-learner on
+        # the first 70% of OOF rows and evaluate on the last 30%.
         if oof_valid.sum() >= 20:
+            oof_indices = np.where(oof_valid)[0]
+            n_oof = len(oof_indices)
+            split_pt = int(n_oof * 0.7)
+            eval_indices = oof_indices[split_pt:]
+
+            if len(eval_indices) >= 10:
+                # Fit a temporary meta-learner on the train portion only
+                from sklearn.linear_model import RidgeCV as _RidgeCV
+                _eval_meta = _RidgeCV(
+                    alphas=np.logspace(-2, 2, 20), cv=min(3, n_cv_folds)
+                )
+                train_indices = oof_indices[:split_pt]
+                _eval_meta.fit(oof_preds[train_indices], y_train_inner[train_indices])
+                oof_ensemble_eval = _eval_meta.predict(oof_preds[eval_indices])
+                oof_y_eval = y_train_inner[eval_indices]
+            else:
+                # Too few samples for a proper split; fall back to full OOF
+                # but flag the metrics as potentially optimistic
+                if self.meta_learner is not None:
+                    oof_ensemble_eval = self.meta_learner.predict(oof_preds[oof_valid])
+                else:
+                    base_keys = list(ENSEMBLE_WEIGHTS_1W.keys())
+                    weights = [ENSEMBLE_WEIGHTS_1W.get(k, 1.0 / n_base) for k in base_keys[:n_base]]
+                    oof_ensemble_eval = np.average(oof_preds[oof_valid], axis=1, weights=weights)
+                oof_y_eval = y_train_inner[oof_valid]
+
+            self._oof_metrics = {
+                "rmse": float(np.sqrt(mean_squared_error(oof_y_eval, oof_ensemble_eval))),
+                "mae": float(mean_absolute_error(oof_y_eval, oof_ensemble_eval)),
+                "r2": float(r2_score(oof_y_eval, oof_ensemble_eval)),
+                "n_samples": int(len(oof_y_eval)),
+                "evaluation_method": "held_out_30pct" if len(eval_indices) >= 10 else "full_oof_optimistic",
+            }
+
+            # For calibration, use full OOF predictions from the production meta-learner
             if self.meta_learner is not None:
                 oof_ensemble = self.meta_learner.predict(oof_preds[oof_valid])
             else:
@@ -298,12 +335,6 @@ class PositionModel:
                 weights = [ENSEMBLE_WEIGHTS_1W.get(k, 1.0 / n_base) for k in base_keys[:n_base]]
                 oof_ensemble = np.average(oof_preds[oof_valid], axis=1, weights=weights)
             oof_y = y_train_inner[oof_valid]
-            self._oof_metrics = {
-                "rmse": float(np.sqrt(mean_squared_error(oof_y, oof_ensemble))),
-                "mae": float(mean_absolute_error(oof_y, oof_ensemble)),
-                "r2": float(r2_score(oof_y, oof_ensemble)),
-                "n_samples": int(oof_valid.sum()),
-            }
 
             # Isotonic calibration: correct systematic biases in OOF predictions
             try:

@@ -615,11 +615,13 @@ def _apply_bounded_scaling(
     return artifact
 
 
-def _report_test_metrics(trainer, test_data: pd.DataFrame, train_data: pd.DataFrame):
-    """Report model performance on held-out test set with full metrics per requirements.
-    
-    Reports RMSE, MAE, MAPE, R², within-7pt%, within-10pt%, and Spearman rho.
+def _report_test_metrics(trainer, test_data: pd.DataFrame, train_data: pd.DataFrame) -> dict:
+    """Evaluate and return model performance on held-out test set.
+
+    Returns dict of {position: {rmse, mae, r2, ...}} for persistence.
+    Also prints metrics to stdout.
     """
+    test_metrics = {}
     from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
     from src.evaluation.metrics import spearman_rank_correlation
     from src.models.utilization_to_fp import UtilizationToFPConverter
@@ -645,17 +647,25 @@ def _report_test_metrics(trainer, test_data: pd.DataFrame, train_data: pd.DataFr
         if len(available) < len(model.feature_names) * 0.5:
             continue
         
-        def _print_metrics(pos, label, y_true, y_pred):
-            rmse = (mean_squared_error(y_true, y_pred)) ** 0.5
-            mae = mean_absolute_error(y_true, y_pred)
-            r2 = r2_score(y_true, y_pred)
+        def _compute_metrics(pos, label, y_true, y_pred):
+            rmse = float((mean_squared_error(y_true, y_pred)) ** 0.5)
+            mae = float(mean_absolute_error(y_true, y_pred))
+            r2 = float(r2_score(y_true, y_pred))
             mape = _safe_mape(y_true.values, y_pred)
             within_7 = float((np.abs(y_true.values - y_pred) <= 7).mean() * 100)
             within_10 = float((np.abs(y_true.values - y_pred) <= 10).mean() * 100)
-            rho = spearman_rank_correlation(y_true.values, np.asarray(y_pred), top_n=None) if len(y_true) >= 5 else np.nan
+            rho = spearman_rank_correlation(y_true.values, np.asarray(y_pred), top_n=None) if len(y_true) >= 5 else float('nan')
             mape_str = f", MAPE={mape:.1f}%" if mape is not None else ""
             rho_str = f", ρ={rho:.3f}" if np.isfinite(rho) else ""
             print(f"  {pos} (test {label}): RMSE={rmse:.2f}, MAE={mae:.2f}, R²={r2:.3f}{mape_str}, ≤7pt={within_7:.1f}%, ≤10pt={within_10:.1f}%{rho_str}")
+            m = {"rmse": rmse, "mae": mae, "r2": r2,
+                 "within_7pt_pct": within_7, "within_10pt_pct": within_10,
+                 "n_samples": int(len(y_true))}
+            if mape is not None:
+                m["mape"] = float(mape)
+            if np.isfinite(rho):
+                m["spearman_rho"] = float(rho)
+            test_metrics.setdefault(pos, {})[label] = m
         
         # QB: report owner-facing FP metric (convert util->FP when needed).
         if position == "QB":
@@ -677,7 +687,7 @@ def _report_test_metrics(trainer, test_data: pd.DataFrame, train_data: pd.DataFr
                     except Exception as e:
                         logger.warning("QB FP conversion in metrics: %s", e)
                         preds_out = preds
-                _print_metrics(position, label, y_act[valid], preds_out)
+                _compute_metrics(position, label, y_act[valid], preds_out)
             continue
         
         # RB/WR/TE: primary utilization, optional FP
@@ -688,7 +698,7 @@ def _report_test_metrics(trainer, test_data: pd.DataFrame, train_data: pd.DataFr
             if valid.sum() >= 5:
                 pos_subset = pos_test.loc[valid]
                 pred_util = multi_model.predict(pos_subset, n_weeks=1)
-                _print_metrics(position, "util", y_util[valid], pred_util)
+                _compute_metrics(position, "util", y_util[valid], pred_util)
         if "target_1w" in pos_test.columns:
             y_test = pos_test["target_1w"]
             valid = ~y_test.isna()
@@ -704,7 +714,9 @@ def _report_test_metrics(trainer, test_data: pd.DataFrame, train_data: pd.DataFr
                     except Exception as e:
                         logger.warning("FP conversion for %s in metrics: %s", position, e)
                         preds_fp = preds
-                _print_metrics(position, "FP", y_test[valid], preds_fp)
+                _compute_metrics(position, "FP", y_test[valid], preds_fp)
+
+    return test_metrics
 
 
 def _run_backtest_after_training(trainer, test_data: pd.DataFrame,
@@ -1881,10 +1893,11 @@ def train_models(positions: list = None,
     
     # Evaluate on test data
     print("\n[5/5] Evaluating on test data...")
+    held_out_test_metrics = {}
     if len(test_data) > 0:
         print(f"  Test season: {actual_test_season}")
         print(f"  Test records: {len(test_data)}")
-        _report_test_metrics(trainer, test_data, train_data)
+        held_out_test_metrics = _report_test_metrics(trainer, test_data, train_data)
         _run_backtest_after_training(trainer, test_data, train_seasons, actual_test_season,
                                      train_data=train_data)
 
@@ -1943,10 +1956,10 @@ def train_models(positions: list = None,
             except Exception as e:
                 logger.warning("Previous metadata load failed: %s", e)
 
-        # Collect per-position test metrics for the metadata
-        pos_test_metrics = {}
+        # Collect per-position OOF metrics (from cross-validation during training)
+        oof_metrics = {}
         for pos, m in trainer.training_metrics.items():
-            pos_test_metrics[pos] = m
+            oof_metrics[pos] = m
 
         # Archive previous metadata for rollback (keep last 5 versions)
         version_history_path = MODELS_DIR / "model_version_history.json"
@@ -1971,7 +1984,8 @@ def train_models(positions: list = None,
             "train_seasons": train_seasons,
             "test_season": actual_test_season,
             "positions_trained": list(trainer.trained_models.keys()),
-            "training_metrics": pos_test_metrics,
+            "oof_metrics": oof_metrics,
+            "test_metrics": held_out_test_metrics,
             "n_features_per_position": {
                 pos: len(getattr(
                     (m.models.get(1) or list(m.models.values())[0]) if hasattr(m, "models") else m,
