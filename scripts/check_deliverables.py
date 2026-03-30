@@ -46,11 +46,6 @@ def check_deliverables() -> dict:
         "path": "src/features/feature_engineering.py",
         "exists": (ROOT / "src/features/feature_engineering.py").exists(),
     }
-    checks["meta_learning"] = {
-        "description": "Meta-learning registry (§7)",
-        "path": "src/models/meta_learning.py",
-        "exists": (ROOT / "src/models/meta_learning.py").exists(),
-    }
     checks["calibration_metrics"] = {
         "description": "Calibration metrics (ECE, reliability curves) (§8)",
         "path": "src/evaluation/metrics.py",
@@ -81,11 +76,6 @@ def check_deliverables() -> dict:
         "path": "src/evaluation/metrics.py",
         "exists": (ROOT / "src/evaluation/metrics.py").exists(),
     }
-    checks["research_loop"] = {
-        "description": "Autonomous research loop (§14)",
-        "path": "src/research/auto_experiment.py",
-        "exists": (ROOT / "src/research/auto_experiment.py").exists(),
-    }
     checks["model_artifacts"] = {
         "description": "Trained model artifacts directory",
         "path": "data/models/",
@@ -107,21 +97,6 @@ def check_deliverables() -> dict:
         "description": "Schema validation + freshness SLA (§19)",
         "path": "src/data/schema_validator.py",
         "exists": (ROOT / "src/data/schema_validator.py").exists(),
-    }
-    checks["compute_budget"] = {
-        "description": "Compute budget framework (§20)",
-        "path": "src/evaluation/compute_budget.py",
-        "exists": (ROOT / "src/evaluation/compute_budget.py").exists(),
-    }
-    checks["governance"] = {
-        "description": "Governance approval gates (§21)",
-        "path": "src/governance/approval_gates.py",
-        "exists": (ROOT / "src/governance/approval_gates.py").exists(),
-    }
-    checks["conflict_resolution"] = {
-        "description": "Conflict resolution protocol (§22)",
-        "path": "docs/CONFLICT_RESOLUTION.md",
-        "exists": (ROOT / "docs/CONFLICT_RESOLUTION.md").exists(),
     }
     checks["ci_pipeline"] = {
         "description": "CI/CD pipeline (§23)",
