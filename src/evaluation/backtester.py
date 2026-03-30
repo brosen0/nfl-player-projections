@@ -1178,8 +1178,8 @@ def run_backtest(test_season: int = None) -> Tuple[Dict, str]:
         Tuple of (results dict, report string)
     """
     from src.utils.data_manager import DataManager
-    from src.models.train import (
-        load_training_data,
+    from src.models.data_loading import load_training_data
+    from src.models.feature_preparation import (
         add_engineered_features,
         add_advanced_features,
     )

@@ -9,7 +9,7 @@ import shutil
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.models.train import prepare_features
+from src.models.feature_preparation import prepare_features
 from src.utils.database import DatabaseManager
 from src.features.utilization_score import calculate_utilization_scores
 from src.features.feature_engineering import FeatureEngineer

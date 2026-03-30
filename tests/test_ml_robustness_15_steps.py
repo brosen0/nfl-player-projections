@@ -30,7 +30,8 @@ class TestStep1_DataSplitBeforePreprocessing:
     @pytest.mark.skip(reason="Requires database/network")
     def test_prepare_features_receives_separate_data(self):
         """Feature prep is called on train and test separately."""
-        from src.models.train import load_training_data, prepare_features
+        from src.models.data_loading import load_training_data
+        from src.models.feature_preparation import prepare_features
         
         try:
             train_data, test_data, _, _ = load_training_data(positions=["RB"], min_games=2)
@@ -216,7 +217,8 @@ class TestStep10_MissingValues:
     def test_no_global_imputation_from_test(self):
         """No imputation uses test set statistics."""
         # prepare_features is called separately on train and test
-        from src.models.train import load_training_data, prepare_features
+        from src.models.data_loading import load_training_data
+        from src.models.feature_preparation import prepare_features
         
         try:
             train_data, test_data, _, _ = load_training_data(positions=["RB"], min_games=2)
