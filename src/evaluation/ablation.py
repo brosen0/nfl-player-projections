@@ -203,7 +203,7 @@ def run_ablation_study(
     each containing per-position metrics + a "summary" with deltas.
     """
     from src.models.data_loading import load_training_data
-    from src.models.train import _prepare_training_data
+    from src.models.feature_preparation import _prepare_training_data
 
     if fast:
         for key, val in FAST_MODEL_CONFIG.items():

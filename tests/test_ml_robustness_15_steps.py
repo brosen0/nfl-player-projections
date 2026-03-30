@@ -31,7 +31,7 @@ class TestStep1_DataSplitBeforePreprocessing:
     def test_prepare_features_receives_separate_data(self):
         """Feature prep is called on train and test separately."""
         from src.models.data_loading import load_training_data
-        from src.models.train import prepare_features
+        from src.models.feature_preparation import prepare_features
         
         try:
             train_data, test_data, _, _ = load_training_data(positions=["RB"], min_games=2)
@@ -218,7 +218,7 @@ class TestStep10_MissingValues:
         """No imputation uses test set statistics."""
         # prepare_features is called separately on train and test
         from src.models.data_loading import load_training_data
-        from src.models.train import prepare_features
+        from src.models.feature_preparation import prepare_features
         
         try:
             train_data, test_data, _, _ = load_training_data(positions=["RB"], min_games=2)

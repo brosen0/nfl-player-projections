@@ -8,7 +8,7 @@ import pandas as pd
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.models.train import _create_horizon_targets
+from src.models.feature_preparation import _create_horizon_targets
 from src.features.season_long_features import GamesPlayedProjector
 
 

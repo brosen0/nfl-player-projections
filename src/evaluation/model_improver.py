@@ -558,7 +558,7 @@ def diagnose_and_improve(test_season: int = None):
     """
     from src.utils.data_manager import DataManager
     from src.models.data_loading import load_training_data
-    from src.models.train import prepare_features
+    from src.models.feature_preparation import prepare_features
     
     print("=" * 60)
     print("MODEL DIAGNOSTICS & IMPROVEMENT")
