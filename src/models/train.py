@@ -716,6 +716,26 @@ def _report_test_metrics(trainer, test_data: pd.DataFrame, train_data: pd.DataFr
                         preds_fp = preds
                 _compute_metrics(position, "FP", y_test[valid], preds_fp)
 
+    # Compare against FantasyPros industry RMSE benchmarks
+    if test_metrics:
+        from src.evaluation.metrics import generate_expert_baselines
+        expert_benchmarks = generate_expert_baselines(np.array([]), np.array([]))
+        print("\n  --- vs FantasyPros industry RMSE ---")
+        for pos, pos_results in test_metrics.items():
+            exp_rmse = expert_benchmarks.get(pos)
+            if exp_rmse is None:
+                continue
+            # Use the first available metric set (FP preferred, then util)
+            for label in ["FP", "FP (owner objective)", "util"]:
+                if label in pos_results:
+                    model_rmse = pos_results[label]["rmse"]
+                    delta_pct = (exp_rmse - model_rmse) / exp_rmse * 100
+                    status = "BEAT" if delta_pct > 0 else "BEHIND"
+                    print(f"  {pos}: {model_rmse:.2f} vs {exp_rmse:.1f} ({delta_pct:+.1f}%) [{status}]")
+                    pos_results[label]["expert_benchmark_rmse"] = exp_rmse
+                    pos_results[label]["vs_expert_pct"] = round(delta_pct, 1)
+                    break
+
     return test_metrics
 
 
@@ -956,6 +976,49 @@ def _run_backtest_after_training(trainer, test_data: pd.DataFrame,
                 f"model RMSE={expert_comp['model_rmse']} vs expert RMSE={expert_comp['expert_rmse']} "
                 f"({expert_comp['model_vs_expert_pct']}% better)"
             )
+    # --- Expert industry benchmark comparison (FantasyPros published RMSE) ---
+    # This runs unconditionally using published accuracy data, no CSV needed.
+    from src.evaluation.metrics import generate_expert_baselines
+    expert_rmse_benchmarks = generate_expert_baselines(
+        np.array([]), np.array([])  # Only need the lookup dict
+    )
+    by_position = results.get("by_position", {})
+    if by_position:
+        expert_comp = {"by_position": {}}
+        model_rmse_all, expert_rmse_all, n_total = [], [], 0
+        print("\n  === EXPERT BENCHMARK (vs FantasyPros industry RMSE) ===")
+        for pos in ["QB", "RB", "WR", "TE"]:
+            pos_data = by_position.get(pos, {})
+            pos_rmse = pos_data.get("rmse")
+            exp_rmse = expert_rmse_benchmarks.get(pos)
+            if pos_rmse is not None and exp_rmse is not None:
+                beat_pct = round((exp_rmse - pos_rmse) / exp_rmse * 100, 1)
+                n_pos = pos_data.get("n_samples", 0)
+                status = "BEAT" if beat_pct > 0 else "BEHIND"
+                print(f"    {pos}: model RMSE={pos_rmse:.2f} vs expert RMSE={exp_rmse:.1f} "
+                      f"({beat_pct:+.1f}%) [{status}]")
+                expert_comp["by_position"][pos] = {
+                    "model_rmse": round(pos_rmse, 2),
+                    "expert_rmse": exp_rmse,
+                    "beat_pct": beat_pct,
+                    "n_matched": n_pos,
+                }
+                model_rmse_all.append(pos_rmse)
+                expert_rmse_all.append(exp_rmse)
+                n_total += n_pos
+        if model_rmse_all:
+            avg_model = np.mean(model_rmse_all)
+            avg_expert = np.mean(expert_rmse_all)
+            overall_pct = round((avg_expert - avg_model) / avg_expert * 100, 1)
+            expert_comp["model_rmse"] = round(avg_model, 2)
+            expert_comp["expert_rmse"] = round(avg_expert, 2)
+            expert_comp["model_vs_expert_pct"] = overall_pct
+            expert_comp["source"] = "FantasyPros industry average 2019-2024"
+            expert_comp["n_total"] = n_total
+            print(f"    Overall: model avg RMSE={avg_model:.2f} vs expert avg RMSE={avg_expert:.1f} "
+                  f"({overall_pct:+.1f}%)")
+        results["expert_comparison"] = expert_comp
+
     # --- Success criteria evaluation (per requirements Section VII) ---
     from src.evaluation.backtester import check_success_criteria, print_success_criteria_report
     success_criteria = check_success_criteria(results)
