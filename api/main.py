@@ -686,30 +686,13 @@ def monitoring_dashboard() -> Dict[str, Any]:
     else:
         dashboard["api_latency"] = {"recent_requests": 0}
 
-    # Directive V7 Section 22: Conflict resolution status
-    try:
-        from src.governance.conflict_resolution import ConflictResolver
-        conflict_resolver = ConflictResolver()
-        dashboard["conflict_status"] = conflict_resolver.get_summary()
-    except Exception:
-        dashboard["conflict_status"] = {"available": False}
-
-    # Directive V7 Section 18: Deployment status
+    # Deployment status
     try:
         from src.deployment.staged_deployment import StagedDeploymentManager
         deployer = StagedDeploymentManager()
         dashboard["deployment_status"] = deployer.get_deployment_summary()
     except Exception:
         dashboard["deployment_status"] = {"available": False}
-
-    # Directive V7 Section 21: Governance pending requests
-    try:
-        from src.governance.approval_gates import GovernanceManager
-        gov = GovernanceManager()
-        pending = gov.get_pending_requests()
-        dashboard["governance"] = {"pending_approvals": len(pending)}
-    except Exception:
-        dashboard["governance"] = {"available": False}
 
     return dashboard
 

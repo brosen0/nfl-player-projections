@@ -21,6 +21,7 @@ import time
 import warnings
 warnings.filterwarnings('ignore')
 
+from config.settings import CURRENT_NFL_SEASON
 from sklearn.model_selection import TimeSeriesSplit, cross_val_score
 from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import Ridge, Lasso, LassoCV, RidgeCV
@@ -449,7 +450,7 @@ class FeatureEngineeringPipeline:
     
     def run_pipeline(self, df: pd.DataFrame, feature_cols: List[str],
                      target_col: str = 'fantasy_points',
-                     test_season: int = 2024) -> Dict[str, Any]:
+                     test_season: int = CURRENT_NFL_SEASON) -> Dict[str, Any]:
         """
         Run the complete feature engineering pipeline.
         
@@ -710,7 +711,7 @@ def run_feature_engineering_pipeline():
                     'player_name', 'gsis_id']
     
     # Use only training data for correlation-based feature filtering (avoid test leakage)
-    train_only = df[df['season'] < 2024] if 'season' in df.columns else df
+    train_only = df[df['season'] < CURRENT_NFL_SEASON] if 'season' in df.columns else df
 
     feature_cols = []
     for c in df.columns:
@@ -745,7 +746,7 @@ def run_feature_engineering_pipeline():
         max_features=50
     )
     
-    results = pipeline.run_pipeline(df, feature_cols, test_season=2024)
+    results = pipeline.run_pipeline(df, feature_cols, test_season=CURRENT_NFL_SEASON)
     
     # Save results
     results_path = Path(__file__).parent.parent.parent / 'data' / 'feature_engineering_results.json'
