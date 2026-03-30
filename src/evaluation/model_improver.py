@@ -557,7 +557,8 @@ def diagnose_and_improve(test_season: int = None):
     One-command function to diagnose model issues and suggest improvements.
     """
     from src.utils.data_manager import DataManager
-    from src.models.train import load_training_data, prepare_features
+    from src.models.data_loading import load_training_data
+    from src.models.train import prepare_features
     
     print("=" * 60)
     print("MODEL DIAGNOSTICS & IMPROVEMENT")
