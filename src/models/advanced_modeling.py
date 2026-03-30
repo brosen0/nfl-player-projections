@@ -18,6 +18,8 @@ from dataclasses import dataclass, field
 import json
 import time
 import warnings
+
+from config.settings import CURRENT_NFL_SEASON
 warnings.filterwarnings('ignore')
 
 from sklearn.preprocessing import StandardScaler
@@ -698,8 +700,8 @@ def run_model_comparison():
     feature_cols = feature_cols[:50]
     
     # Split data
-    train_df = df[df['season'] < 2024]
-    test_df = df[df['season'] == 2024]
+    train_df = df[df['season'] < CURRENT_NFL_SEASON]
+    test_df = df[df['season'] == CURRENT_NFL_SEASON]
     
     X_train = train_df[feature_cols].fillna(0).values
     y_train = train_df['fantasy_points'].values

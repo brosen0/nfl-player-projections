@@ -22,6 +22,8 @@ import pandas as pd
 import numpy as np
 from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass
+
+from config.settings import CURRENT_NFL_SEASON
 from pathlib import Path
 from src.features.feature_policy_registry import FeaturePolicyRegistry
 import warnings
@@ -547,7 +549,7 @@ class AdvancedRookieProjector:
         combine_score: float = None,
         historical_df: pd.DataFrame = None,
         min_season: int = 2015,
-        max_season: int = 2024,
+        max_season: int = CURRENT_NFL_SEASON,
         top_n: int = 5
     ) -> List[Dict]:
         """
@@ -635,7 +637,7 @@ class AdvancedRookieProjector:
     def _load_historical_rookies(
         self, 
         min_season: int = 2015, 
-        max_season: int = 2024
+        max_season: int = CURRENT_NFL_SEASON
     ) -> pd.DataFrame:
         """
         Load historical rookie performance data.
