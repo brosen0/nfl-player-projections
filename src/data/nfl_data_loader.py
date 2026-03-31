@@ -31,7 +31,11 @@ from pathlib import Path
 os.environ['SSL_CERT_FILE'] = certifi.where()
 os.environ['REQUESTS_CA_BUNDLE'] = certifi.where()
 
-import nfl_data_py as nfl
+
+def _get_nfl():
+    """Lazy import of nfl_data_py to allow test collection without the package."""
+    import nfl_data_py as nfl
+    return nfl
 
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
@@ -57,22 +61,22 @@ from src.data.lineage import persist_dataframe_artifact, set_artifact_id
 # ---------------------------------------------------------------------------
 @retry_with_backoff(max_retries=3, base_delay=2.0)
 def _fetch_weekly_data(seasons):
-    return nfl.import_weekly_data(seasons)
+    return _get_nfl().import_weekly_data(seasons)
 
 
 @retry_with_backoff(max_retries=3, base_delay=2.0)
 def _fetch_snap_counts(seasons):
-    return nfl.import_snap_counts(seasons)
+    return _get_nfl().import_snap_counts(seasons)
 
 
 @retry_with_backoff(max_retries=3, base_delay=2.0)
 def _fetch_schedules(seasons):
-    return nfl.import_schedules(seasons)
+    return _get_nfl().import_schedules(seasons)
 
 
 @retry_with_backoff(max_retries=3, base_delay=2.0)
 def _fetch_rosters(seasons):
-    return nfl.import_seasonal_rosters(seasons)
+    return _get_nfl().import_seasonal_rosters(seasons)
 
 
 def _to_scalar_int(x, default: int = 0) -> int:
