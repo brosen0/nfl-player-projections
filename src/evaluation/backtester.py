@@ -924,7 +924,12 @@ class ModelBacktester:
                 wr_pct = tier.get("win_rate", 0) * 100
                 w, l = tier.get("wins", 0), tier.get("losses", 0)
                 is_primary = tier_key == "vs_hindsight"
-                gate = f"  [{'PASS' if wr_pct > 55 else 'FAIL'}: target >55%]" if is_primary else ""
+                p_val = tier.get("p_value")
+                if is_primary and p_val is not None:
+                    sig = "PASS" if tier.get("significant_at_05") else "FAIL"
+                    gate = f"  [{sig}: binomial p={p_val:.4f}, H0: win_rate=50%]"
+                else:
+                    gate = ""
                 lines.append(f"  {tier_name} ({desc}):")
                 lines.append(f"    Win Rate: {wr_pct:.1f}%  ({w}W-{l}L)  Avg Margin: {tier.get('avg_margin', 0):+.2f}{gate}")
             lines.append("")
@@ -947,7 +952,9 @@ class ModelBacktester:
             lines.append(f"  CI coverage ≥ 88.2% (10pt): {'PASS' if sc.get('confidence_band_target_882') else 'FAIL'}  (actual: {sc.get('confidence_band_coverage_10pt')}%)")
             if sc.get("lineup_win_rate") is not None:
                 wr_pct = sc["lineup_win_rate"] * 100
-                lines.append(f"  Lineup win rate > 55%:      {'PASS' if sc.get('lineup_win_rate_gt_55') else 'FAIL'}  (actual: {wr_pct:.1f}%, {sc.get('lineup_wins')}W-{sc.get('lineup_losses')}L)")
+                p_val = sc.get("lineup_p_value")
+                p_str = f", p={p_val:.4f}" if p_val is not None else ""
+                lines.append(f"  Lineup beats coin flip:     {'PASS' if sc.get('lineup_win_rate_significant') else 'FAIL'}  (win rate: {wr_pct:.1f}%, {sc.get('lineup_wins')}W-{sc.get('lineup_losses')}L{p_str})")
             lines.append("")
         
         # Top performers analysis
@@ -1024,8 +1031,9 @@ class ModelBacktester:
           position — a casual drafter. Winning here is table stakes.
 
         The primary decision quality metric is **win rate vs. the hindsight
-        opponent**: a competent but non-model-driven drafter. Beating >55%
-        means the model adds value over "just start last week's best players."
+        opponent**: a competent but non-model-driven drafter. Statistical
+        significance is assessed via a one-sided binomial test (H0: win
+        rate = 50%, H1: win rate > 50%, alpha = 0.05).
 
         Args:
             df: DataFrame with predictions and actuals per player-week.
@@ -1141,13 +1149,37 @@ class ModelBacktester:
 
         n_weeks = len(weekly_results)
 
+        # One-sided binomial test: H0 = model wins 50% (coin flip),
+        # H1 = model wins > 50%.  Uses scipy if available, otherwise
+        # falls back to a normal approximation with continuity correction.
+        def _binom_p_value(wins: int, n: int) -> float:
+            """P-value for one-sided binomial test (H0: p=0.5, H1: p>0.5)."""
+            try:
+                from scipy.stats import binom_test  # type: ignore
+                return float(binom_test(wins, n, 0.5, alternative="greater"))
+            except (ImportError, TypeError):
+                pass
+            try:
+                from scipy.stats import binomtest  # type: ignore
+                return float(binomtest(wins, n, 0.5, alternative="greater").pvalue)
+            except (ImportError, TypeError):
+                pass
+            # Normal approximation fallback (continuity-corrected)
+            if n == 0:
+                return 1.0
+            z = (wins - 0.5 - n * 0.5) / (0.5 * np.sqrt(n))
+            return float(1.0 - 0.5 * (1.0 + np.math.erf(z / np.sqrt(2.0))))
+
         def _tier_stats(margin_key: str, won_key: str) -> Dict:
             wins = sum(1 for w in weekly_results if w[won_key])
             margins = [w[margin_key] for w in weekly_results]
+            p_val = _binom_p_value(wins, n_weeks)
             return {
                 "win_rate": round(wins / n_weeks, 4),
                 "wins": wins,
                 "losses": n_weeks - wins,
+                "p_value": round(p_val, 4),
+                "significant_at_05": p_val < 0.05,
                 "avg_margin": round(float(np.mean(margins)), 2),
                 "worst_loss": round(float(min(margins)), 2),
                 "best_win": round(float(max(margins)), 2),
@@ -1166,6 +1198,8 @@ class ModelBacktester:
             "win_rate": vs_hindsight["win_rate"],
             "wins": vs_hindsight["wins"],
             "losses": vs_hindsight["losses"],
+            "p_value": vs_hindsight["p_value"],
+            "significant_at_05": vs_hindsight["significant_at_05"],
             "n_weeks": n_weeks,
             "avg_margin": vs_hindsight["avg_margin"],
             # All three opponent tiers
@@ -2074,17 +2108,18 @@ def check_success_criteria(backtest_results: Dict) -> Dict:
     sc["bust_prevalence"] = boom_bust.get("bust_prevalence")
 
     # --- Decision quality: lineup win rate vs three opponent tiers ---
+    # Gate: one-sided binomial test (H0: win rate = 50%, H1: > 50%, p < 0.05).
+    # No arbitrary threshold — let the data speak.
     lineup = backtest_results.get("lineup_decisions", {})
     if lineup and "error" not in lineup:
-        # Primary metric: win rate vs hindsight opponent (competent drafter
-        # who starts last week's best performers).
         win_rate = lineup.get("win_rate")
         sc["lineup_win_rate"] = win_rate
         sc["lineup_wins"] = lineup.get("wins")
         sc["lineup_losses"] = lineup.get("losses")
         sc["lineup_n_weeks"] = lineup.get("n_weeks")
         sc["lineup_avg_margin"] = lineup.get("avg_margin")
-        sc["lineup_win_rate_gt_55"] = win_rate is not None and win_rate > 0.55
+        sc["lineup_p_value"] = lineup.get("p_value")
+        sc["lineup_win_rate_significant"] = lineup.get("significant_at_05", False)
         # Store per-tier summaries for reporting
         for tier_key in ("vs_replacement", "vs_hindsight", "vs_oracle"):
             tier = lineup.get(tier_key)
@@ -2092,7 +2127,7 @@ def check_success_criteria(backtest_results: Dict) -> Dict:
                 sc[f"lineup_{tier_key}"] = tier
     else:
         sc["lineup_win_rate"] = None
-        sc["lineup_win_rate_gt_55"] = None
+        sc["lineup_win_rate_significant"] = None
 
     # Overall pass/fail
     accuracy_checks = [
@@ -2105,7 +2140,7 @@ def check_success_criteria(backtest_results: Dict) -> Dict:
         sc.get("tier_accuracy_ge_075"),
         sc.get("season_stability_ok"),
         sc.get("beat_all_baselines_by_25_pct"),
-        sc.get("lineup_win_rate_gt_55"),
+        sc.get("lineup_win_rate_significant"),
     ]
     
     sc["accuracy_passed"] = sum(1 for c in accuracy_checks if c is True)
@@ -2192,15 +2227,20 @@ def print_success_criteria_report(sc: Dict) -> str:
     if sc.get("lineup_win_rate") is not None:
         wr = sc["lineup_win_rate"]
         wr_pct = wr * 100
+        p_val = sc.get("lineup_p_value")
+        p_str = f"p={p_val:.4f}" if p_val is not None else "p=N/A"
+        sig = sc.get("lineup_win_rate_significant", False)
         lines.append("DECISION QUALITY (model vs three opponent tiers):")
-        lines.append(f"  vs Hindsight > 55%:    {'PASS' if sc.get('lineup_win_rate_gt_55') else 'FAIL'}  (actual: {wr_pct:.1f}%, {sc.get('lineup_wins')}W-{sc.get('lineup_losses')}L)")
+        lines.append(f"  vs Hindsight:          {'PASS' if sig else 'FAIL'}  ({wr_pct:.1f}%, {sc.get('lineup_wins')}W-{sc.get('lineup_losses')}L, {p_str})")
         if sc.get("lineup_avg_margin") is not None:
             lines.append(f"  vs Hindsight margin:   {sc['lineup_avg_margin']:+.2f} pts/week")
-        # Show all tiers if available
         for tier_name, key in [("vs Replacement", "vs_replacement"), ("vs Oracle", "vs_oracle")]:
             tier = sc.get(f"lineup_{key}")
             if tier:
-                lines.append(f"  {tier_name}:           {tier['win_rate']*100:.1f}% ({tier['wins']}W-{tier['losses']}L)")
+                tp = tier.get("p_value")
+                tp_str = f"p={tp:.4f}" if tp is not None else ""
+                lines.append(f"  {tier_name}:           {tier['win_rate']*100:.1f}% ({tier['wins']}W-{tier['losses']}L) {tp_str}")
+        lines.append("  Gate: one-sided binomial test, H0: win_rate=50%, alpha=0.05")
         lines.append("")
     lines.append("MODEL HEALTH:")
     if sc.get("mae_rmse_ratio") is not None:

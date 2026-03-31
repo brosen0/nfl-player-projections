@@ -102,10 +102,16 @@ def test_backtest_lineup_decisions_perfect_model():
     assert result["vs_replacement"]["win_rate"] == 1.0
     assert result["n_weeks"] == 5
     assert result["avg_model_score"] > 0
-    # Three tiers present
+    # Three tiers present with p-values
     assert "vs_oracle" in result
     assert "vs_hindsight" in result
     assert "vs_replacement" in result
+    # Binomial test: 5/5 wins vs replacement, p should be significant
+    assert result["vs_replacement"]["p_value"] < 0.05
+    assert result["vs_replacement"]["significant_at_05"] is True
+    # Top-level p_value is the hindsight tier
+    assert "p_value" in result
+    assert "significant_at_05" in result
 
 
 def test_backtest_lineup_decisions_three_opponent_tiers():
@@ -143,6 +149,13 @@ def test_backtest_lineup_decisions_three_opponent_tiers():
     # Primary metric (win_rate) is the hindsight rate
     assert result["win_rate"] == result["vs_hindsight"]["win_rate"]
     assert result["wins"] + result["losses"] == result["n_weeks"]
+
+    # Each tier has a p-value from binomial test
+    for tier_key in ("vs_oracle", "vs_hindsight", "vs_replacement"):
+        tier = result[tier_key]
+        assert "p_value" in tier
+        assert "significant_at_05" in tier
+        assert 0.0 <= tier["p_value"] <= 1.0
 
 
 def test_backtest_lineup_decisions_missing_column():
@@ -202,14 +215,17 @@ def test_success_criteria_includes_lineup_win_rate():
             "losses": 7,
             "n_weeks": 20,
             "avg_margin": 4.5,
-            "vs_oracle": {"win_rate": 0.10, "wins": 2, "losses": 18},
-            "vs_hindsight": {"win_rate": 0.65, "wins": 13, "losses": 7},
-            "vs_replacement": {"win_rate": 0.90, "wins": 18, "losses": 2},
+            "p_value": 0.0207,
+            "significant_at_05": True,
+            "vs_oracle": {"win_rate": 0.10, "wins": 2, "losses": 18, "p_value": 1.0, "significant_at_05": False},
+            "vs_hindsight": {"win_rate": 0.65, "wins": 13, "losses": 7, "p_value": 0.0207, "significant_at_05": True},
+            "vs_replacement": {"win_rate": 0.90, "wins": 18, "losses": 2, "p_value": 0.0002, "significant_at_05": True},
         },
     }
     sc = check_success_criteria(payload)
     assert sc["lineup_win_rate"] == 0.65
-    assert sc["lineup_win_rate_gt_55"] is True
+    assert sc["lineup_win_rate_significant"] is True
+    assert sc["lineup_p_value"] == 0.0207
     assert sc["lineup_wins"] == 13
     assert sc["lineup_losses"] == 7
     # Tier data preserved
