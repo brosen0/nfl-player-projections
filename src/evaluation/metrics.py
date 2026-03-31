@@ -1119,12 +1119,8 @@ def generate_expert_baselines(
     # Industry-average expert consensus RMSE (FantasyPros historical accuracy)
     # Sources: FantasyPros accuracy reports 2019-2024
     if expert_rmse_lookup is None:
-        expert_rmse_lookup = {
-            "QB": 7.5,   # QBs are most predictable
-            "RB": 8.5,   # RBs have high variance (injuries, committees)
-            "WR": 8.0,   # WRs have moderate variance
-            "TE": 6.5,   # TEs have lower scoring range
-        }
+        from src.evaluation.baselines import EXPERT_RMSE_BENCHMARKS
+        expert_rmse_lookup = EXPERT_RMSE_BENCHMARKS.copy()
 
     return expert_rmse_lookup
 

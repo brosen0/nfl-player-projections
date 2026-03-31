@@ -217,6 +217,15 @@ class ModelBacktester:
         else:
             df["baseline_prior_season"] = df.groupby("position")[actual_col].transform("mean")
 
+        # Baseline 5: Vegas-implied (real external benchmark from market lines)
+        try:
+            from src.evaluation.baselines import vegas_implied_baseline
+            vegas_pred = vegas_implied_baseline(df, target_col=actual_col)
+            if vegas_pred.notna().sum() >= 20:
+                df["baseline_vegas_implied"] = vegas_pred.values
+        except Exception:
+            pass
+
         valid = df.dropna(subset=[pred_col, actual_col])
         if len(valid) < 10:
             return {"error": "Insufficient data for baseline comparison"}
@@ -243,12 +252,16 @@ class ModelBacktester:
         season_avg = baseline_stats("baseline_season_avg")
         position_avg = baseline_stats("baseline_position_avg")
         prior_season = baseline_stats("baseline_prior_season")
+        vegas_implied = baseline_stats("baseline_vegas_implied") if "baseline_vegas_implied" in valid.columns else {
+            "rmse": None, "mae": None, "beat_by_20_pct": False, "beat_by_25_pct": False,
+        }
 
         all_baselines = {
             "baseline_persistence": persistence,
             "baseline_season_avg": season_avg,
             "baseline_position_avg": position_avg,
             "baseline_prior_season": prior_season,
+            "baseline_vegas_implied": vegas_implied,
         }
 
         beats_all_20 = all(
