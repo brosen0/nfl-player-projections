@@ -47,9 +47,10 @@ def test_success_criteria_prefers_explicit_ci_coverage():
         "by_week": {"1": {"rmse": 7.0}, "2": {"rmse": 7.4}},
         "by_position": {},
         "multiple_baseline_comparison": {
-            "model_beats_all_by_20_pct": True,
-            "model_beats_all_by_25_pct": True,
+            "model_beats_all_internal_by_20_pct": True,
+            "model_beats_all_internal_by_25_pct": True,
             "baseline_season_avg": {"improvement_pct": 26.0},
+            "status": {"model_has_real_edge": False},
         },
         "confidence_band_coverage_10pt": 90.0,
     }
@@ -73,7 +74,8 @@ def test_compare_to_multiple_baselines_returns_expected_keys():
     assert "baseline_persistence" in out
     assert "baseline_season_avg" in out
     assert "baseline_position_avg" in out
-    assert "model_beats_all_by_20_pct" in out
+    assert "model_beats_all_internal_by_20_pct" in out or "model_beats_all_by_20_pct" in out
+    assert "status" in out
 
 
 def test_compare_to_expert_consensus_with_csv(tmp_path):
