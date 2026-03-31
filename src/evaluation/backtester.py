@@ -1155,13 +1155,13 @@ class ModelBacktester:
         def _binom_p_value(wins: int, n: int) -> float:
             """P-value for one-sided binomial test (H0: p=0.5, H1: p>0.5)."""
             try:
-                from scipy.stats import binom_test  # type: ignore
-                return float(binom_test(wins, n, 0.5, alternative="greater"))
+                from scipy.stats import binomtest  # type: ignore
+                return float(binomtest(wins, n, 0.5, alternative="greater").pvalue)
             except (ImportError, TypeError):
                 pass
             try:
-                from scipy.stats import binomtest  # type: ignore
-                return float(binomtest(wins, n, 0.5, alternative="greater").pvalue)
+                from scipy.stats import binom_test  # type: ignore
+                return float(binom_test(wins, n, 0.5, alternative="greater"))
             except (ImportError, TypeError):
                 pass
             # Normal approximation fallback (continuity-corrected)
