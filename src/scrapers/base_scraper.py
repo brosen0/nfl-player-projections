@@ -3,10 +3,18 @@ import time
 import hashlib
 import json
 import random
-import requests
 from abc import ABC, abstractmethod
 from typing import Dict, List, Optional, Any
-from bs4 import BeautifulSoup
+
+try:
+    import requests
+except ImportError:
+    requests = None
+
+try:
+    from bs4 import BeautifulSoup
+except ImportError:
+    BeautifulSoup = None
 import pandas as pd
 from pathlib import Path
 

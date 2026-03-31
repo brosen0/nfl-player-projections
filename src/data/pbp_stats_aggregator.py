@@ -6,9 +6,13 @@ This is used when weekly stats are not directly available (e.g., current season)
 """
 import os
 import ssl
-import certifi
-os.environ['SSL_CERT_FILE'] = certifi.where()
-os.environ['REQUESTS_CA_BUNDLE'] = certifi.where()
+
+try:
+    import certifi
+    os.environ['SSL_CERT_FILE'] = certifi.where()
+    os.environ['REQUESTS_CA_BUNDLE'] = certifi.where()
+except ImportError:
+    certifi = None
 
 import pandas as pd
 import numpy as np
