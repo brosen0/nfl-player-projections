@@ -4,6 +4,7 @@ Data loading and Plotly theme helpers for the narrative NFL predictor web app.
 Loads all app JSON/CSV/parquet and optionally samples DB for EDA.
 Provides a shared Plotly layout (Catppuccin Mocha-inspired dark theme).
 """
+from __future__ import annotations
 
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
