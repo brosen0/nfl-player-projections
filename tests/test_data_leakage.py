@@ -59,24 +59,33 @@ class TestRollingFeatureLeakage:
         return pd.DataFrame(data)
     
     def test_rolling_mean_uses_shift(self, sample_data):
-        """Test rolling mean doesn't include current week's data."""
+        """Test rolling mean doesn't include current week's data.
+
+        Verify by perturbing the current week's fantasy_points and checking
+        the rolling feature is unchanged (i.e., no leakage from current week).
+        Note: values may be season-normalized (z-scored), so we compare two
+        runs rather than checking a raw expected value.
+        """
         engineer = FeatureEngineer()
-        result = engineer.create_features(sample_data)
-        
-        # For player1, week 5:
-        # fantasy_points = 50
-        # Rolling mean (4 weeks, shifted) should use weeks 1-4: (10+20+30+40)/4 = 25
+        result = engineer.create_features(sample_data.copy())
+
+        if 'fantasy_points_roll4_mean' not in result.columns:
+            return  # Feature not generated; nothing to test
+
         player1 = result[result['player_id'] == 'player1']
-        week5 = player1[player1['week'] == 5].iloc[0]
-        
-        if 'fantasy_points_roll4_mean' in result.columns:
-            # Should be mean of weeks 1-4, not include week 5
-            expected = (10 + 20 + 30 + 40) / 4  # 25
-            actual = week5['fantasy_points_roll4_mean']
-            
-            # Current week (50) should NOT be included
-            assert abs(actual - expected) < 0.01, \
-                f"Rolling mean should be {expected}, got {actual}. Current value may be leaking."
+        week5_val = player1[player1['week'] == 5].iloc[0]['fantasy_points_roll4_mean']
+
+        # Perturb week 5's fantasy_points and recompute — rolling feature must stay the same
+        perturbed = sample_data.copy()
+        mask = (perturbed['player_id'] == 'player1') & (perturbed['week'] == 5)
+        perturbed.loc[mask, 'fantasy_points'] = 999.0
+
+        result2 = engineer.create_features(perturbed)
+        player1_v2 = result2[result2['player_id'] == 'player1']
+        week5_val2 = player1_v2[player1_v2['week'] == 5].iloc[0]['fantasy_points_roll4_mean']
+
+        assert abs(week5_val - week5_val2) < 0.01, \
+            f"Rolling mean changed from {week5_val} to {week5_val2} when current week was perturbed — leakage detected."
     
     def test_lag_features_use_past_only(self, sample_data):
         """Test lag features only use past data."""
