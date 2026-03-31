@@ -62,6 +62,8 @@ class LineupResult:
     platform: str
     is_valid: bool
     warnings: List[str] = field(default_factory=list)
+    projected_floor: float = 0.0   # 10th percentile lineup total
+    projected_ceiling: float = 0.0  # 90th percentile lineup total
 
 
 # ---------------------------------------------------------------------------
@@ -80,6 +82,11 @@ class LineupOptimizer:
         platform: PlatformConfig = None,
     ):
         self.platform = platform or DRAFTKINGS_CONFIG
+
+    # Z-scores for percentile calculations (normal approximation)
+    _Z10 = -1.2816  # 10th percentile
+    _Z50 = 0.0      # 50th percentile (median = mean for symmetric dist)
+    _Z90 = 1.2816   # 90th percentile
 
     def optimize_lineup(
         self,
@@ -103,7 +110,8 @@ class LineupOptimizer:
             strategy: 'cash' (maximize floor) or 'gpp' (maximize ceiling).
 
         Returns:
-            LineupResult with optimal lineup.
+            LineupResult with optimal lineup including per-player and
+            lineup-level percentile ranges (p10 floor, p50 median, p90 ceiling).
         """
         if salary_col not in players.columns:
             return LineupResult(
@@ -130,6 +138,18 @@ class LineupOptimizer:
         else:
             df["_obj"] = df[pred_col]
 
+        # Pre-compute per-player percentiles for inclusion in output
+        has_std = std_col in df.columns and df[std_col].notna().any()
+        if has_std:
+            std_vals = df[std_col].fillna(0)
+            df["_p10"] = (df[pred_col] + self._Z10 * std_vals).clip(lower=0)
+            df["_p50"] = df[pred_col]  # mean ≈ median for symmetric dist
+            df["_p90"] = df[pred_col] + self._Z90 * std_vals
+        else:
+            df["_p10"] = df[pred_col]
+            df["_p50"] = df[pred_col]
+            df["_p90"] = df[pred_col]
+
         # Greedy knapsack with position constraints
         lineup = self._greedy_knapsack(
             df, pred_col="_obj", salary_col=salary_col,
@@ -145,6 +165,8 @@ class LineupOptimizer:
 
         total_salary = sum(p["salary"] for p in lineup)
         projected = sum(p["projected_points"] for p in lineup)
+        lineup_floor = sum(p.get("p10", p["projected_points"]) for p in lineup)
+        lineup_ceiling = sum(p.get("p90", p["projected_points"]) for p in lineup)
 
         return LineupResult(
             players=lineup,
@@ -153,6 +175,8 @@ class LineupOptimizer:
             strategy=strategy,
             platform=self.platform.name,
             is_valid=True,
+            projected_floor=round(lineup_floor, 2),
+            projected_ceiling=round(lineup_ceiling, 2),
         )
 
     def _greedy_knapsack(
@@ -203,6 +227,9 @@ class LineupOptimizer:
                 "slot": slot,
                 "salary": salary,
                 "projected_points": round(float(row.get(pred_col, 0)), 2),
+                "p10": round(float(row.get("_p10", row.get(pred_col, 0))), 2),
+                "p50": round(float(row.get("_p50", row.get(pred_col, 0))), 2),
+                "p90": round(float(row.get("_p90", row.get(pred_col, 0))), 2),
             })
             used_names.add(name)
             remaining_salary -= salary
