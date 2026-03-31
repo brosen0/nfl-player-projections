@@ -13,7 +13,6 @@ use across all prediction horizons (1-week, 5-week, 18-week).
 
 import os
 import ssl
-import certifi
 from typing import Dict, List, Optional, Tuple
 from datetime import datetime, timedelta
 import pandas as pd
@@ -22,16 +21,22 @@ from pathlib import Path
 import json
 
 try:
+    import certifi
+    os.environ['SSL_CERT_FILE'] = certifi.where()
+except ImportError:
+    certifi = None
+
+try:
     import requests
+    if certifi is not None:
+        os.environ['REQUESTS_CA_BUNDLE'] = certifi.where()
 except ImportError:
     requests = None  # Optional: only needed for live API calls
 
-# Fix SSL
-os.environ['SSL_CERT_FILE'] = certifi.where()
-if requests is not None:
-    os.environ['REQUESTS_CA_BUNDLE'] = certifi.where()
-
-import nfl_data_py as nfl
+try:
+    import nfl_data_py as nfl
+except ImportError:
+    nfl = None  # Optional: only needed for live data fetching
 
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
