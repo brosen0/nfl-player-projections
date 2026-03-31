@@ -35,10 +35,13 @@ def test_retry_wrappers_call_expected_nfl_data_py_methods_once(monkeypatch):
         assert arg == seasons
         return roster_df
 
-    monkeypatch.setattr(nfl_data_loader.nfl, "import_weekly_data", fake_import_weekly_data)
-    monkeypatch.setattr(nfl_data_loader.nfl, "import_snap_counts", fake_import_snap_counts)
-    monkeypatch.setattr(nfl_data_loader.nfl, "import_schedules", fake_import_schedules)
-    monkeypatch.setattr(nfl_data_loader.nfl, "import_seasonal_rosters", fake_import_seasonal_rosters)
+    class FakeNfl:
+        import_weekly_data = staticmethod(fake_import_weekly_data)
+        import_snap_counts = staticmethod(fake_import_snap_counts)
+        import_schedules = staticmethod(fake_import_schedules)
+        import_seasonal_rosters = staticmethod(fake_import_seasonal_rosters)
+
+    monkeypatch.setattr(nfl_data_loader, "_get_nfl", lambda: FakeNfl)
 
     assert nfl_data_loader._fetch_weekly_data(seasons).equals(weekly_df)
     assert nfl_data_loader._fetch_snap_counts(seasons).equals(snap_df)
