@@ -227,7 +227,7 @@ class TestFormatBaselineReport:
         assert "LOSES TO" in report
 
     def test_expert_consensus_critical_tag(self):
-        """Expert consensus should be tagged as CRITICAL in the report."""
+        """Expert consensus should be tagged as SIMULATED in the report."""
         comparison = {
             "expert_consensus": {
                 "baseline_rmse": 5.0,
@@ -241,7 +241,7 @@ class TestFormatBaselineReport:
             }
         }
         report = format_baseline_report(comparison)
-        assert "[CRITICAL]" in report
+        assert "[SIMULATED]" in report
         assert "BEATS EXPERT CONSENSUS" in report
 
     def test_expert_consensus_warning_when_loses(self):

@@ -47,9 +47,10 @@ def test_success_criteria_prefers_explicit_ci_coverage():
         "by_week": {"1": {"rmse": 7.0}, "2": {"rmse": 7.4}},
         "by_position": {},
         "multiple_baseline_comparison": {
-            "model_beats_all_by_20_pct": True,
-            "model_beats_all_by_25_pct": True,
+            "model_beats_all_internal_by_20_pct": True,
+            "model_beats_all_internal_by_25_pct": True,
             "baseline_season_avg": {"improvement_pct": 26.0},
+            "status": {"model_has_real_edge": False},
         },
         "confidence_band_coverage_10pt": 90.0,
     }
@@ -73,7 +74,128 @@ def test_compare_to_multiple_baselines_returns_expected_keys():
     assert "baseline_persistence" in out
     assert "baseline_season_avg" in out
     assert "baseline_position_avg" in out
-    assert "model_beats_all_by_20_pct" in out
+    assert "model_beats_all_internal_by_20_pct" in out or "model_beats_all_by_20_pct" in out
+    assert "status" in out
+
+
+def test_backtest_lineup_decisions_basic():
+    """Model that predicts perfectly should win every week."""
+    backtester = ModelBacktester()
+    rows = []
+    for week in range(1, 6):
+        # 3 QBs, 4 RBs, 4 WRs, 3 TEs per week
+        for i, (pos, n) in enumerate([("QB", 3), ("RB", 4), ("WR", 4), ("TE", 3)]):
+            for j in range(n):
+                pts = float(10 + j * 3 + week * 0.5)
+                rows.append({
+                    "player_id": f"{pos}{j}",
+                    "position": pos,
+                    "week": week,
+                    "fantasy_points": pts,
+                    "predicted_points": pts,  # perfect predictions
+                })
+    df = pd.DataFrame(rows)
+    result = backtester.backtest_lineup_decisions(df)
+    assert "error" not in result
+    assert result["win_rate"] == 1.0
+    assert result["wins"] == 5
+    assert result["losses"] == 0
+    assert result["n_weeks"] == 5
+    assert result["avg_margin"] > 0
+
+
+def test_backtest_lineup_decisions_returns_weekly_detail():
+    backtester = ModelBacktester()
+    rows = []
+    np.random.seed(42)
+    for week in range(1, 4):
+        for pos, n in [("QB", 3), ("RB", 4), ("WR", 4), ("TE", 3)]:
+            for j in range(n):
+                pts = float(10 + j * 2 + np.random.normal(0, 2))
+                rows.append({
+                    "player_id": f"{pos}{j}",
+                    "position": pos,
+                    "week": week,
+                    "fantasy_points": pts,
+                    "predicted_points": pts + np.random.normal(0, 1),
+                })
+    df = pd.DataFrame(rows)
+    result = backtester.backtest_lineup_decisions(df)
+    assert "error" not in result
+    assert len(result["weekly_results"]) == 3
+    for wr in result["weekly_results"]:
+        assert "week" in wr
+        assert "model_actual" in wr
+        assert "opponent_actual" in wr
+        assert "margin" in wr
+        assert "won" in wr
+    assert result["wins"] + result["losses"] == result["n_weeks"]
+
+
+def test_backtest_lineup_decisions_missing_column():
+    backtester = ModelBacktester()
+    df = pd.DataFrame({"x": [1, 2]})
+    result = backtester.backtest_lineup_decisions(df)
+    assert "error" in result
+
+
+def test_backtest_lineup_decisions_custom_roster_slots():
+    backtester = ModelBacktester()
+    rows = []
+    for week in range(1, 4):
+        for pos, n in [("QB", 3), ("RB", 5), ("WR", 5), ("TE", 3)]:
+            for j in range(n):
+                pts = float(10 + j * 3)
+                rows.append({
+                    "player_id": f"{pos}{j}",
+                    "position": pos,
+                    "week": week,
+                    "fantasy_points": pts,
+                    "predicted_points": pts,
+                })
+    df = pd.DataFrame(rows)
+    result = backtester.backtest_lineup_decisions(
+        df, roster_slots={"QB": 1, "RB": 3, "WR": 3, "TE": 1}
+    )
+    assert "error" not in result
+    assert result["roster_slots"] == {"QB": 1, "RB": 3, "WR": 3, "TE": 1}
+
+
+def test_success_criteria_includes_lineup_win_rate():
+    """check_success_criteria should pick up lineup decision results."""
+    payload = {
+        "metrics": {
+            "spearman_rho": 0.7,
+            "mape": 20.0,
+            "within_7_pts_pct": 75.0,
+            "within_10_pts_pct": 82.0,
+            "tier_classification_accuracy": 0.8,
+            "std_predicted": 7.0,
+            "std_actual": 8.0,
+            "mae_rmse_ratio": 0.77,
+            "mae_rmse_healthy": True,
+        },
+        "by_week": {"1": {"rmse": 7.0}, "2": {"rmse": 7.4}},
+        "by_position": {},
+        "multiple_baseline_comparison": {
+            "model_beats_all_internal_by_20_pct": True,
+            "model_beats_all_internal_by_25_pct": True,
+            "baseline_season_avg": {"improvement_pct": 26.0},
+            "status": {"model_has_real_edge": True},
+        },
+        "lineup_decisions": {
+            "win_rate": 0.65,
+            "wins": 13,
+            "losses": 7,
+            "n_weeks": 20,
+            "avg_margin": 4.5,
+        },
+    }
+    sc = check_success_criteria(payload)
+    assert sc["lineup_win_rate"] == 0.65
+    assert sc["lineup_win_rate_gt_55"] is True
+    assert sc["lineup_wins"] == 13
+    assert sc["lineup_losses"] == 7
 
 
 def test_compare_to_expert_consensus_with_csv(tmp_path):

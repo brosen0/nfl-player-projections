@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LLM Council Report — Optimizer Proxy Problem</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    background: #f8f9fa; color: #1a1a2e; line-height: 1.6; padding: 2rem;
+  }
+  .container { max-width: 900px; margin: 0 auto; }
+  .header {
+    background: linear-gradient(135deg, #1a1a2e, #16213e);
+    color: white; padding: 2.5rem; border-radius: 12px; margin-bottom: 2rem;
+  }
+  .header h1 { font-size: 1.8rem; margin-bottom: 0.5rem; }
+  .header .subtitle { opacity: 0.85; font-size: 1rem; }
+  .question-box {
+    background: white; border-left: 4px solid #e94560; padding: 1.5rem;
+    border-radius: 0 8px 8px 0; margin-bottom: 2rem; box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+  }
+  .question-box h2 { font-size: 0.85rem; text-transform: uppercase; color: #e94560; margin-bottom: 0.5rem; letter-spacing: 0.05em; }
+  .question-box p { font-size: 1.05rem; font-weight: 500; }
+  .verdict-section {
+    background: white; padding: 2rem; border-radius: 12px; margin-bottom: 1.5rem;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+  }
+  .verdict-section h2 {
+    font-size: 1.15rem; margin-bottom: 1rem; padding-bottom: 0.5rem;
+    border-bottom: 2px solid #f0f0f0;
+  }
+  .verdict-section p, .verdict-section li { font-size: 0.95rem; margin-bottom: 0.75rem; }
+  .verdict-section ul { padding-left: 1.5rem; }
+  .agrees h2 { color: #0f9960; }
+  .clashes h2 { color: #d9822b; }
+  .blindspots h2 { color: #9f5afd; }
+  .recommendation h2 { color: #1a1a2e; }
+  .first-thing {
+    background: linear-gradient(135deg, #e94560, #c23152);
+    color: white; padding: 2rem; border-radius: 12px; margin-bottom: 2rem;
+  }
+  .first-thing h2 { font-size: 1.15rem; margin-bottom: 0.75rem; opacity: 0.9; }
+  .first-thing p { font-size: 1.05rem; font-weight: 500; }
+  .advisor-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 2rem;
+  }
+  @media (max-width: 700px) { .advisor-grid { grid-template-columns: 1fr; } }
+  .advisor-grid .full-width { grid-column: 1 / -1; }
+  .advisor-positions {
+    background: white; padding: 1.5rem; border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06); margin-bottom: 2rem;
+  }
+  .advisor-positions h2 { font-size: 1.15rem; margin-bottom: 1rem; }
+  .position-row {
+    display: flex; align-items: center; padding: 0.6rem 0;
+    border-bottom: 1px solid #f0f0f0; font-size: 0.9rem;
+  }
+  .position-row:last-child { border-bottom: none; }
+  .advisor-name { font-weight: 600; width: 180px; flex-shrink: 0; }
+  .advisor-stance { flex: 1; }
+  .stance-tag {
+    display: inline-block; padding: 2px 8px; border-radius: 4px;
+    font-size: 0.75rem; font-weight: 600; margin-right: 6px;
+  }
+  .tag-fix-first { background: #fce4ec; color: #c62828; }
+  .tag-define { background: #e8eaf6; color: #283593; }
+  .tag-build { background: #e8f5e9; color: #2e7d32; }
+  .tag-scope { background: #fff3e0; color: #e65100; }
+  .tag-execute { background: #e0f2f1; color: #00695c; }
+
+  details { margin-bottom: 1rem; }
+  summary {
+    cursor: pointer; padding: 1rem 1.5rem; background: white;
+    border-radius: 8px; font-weight: 600; font-size: 0.95rem;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.06); list-style: none;
+    display: flex; align-items: center; gap: 0.5rem;
+  }
+  summary::before { content: "\\25B6"; font-size: 0.7rem; transition: transform 0.2s; }
+  details[open] summary::before { transform: rotate(90deg); }
+  summary::-webkit-details-marker { display: none; }
+  .detail-content {
+    padding: 1.5rem; background: #fafbfc; border-radius: 0 0 8px 8px;
+    border: 1px solid #e8e8e8; border-top: none; font-size: 0.9rem;
+  }
+  .detail-content p { margin-bottom: 0.75rem; }
+  .peer-highlight { background: #fffde7; padding: 0.5rem 0.75rem; border-radius: 4px; margin-bottom: 0.5rem; font-size: 0.85rem; }
+  .peer-highlight strong { color: #f57f17; }
+
+  .sequence-list { counter-reset: seq; list-style: none; padding: 0; }
+  .sequence-list li {
+    counter-increment: seq; padding: 0.75rem 0 0.75rem 3rem;
+    position: relative; border-bottom: 1px solid #f0f0f0;
+  }
+  .sequence-list li:last-child { border-bottom: none; }
+  .sequence-list li::before {
+    content: counter(seq); position: absolute; left: 0; top: 0.75rem;
+    width: 2rem; height: 2rem; background: #1a1a2e; color: white;
+    border-radius: 50%; display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 0.85rem;
+  }
+
+  .footer {
+    text-align: center; padding: 1.5rem; font-size: 0.8rem; color: #888;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+<div class="header">
+  <h1>LLM Council Report</h1>
+  <div class="subtitle">5 advisors &bull; 5 peer reviews &bull; Chairman synthesis &bull; 2026-03-31</div>
+</div>
+
+<div class="question-box">
+  <h2>The Question</h2>
+  <p>How should this repository be refactored so the optimizer solves "what roster wins my matchup" instead of "what will players score?" The optimizer ignores confidence intervals that already exist in the code.</p>
+</div>
+
+<!-- FIRST THING -->
+<div class="first-thing">
+  <h2>The One Thing to Do First</h2>
+  <p>Rewrite the backtester's evaluation function to measure, for each historical week, whether the lineup it would have selected beat a representative opponent score &mdash; and track win rate across the backtest period. Everything else waits until this exists.</p>
+</div>
+
+<!-- ADVISOR ALIGNMENT -->
+<div class="advisor-positions">
+  <h2>Advisor Alignment Map</h2>
+  <div class="position-row">
+    <span class="advisor-name">The Contrarian</span>
+    <span class="advisor-stance"><span class="stance-tag tag-fix-first">FIX FIRST</span> No ground truth for "did lineup win?" — fix backtester before building anything</span>
+  </div>
+  <div class="position-row">
+    <span class="advisor-name">First Principles</span>
+    <span class="advisor-stance"><span class="stance-tag tag-define">DEFINE</span> P(win) for cash vs GPP are categorically different &mdash; define win condition mathematically first</span>
+  </div>
+  <div class="position-row">
+    <span class="advisor-name">The Expansionist</span>
+    <span class="advisor-stance"><span class="stance-tag tag-build">BUILD</span> Full decision engine with opponent modeling, Monte Carlo, ILP, lineup-vs-lineup backtesting</span>
+  </div>
+  <div class="position-row">
+    <span class="advisor-name">The Outsider</span>
+    <span class="advisor-stance"><span class="stance-tag tag-scope">SCOPE</span> "Win matchup" is undefined &mdash; pick ONE contest format (cash/GPP/H2H) before coding</span>
+  </div>
+  <div class="position-row">
+    <span class="advisor-name">The Executor</span>
+    <span class="advisor-stance"><span class="stance-tag tag-execute">EXECUTE</span> 5-step plan: Monte Carlo &rarr; ILP &rarr; QB-WR correlation &rarr; win tracking. ~6 days.</span>
+  </div>
+</div>
+
+<!-- WHERE THEY AGREE -->
+<div class="verdict-section agrees">
+  <h2>Where the Council Agrees</h2>
+  <p><strong>The backtester validates the wrong objective.</strong> RMSE measures prediction closeness, not whether lineups won. You have no feedback loop connecting optimizer choices to outcomes. Every advisor flagged this independently.</p>
+  <p><strong>predicted_std is unvalidated.</strong> If std estimates are miscalibrated, Monte Carlo simulation, correlation modeling, and win probability calculations all inherit that miscalibration at scale. Std calibration is a prerequisite, not an afterthought.</p>
+</div>
+
+<!-- WHERE THEY CLASH -->
+<div class="verdict-section clashes">
+  <h2>Where the Council Clashes</h2>
+  <p><strong>Speed vs. correctness.</strong> The Executor says build Monte Carlo in 2 days. The Contrarian and 3/5 peer reviews say that's "confident garbage on a miscalibrated foundation." Resolution: the Executor's sequencing is right, but Step 0 &mdash; validating std calibration &mdash; was omitted entirely.</p>
+  <p><strong>ILP vs. greedy knapsack.</strong> The Executor says ILP is "not optional." The Contrarian says greedy is within 2-3% of optimal for NFL slates. Both right: greedy works fine for point-maximization but <em>cannot</em> properly maximize a win-probability objective because win probability is not additively decomposable. The solver matters more after you have a real objective function.</p>
+  <p><strong>Hardcoded 0.4 QB-WR correlation.</strong> The Executor calls it pragmatic 80/20. Three peer reviews call it fabrication. A hardcoded correlation is better than zero <em>if directionally correct</em>, worse than zero if it introduces systematic bias. You can't know without the backtester &mdash; which measures the wrong thing.</p>
+</div>
+
+<!-- BLIND SPOTS -->
+<div class="verdict-section blindspots">
+  <h2>Blind Spots the Council Caught</h2>
+  <p><strong>Upstream-downstream conflict.</strong> The model is trained on RMSE, which penalizes variance. It regresses toward the mean, squeezing out exactly the variance the optimizer needs for GPP. You cannot fix the optimizer without examining the upstream training objective.</p>
+  <p><strong>Constraint-driven ownership concentration.</strong> Salary constraints + shared projections = similar rosters across the field. If your "optimal" lineup shares 60% of players with opponents, your win probability depends on the 40% divergent players. The optimizer has no mechanism for this.</p>
+  <p><strong>Contest format is undefined.</strong> Cash rewards floor (high left tail). GPP rewards ceiling (high right tail). These are opposite strategies. The hardcoded constants gesture at this but don't implement it. The win condition must be a formula before optimization is meaningful.</p>
+</div>
+
+<!-- RECOMMENDATION -->
+<div class="verdict-section recommendation">
+  <h2>The Recommendation</h2>
+  <p>Do not build Monte Carlo yet. Do not replace the greedy knapsack yet. Do not add correlation modeling yet. The project has a <strong>sequencing problem masquerading as a feature gap</strong>.</p>
+  <p>The correct sequence for a single developer:</p>
+  <ol class="sequence-list">
+    <li><strong>Define the win condition mathematically for one contest format.</strong> Start with cash H2H: P(my_total &gt; opponent_total). Write it as a formula. Everything else is out of scope until this works.</li>
+    <li><strong>Fix the backtester to measure win rate and ROI.</strong> This is the highest-leverage work — it turns the system into a learning loop. Without it, you can't tell if changes help.</li>
+    <li><strong>Validate predicted_std against historical actuals.</strong> Bin by projected std, observe actual variance, check calibration. Takes a weekend. If miscalibrated, fix before touching the optimizer.</li>
+    <li><strong>Add Monte Carlo simulation.</strong> Now you have validated inputs and a feedback loop. Win probability becomes a real estimate, not decorative.</li>
+    <li><strong>Derive QB-WR correlation from data.</strong> Not a hardcoded constant. Your backtester, now measuring win rate, tells you whether it helps.</li>
+  </ol>
+  <p style="margin-top: 1rem;"><strong>ILP is genuinely optional</strong> at this scale. Do it last, only if the greedy solver is provably leaving wins on the table.</p>
+</div>
+
+<!-- ADVISOR DETAILS -->
+<h2 style="margin: 1.5rem 0 1rem; font-size: 1.1rem;">Full Advisor Responses</h2>
+
+<details>
+  <summary>The Contrarian</summary>
+  <div class="detail-content">
+    <p>The refactor proposal is solving the wrong problem first. Before replacing the greedy knapsack with ILP or building Monte Carlo simulation, the codebase has a more fundamental missing piece: <strong>you have no ground truth for "did this lineup win the matchup?"</strong></p>
+    <p>The predicted_std values are unvalidated. If your standard deviation estimates are poorly calibrated, Monte Carlo simulation just generates confident nonsense at scale. Garbage in, garbage out, but now with 10,000 iterations.</p>
+    <p>The QB-WR correlation gap is real, but it's a research dead-end for a solo developer. Building a full covariance matrix requires historical ownership data, game-script modeling, and weather adjustments. Each is a separate project.</p>
+    <p>ILP over greedy sounds like a win, but for ~150 players with standard DFS constraints, greedy is likely within 2-3% of optimal. That's not your bottleneck.</p>
+    <p><strong>Fix the backtester first. Add win-rate tracking. Then you'll know what's actually broken.</strong></p>
+  </div>
+</details>
+
+<details>
+  <summary>The First Principles Thinker</summary>
+  <div class="detail-content">
+    <p>The question assumes "better optimization" is the bottleneck. It isn't. You don't have a win probability model — you have a points model dressed up with optimization clothing.</p>
+    <p>The actual objective is: P(my_total &gt; opponent_total) for cash, or P(my_total &gt; Nth percentile threshold) for GPP. These are <strong>categorically different problems</strong>.</p>
+    <p>First principles rebuild: (1) The optimization target must be a win condition, not a point estimate. (2) Covariance matters more than the solver — modeling QB-WR correlation gives structural edge. (3) The backtester validates the wrong thing entirely.</p>
+    <p><strong>Priority: define win condition, build feedback loop, then correlation, then solver.</strong></p>
+  </div>
+</details>
+
+<details>
+  <summary>The Expansionist</summary>
+  <div class="detail-content">
+    <p>The framing of "refactor to win matchups" undersells the opportunity. You're building a full decision engine.</p>
+    <p>The biggest undervalued piece: <strong>opponent modeling</strong>. Knowing opponent tendencies transforms from "maximize EV" to "maximize EV relative to field" — which is what DFS actually rewards.</p>
+    <p>Monte Carlo with correlated distributions can score thousands of simulated rosters. ILP (~200 lines with PuLP) unlocks ownership fades, exposure limits, and explicit stack rules.</p>
+    <p>The backtester should measure lineup-vs-lineup wins, not RMSE. This repo could become the <strong>definitive open-source DFS decision engine</strong>.</p>
+  </div>
+</details>
+
+<details>
+  <summary>The Outsider</summary>
+  <div class="detail-content">
+    <p>"Probability of winning a matchup" requires knowing your opponent's lineup — which you often don't have. Three different problems:</p>
+    <p>(1) <strong>Known opponent</strong>: correlated simulation. (2) <strong>Unknown opponent</strong>: collapses to maximizing expected score. (3) <strong>GPP</strong>: genuinely different, variance-seeking.</p>
+    <p>The code says "win my matchup" but targets GPP-style variance. Those are <strong>opposite strategies</strong>.</p>
+    <p><strong>Pick one contest format. Then the refactor has a clear target.</strong></p>
+  </div>
+</details>
+
+<details>
+  <summary>The Executor</summary>
+  <div class="detail-content">
+    <p>Monday morning plan, ordered by impact-per-hour:</p>
+    <p><strong>Step 1:</strong> Monte Carlo sim (~20 lines numpy, 1-2 days). <strong>Step 2:</strong> Replace hardcoded constants with simulated win probability (1 day). <strong>Step 3:</strong> PuLP ILP replacing greedy (1 day). <strong>Step 4:</strong> Hardcoded 0.4 QB-WR correlation (half day). <strong>Step 5:</strong> Win/loss tracking in evaluation (1 day).</p>
+    <p><strong>Total: ~5-6 focused days.</strong></p>
+  </div>
+</details>
+
+<!-- PEER REVIEW HIGHLIGHTS -->
+<h2 style="margin: 1.5rem 0 1rem; font-size: 1.1rem;">Peer Review Highlights</h2>
+
+<details>
+  <summary>Peer Review Summary</summary>
+  <div class="detail-content">
+    <div class="peer-highlight"><strong>Strongest advisor (by votes):</strong> Tie between First Principles (2 votes) and Contrarian (2 votes). Executor got 1 vote for concreteness.</div>
+    <div class="peer-highlight"><strong>Biggest blind spot:</strong> The Executor's plan was flagged by 3/5 reviewers for skipping data quality prerequisites and presenting fabricated constants as simplification.</div>
+    <div class="peer-highlight"><strong>Expansionist's vision</strong> was flagged by 2 reviewers for assuming opponent/ownership data is publicly available at scale — it isn't for a solo developer.</div>
+    <div class="peer-highlight"><strong>Novel insight from reviews:</strong> RMSE training loss creates a structural conflict — the upstream model squeezes out the variance the downstream optimizer needs for GPP.</div>
+    <div class="peer-highlight"><strong>Novel insight from reviews:</strong> Salary constraints + shared projections = ownership concentration. The optimizer needs to account for field correlation.</div>
+    <div class="peer-highlight"><strong>Novel insight from reviews:</strong> Score distribution shape matters asymmetrically — fat left tails vs thin left tails are distinct optimization levers ignored by all advisors.</div>
+    <div class="peer-highlight"><strong>Novel insight from reviews:</strong> Optimal strategy depends on slate composition (3-game vs 15-game), not just contest format.</div>
+  </div>
+</details>
+
+<div class="footer">
+  LLM Council Report &bull; Generated 2026-03-31 02:53 UTC<br>
+  Question: Optimizer proxy problem — "what roster wins" vs "what will players score"<br>
+  Full transcript: council-transcript-20260331-025327.md
+</div>
+
+</div>
+</body>
+</html>
