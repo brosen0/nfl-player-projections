@@ -14,11 +14,23 @@ from unittest.mock import patch, MagicMock
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 
+def _upcoming_meta():
+    """Read upcoming_week_meta.json to align test data with repo state."""
+    meta_path = Path(__file__).parent.parent / "data" / "upcoming_week_meta.json"
+    if meta_path.exists():
+        import json
+        with open(meta_path) as f:
+            meta = json.load(f)
+        return meta.get("season", 2025), meta.get("week", 18)
+    return 2025, 18
+
+
 def _minimal_predictions_df():
     """Minimal parquet-like DataFrame for predictions endpoint."""
+    season, week = _upcoming_meta()
     return pd.DataFrame({
-        "season": [2025],
-        "week": [18],
+        "season": [season],
+        "week": [week],
         "player_id": ["p1"],
         "name": ["A.Brown"],
         "position": ["WR"],
@@ -34,15 +46,16 @@ def _minimal_predictions_df():
 def test_predictions_returns_schedule_by_horizon_keys(mock_load_parquet):
     """Response must include schedule_by_horizon with keys '1', '4', '18'."""
     mock_load_parquet.return_value = _minimal_predictions_df()
+    season, week = _upcoming_meta()
 
     def fake_get_next_n_nfl_weeks(_today, n):
         if n == 1:
-            return [(2025, 18)]
+            return [(season, week)]
         if n == 4:
-            return [(2025, 18), (2025, 19), (2025, 20), (2025, 21)]
+            return [(season, week + i) for i in range(4)]
         if n == 18:
-            return [(2025, 18 + i) for i in range(18)]  # 2025 only
-        return [(2025, 18)]
+            return [(season, week + i) for i in range(18)]
+        return [(season, week)]
 
     mock_db = MagicMock()
     mock_db.has_schedule_for_season.return_value = True
@@ -63,21 +76,23 @@ def test_predictions_returns_schedule_by_horizon_keys(mock_load_parquet):
 
 @patch("api.main.load_predictions_parquet")
 def test_predictions_schedule_by_horizon_false_when_future_season_missing(mock_load_parquet):
-    """When 18-week horizon spans 2026 and 2026 has no schedule, schedule_by_horizon['18'] is False."""
+    """When 18-week horizon spans next season and that season has no schedule, schedule_by_horizon['18'] is False."""
     mock_load_parquet.return_value = _minimal_predictions_df()
+    season, week = _upcoming_meta()
+    next_season = season + 1
 
     def fake_get_next_n_nfl_weeks(_today, n):
         if n == 1:
-            return [(2025, 18)]
+            return [(season, week)]
         if n == 4:
-            return [(2025, 18), (2025, 19), (2025, 20), (2025, 21)]
+            return [(season, week + i) for i in range(4)]
         if n == 18:
-            # Include 2026 so schedule check fails for 18w
-            return [(2025, 18 + i) for i in range(5)] + [(2026, 1)] + [(2026, 2)] * 12
-        return [(2025, 18)]
+            # Include next season so schedule check fails for 18w
+            return [(season, week + i) for i in range(5)] + [(next_season, 1)] + [(next_season, 2)] * 12
+        return [(season, week)]
 
-    def has_schedule(season):
-        return season == 2025  # 2026 not released
+    def has_schedule(s):
+        return s == season  # next season not released
 
     mock_db = MagicMock()
     mock_db.has_schedule_for_season.side_effect = has_schedule
