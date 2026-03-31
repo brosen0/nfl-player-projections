@@ -20,7 +20,6 @@ Advantages over scraping:
 
 import os
 import ssl
-import certifi
 import uuid
 from typing import List, Optional
 import pandas as pd
@@ -28,8 +27,12 @@ import numpy as np
 from pathlib import Path
 
 # Fix SSL certificate issue before importing nfl_data_py
-os.environ['SSL_CERT_FILE'] = certifi.where()
-os.environ['REQUESTS_CA_BUNDLE'] = certifi.where()
+try:
+    import certifi
+    os.environ['SSL_CERT_FILE'] = certifi.where()
+    os.environ['REQUESTS_CA_BUNDLE'] = certifi.where()
+except ImportError:
+    certifi = None
 
 
 def _get_nfl():

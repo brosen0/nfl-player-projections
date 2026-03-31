@@ -11,17 +11,23 @@ Usage:
 
 import os
 import ssl
-import certifi
 from typing import List, Dict, Optional, Tuple
 from datetime import datetime
 import pandas as pd
 from pathlib import Path
 
 # Fix SSL certificate issue
-os.environ['SSL_CERT_FILE'] = certifi.where()
-os.environ['REQUESTS_CA_BUNDLE'] = certifi.where()
+try:
+    import certifi
+    os.environ['SSL_CERT_FILE'] = certifi.where()
+    os.environ['REQUESTS_CA_BUNDLE'] = certifi.where()
+except ImportError:
+    certifi = None
 
-import nfl_data_py as nfl
+try:
+    import nfl_data_py as nfl
+except ImportError:
+    nfl = None
 
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))

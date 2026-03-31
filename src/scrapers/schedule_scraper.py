@@ -4,8 +4,16 @@ import re
 from datetime import datetime
 from typing import List, Dict, Optional
 import pandas as pd
-import requests
-from bs4 import BeautifulSoup
+
+try:
+    import requests
+except ImportError:
+    requests = None
+
+try:
+    from bs4 import BeautifulSoup
+except ImportError:
+    BeautifulSoup = None
 
 import sys
 from pathlib import Path
