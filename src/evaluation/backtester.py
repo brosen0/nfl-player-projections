@@ -603,7 +603,17 @@ class ModelBacktester:
         
         # Biggest prediction misses
         results["biggest_misses"] = self._find_biggest_misses(merged, actual_col, prediction_col)
-        
+
+        # Decision-quality: lineup win-rate backtest
+        if "position" in merged.columns and "week" in merged.columns:
+            lineup_decisions = self.backtest_lineup_decisions(
+                merged,
+                pred_col=prediction_col,
+                actual_col=actual_col,
+            )
+            if "error" not in lineup_decisions:
+                results["lineup_decisions"] = lineup_decisions
+
         return results
     
     def _calculate_metrics(self, actual: pd.Series, predicted: pd.Series) -> Dict:
@@ -894,6 +904,24 @@ class ModelBacktester:
                 lines.append(f"  External validation: {status['verdict']}")
             lines.append("")
 
+        # Lineup decision quality (win-rate backtest)
+        if results.get("lineup_decisions") and "error" not in results.get("lineup_decisions", {}):
+            ld = results["lineup_decisions"]
+            lines.append("-" * 70)
+            lines.append("LINEUP DECISION QUALITY (did model-selected rosters win?)")
+            lines.append("-" * 70)
+            wr = ld.get("win_rate", 0)
+            wr_pct = wr * 100
+            status = "PASS" if wr > 0.55 else "FAIL"
+            lines.append(f"  Win Rate:           {wr_pct:.1f}%  ({ld['wins']}W-{ld['losses']}L over {ld['n_weeks']} weeks)  [{status}: target >55%]")
+            lines.append(f"  Avg Margin:         {ld['avg_margin']:+.2f} pts/week")
+            lines.append(f"  Avg Model Score:    {ld['avg_model_score']:.2f}")
+            lines.append(f"  Avg Opponent Score: {ld['avg_opponent_score']:.2f}")
+            lines.append(f"  Best Win:           +{ld['best_win']:.2f}")
+            lines.append(f"  Worst Loss:         {ld['worst_loss']:.2f}")
+            lines.append(f"  Avg Projection Err: {ld['avg_projection_error']:+.2f} (lineup-level)")
+            lines.append("")
+
         # Success criteria (requirements Section VII - comprehensive)
         if results.get("success_criteria"):
             sc = results["success_criteria"]
@@ -910,6 +938,9 @@ class ModelBacktester:
             lines.append(f"  Beat primary baseline >25%: {'PASS' if sc.get('beat_primary_baseline_by_25_pct') else 'FAIL'}")
             lines.append(f"  Season stability (no >20%): {'PASS' if sc.get('season_stability_ok') else 'FAIL'}  (max weekly RMSE: {sc.get('max_weekly_rmse')}, avg: {sc.get('avg_weekly_rmse')})")
             lines.append(f"  CI coverage ≥ 88.2% (10pt): {'PASS' if sc.get('confidence_band_target_882') else 'FAIL'}  (actual: {sc.get('confidence_band_coverage_10pt')}%)")
+            if sc.get("lineup_win_rate") is not None:
+                wr_pct = sc["lineup_win_rate"] * 100
+                lines.append(f"  Lineup win rate > 55%:      {'PASS' if sc.get('lineup_win_rate_gt_55') else 'FAIL'}  (actual: {wr_pct:.1f}%, {sc.get('lineup_wins')}W-{sc.get('lineup_losses')}L)")
             lines.append("")
         
         # Top performers analysis
@@ -954,6 +985,137 @@ class ModelBacktester:
         
         return "\n".join(lines)
     
+    # -----------------------------------------------------------------
+    # Decision-quality backtesting: win-rate measurement
+    # -----------------------------------------------------------------
+
+    # Standard fantasy roster: pick top-N predicted players per position
+    DEFAULT_ROSTER_SLOTS = {"QB": 1, "RB": 2, "WR": 2, "TE": 1}
+
+    def backtest_lineup_decisions(
+        self,
+        df: pd.DataFrame,
+        pred_col: str = "predicted_points",
+        actual_col: str = "fantasy_points",
+        position_col: str = "position",
+        roster_slots: Optional[Dict[str, int]] = None,
+    ) -> Dict:
+        """Measure decision quality: did model-selected lineups win?
+
+        For each historical week, constructs two lineups from the player pool:
+        - **Model lineup**: top-N players per position ranked by model predictions.
+        - **Opponent lineup**: a representative opponent constructed from the
+          *median*-ranked player at each slot (the "replacement-level" starter).
+
+        Tracks whether the model lineup's actual score beat the opponent's
+        actual score each week. This is the missing feedback loop: it measures
+        whether better predictions translate into better roster decisions.
+
+        Args:
+            df: DataFrame with predictions and actuals per player-week.
+                Must contain week, position, pred_col, and actual_col.
+            pred_col: Column with model predictions.
+            actual_col: Column with actual fantasy points scored.
+            position_col: Column with player position (QB/RB/WR/TE).
+            roster_slots: Dict mapping position to number of starters.
+                Defaults to QB:1, RB:2, WR:2, TE:1.
+
+        Returns:
+            Dict with win_rate, weekly_results, and summary statistics.
+        """
+        slots = roster_slots or self.DEFAULT_ROSTER_SLOTS
+        required = [pred_col, actual_col, position_col, "week"]
+        missing = [c for c in required if c not in df.columns]
+        if missing:
+            return {"error": f"Missing columns: {missing}"}
+
+        df = df.dropna(subset=[pred_col, actual_col]).copy()
+        if "season" in df.columns:
+            week_groups = df.groupby(["season", "week"])
+        else:
+            week_groups = df.groupby("week")
+
+        weekly_results: List[Dict] = []
+
+        for week_key, week_df in week_groups:
+            model_actual = 0.0
+            opponent_actual = 0.0
+            model_projected = 0.0
+            slots_filled = 0
+            total_slots = sum(slots.values())
+
+            for pos, n_starters in slots.items():
+                pos_pool = week_df[week_df[position_col] == pos].copy()
+                if len(pos_pool) < n_starters:
+                    continue
+
+                # Model lineup: top-N by prediction
+                pos_pool = pos_pool.sort_values(pred_col, ascending=False)
+                model_picks = pos_pool.head(n_starters)
+                model_actual += float(model_picks[actual_col].sum())
+                model_projected += float(model_picks[pred_col].sum())
+
+                # Opponent lineup: median-ranked players (replacement level)
+                mid = len(pos_pool) // 2
+                # Take n_starters around the median
+                start_idx = max(0, mid - n_starters // 2)
+                opponent_picks = pos_pool.iloc[start_idx : start_idx + n_starters]
+                opponent_actual += float(opponent_picks[actual_col].sum())
+
+                slots_filled += n_starters
+
+            if slots_filled < total_slots:
+                continue  # not enough players to form full rosters
+
+            won = model_actual > opponent_actual
+            margin = model_actual - opponent_actual
+
+            season = week_key[0] if isinstance(week_key, tuple) else None
+            week = week_key[1] if isinstance(week_key, tuple) else week_key
+
+            weekly_results.append({
+                "season": season,
+                "week": int(week),
+                "model_actual": round(model_actual, 2),
+                "model_projected": round(model_projected, 2),
+                "opponent_actual": round(opponent_actual, 2),
+                "margin": round(margin, 2),
+                "won": bool(won),
+            })
+
+        if not weekly_results:
+            return {"error": "No complete weeks for lineup comparison"}
+
+        wins = sum(1 for w in weekly_results if w["won"])
+        n_weeks = len(weekly_results)
+        win_rate = wins / n_weeks
+
+        margins = [w["margin"] for w in weekly_results]
+        avg_margin = float(np.mean(margins))
+        projection_errors = [
+            w["model_actual"] - w["model_projected"] for w in weekly_results
+        ]
+        avg_projection_error = float(np.mean(projection_errors))
+
+        return {
+            "win_rate": round(win_rate, 4),
+            "wins": wins,
+            "losses": n_weeks - wins,
+            "n_weeks": n_weeks,
+            "avg_margin": round(avg_margin, 2),
+            "avg_model_score": round(
+                float(np.mean([w["model_actual"] for w in weekly_results])), 2
+            ),
+            "avg_opponent_score": round(
+                float(np.mean([w["opponent_actual"] for w in weekly_results])), 2
+            ),
+            "avg_projection_error": round(avg_projection_error, 2),
+            "worst_loss": round(float(min(margins)), 2),
+            "best_win": round(float(max(margins)), 2),
+            "weekly_results": weekly_results,
+            "roster_slots": slots,
+        }
+
     def save_results(self, results: Dict, filename: str = None):
         """Save backtest results to file."""
         if filename is None:
@@ -1837,6 +1999,22 @@ def check_success_criteria(backtest_results: Dict) -> Dict:
     sc["boom_prevalence"] = boom_bust.get("boom_prevalence")
     sc["bust_prevalence"] = boom_bust.get("bust_prevalence")
 
+    # --- Decision quality: lineup win rate ---
+    lineup = backtest_results.get("lineup_decisions", {})
+    if lineup and "error" not in lineup:
+        win_rate = lineup.get("win_rate")
+        sc["lineup_win_rate"] = win_rate
+        sc["lineup_wins"] = lineup.get("wins")
+        sc["lineup_losses"] = lineup.get("losses")
+        sc["lineup_n_weeks"] = lineup.get("n_weeks")
+        sc["lineup_avg_margin"] = lineup.get("avg_margin")
+        # A model that translates predictions into winning decisions should
+        # beat a median opponent more than 55% of the time.
+        sc["lineup_win_rate_gt_55"] = win_rate is not None and win_rate > 0.55
+    else:
+        sc["lineup_win_rate"] = None
+        sc["lineup_win_rate_gt_55"] = None
+
     # Overall pass/fail
     accuracy_checks = [
         sc.get("spearman_gt_065"),
@@ -1848,6 +2026,7 @@ def check_success_criteria(backtest_results: Dict) -> Dict:
         sc.get("tier_accuracy_ge_075"),
         sc.get("season_stability_ok"),
         sc.get("beat_all_baselines_by_25_pct"),
+        sc.get("lineup_win_rate_gt_55"),
     ]
     
     sc["accuracy_passed"] = sum(1 for c in accuracy_checks if c is True)
@@ -1929,6 +2108,15 @@ def print_success_criteria_report(sc: Dict) -> str:
             lines.append(f"  {nom_pct}% CI: actual={act_pct:.1f}%, error={err_pct:.1f}pp, width={lvl['mean_interval_width']}  {status}")
         cal_status = "CALIBRATED" if sc.get("ci_is_calibrated") else "MISCALIBRATED"
         lines.append(f"  Overall: {cal_status} (mean error={sc.get('ci_mean_calibration_error')}, max={sc.get('ci_max_calibration_error')})")
+        lines.append("")
+    # Decision quality: lineup win rate
+    if sc.get("lineup_win_rate") is not None:
+        wr = sc["lineup_win_rate"]
+        wr_pct = wr * 100
+        lines.append("DECISION QUALITY:")
+        lines.append(f"  Win rate > 55%:        {'PASS' if sc.get('lineup_win_rate_gt_55') else 'FAIL'}  (actual: {wr_pct:.1f}%, {sc.get('lineup_wins')}W-{sc.get('lineup_losses')}L)")
+        if sc.get("lineup_avg_margin") is not None:
+            lines.append(f"  Avg margin:            {sc['lineup_avg_margin']:+.2f} pts/week")
         lines.append("")
     lines.append("MODEL HEALTH:")
     if sc.get("mae_rmse_ratio") is not None:
