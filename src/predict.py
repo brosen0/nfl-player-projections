@@ -307,7 +307,27 @@ class NFLPredictor:
         results["n_weeks"] = n_weeks
         if "predicted_utilization" not in results.columns:
             results["predicted_utilization"] = results["predicted_points"]
-        
+
+        # Apply injury probability discount to predicted points.
+        # injury_prob_combined (0 = healthy, ~0.15+ = high risk) is produced
+        # by add_advanced_rookie_injury_features() in _prepare_features().
+        # Merge it from latest_data (feature-engineered input) into results.
+        inj_prob_col = "injury_prob_combined"
+        if inj_prob_col in latest_data.columns and "player_id" in results.columns:
+            inj_map = latest_data.drop_duplicates("player_id").set_index("player_id")[inj_prob_col]
+            results[inj_prob_col] = results["player_id"].map(inj_map)
+            availability = (1.0 - results[inj_prob_col].fillna(0).clip(0, 1))
+            results["injury_adjustment"] = availability
+            results["predicted_points"] = results["predicted_points"] * availability
+            results["predicted_ppg"] = results["predicted_ppg"] * availability
+            results["predicted_utilization"] = results["predicted_utilization"] * availability
+            for ci_col in [
+                "prediction_ci80_lower", "prediction_ci80_upper",
+                "prediction_ci95_lower", "prediction_ci95_upper",
+            ]:
+                if ci_col in results.columns:
+                    results[ci_col] = results[ci_col] * availability
+
         # Get utilization tier from predicted utilization
         if "predicted_utilization" in results.columns:
             results["util_tier"] = results.apply(
@@ -420,7 +440,10 @@ class NFLPredictor:
             output_cols.append("util_tier")
         if "player_id" not in output_cols and "player_id" in results.columns:
             output_cols.insert(0, "player_id")
-        
+        for inj_out in ["injury_prob_combined", "injury_adjustment"]:
+            if inj_out in results.columns and inj_out not in output_cols:
+                output_cols.append(inj_out)
+
         # Adjust for scoring format (Half-PPR / Standard) if not default PPR
         results = self._adjust_scoring_format(results, scoring_format, n_weeks)
         if "scoring_format" in results.columns and "scoring_format" not in output_cols:
