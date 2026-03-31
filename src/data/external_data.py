@@ -20,11 +20,16 @@ import pandas as pd
 import numpy as np
 from pathlib import Path
 import json
-import requests
+
+try:
+    import requests
+except ImportError:
+    requests = None  # Optional: only needed for live API calls
 
 # Fix SSL
 os.environ['SSL_CERT_FILE'] = certifi.where()
-os.environ['REQUESTS_CA_BUNDLE'] = certifi.where()
+if requests is not None:
+    os.environ['REQUESTS_CA_BUNDLE'] = certifi.where()
 
 import nfl_data_py as nfl
 
