@@ -8,7 +8,6 @@ Advanced Features Module
 import pandas as pd
 import numpy as np
 from typing import Dict, List, Tuple
-import requests
 from datetime import datetime, timedelta
 
 # ============================================================================
@@ -55,6 +54,7 @@ class InjuryImpactModel:
         try:
             # ESPN injury API endpoint
             url = "https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard"
+            import requests
             response = requests.get(url, timeout=10)
             
             if response.status_code == 200:
