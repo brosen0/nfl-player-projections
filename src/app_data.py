@@ -9,7 +9,11 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
-import plotly.graph_objects as go
+
+try:
+    import plotly.graph_objects as go
+except ImportError:
+    go = None  # Optional: only needed for web app visualization
 
 # Project root: assume we are in src/
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
