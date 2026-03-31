@@ -397,7 +397,7 @@ class TestScheduleOperations:
         result = db.insert_schedule(schedule)
         assert result is True
         
-        df = db.get_schedule(season=2024, week=1)
+        df = db.get_schedule(season=2024, week=1, include_scores=True)
         assert len(df) == 1
         assert df.iloc[0]['home_team'] == 'KC'
         assert df.iloc[0]['home_score'] == 27
