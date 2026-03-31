@@ -78,8 +78,8 @@ def test_compare_to_multiple_baselines_returns_expected_keys():
     assert "status" in out
 
 
-def test_backtest_lineup_decisions_basic():
-    """Model that predicts perfectly should win every week."""
+def test_backtest_lineup_decisions_perfect_model():
+    """Model that predicts perfectly should beat replacement and hindsight opponents."""
     backtester = ModelBacktester()
     rows = []
     for week in range(1, 6):
@@ -97,38 +97,51 @@ def test_backtest_lineup_decisions_basic():
     df = pd.DataFrame(rows)
     result = backtester.backtest_lineup_decisions(df)
     assert "error" not in result
-    assert result["win_rate"] == 1.0
-    assert result["wins"] == 5
-    assert result["losses"] == 0
+    # Perfect model picks the actual best players each week, so it matches
+    # the oracle lineup. vs_replacement and vs_hindsight should be wins.
+    assert result["vs_replacement"]["win_rate"] == 1.0
     assert result["n_weeks"] == 5
-    assert result["avg_margin"] > 0
+    assert result["avg_model_score"] > 0
+    # Three tiers present
+    assert "vs_oracle" in result
+    assert "vs_hindsight" in result
+    assert "vs_replacement" in result
 
 
-def test_backtest_lineup_decisions_returns_weekly_detail():
+def test_backtest_lineup_decisions_three_opponent_tiers():
+    """Verify all three opponent tiers are present and correctly ordered."""
     backtester = ModelBacktester()
     rows = []
     np.random.seed(42)
-    for week in range(1, 4):
-        for pos, n in [("QB", 3), ("RB", 4), ("WR", 4), ("TE", 3)]:
+    for week in range(1, 8):
+        for pos, n in [("QB", 5), ("RB", 8), ("WR", 8), ("TE", 5)]:
             for j in range(n):
-                pts = float(10 + j * 2 + np.random.normal(0, 2))
+                pts = float(10 + j * 2 + np.random.normal(0, 3))
                 rows.append({
                     "player_id": f"{pos}{j}",
                     "position": pos,
                     "week": week,
                     "fantasy_points": pts,
-                    "predicted_points": pts + np.random.normal(0, 1),
+                    "predicted_points": pts + np.random.normal(0, 2),
                 })
     df = pd.DataFrame(rows)
     result = backtester.backtest_lineup_decisions(df)
     assert "error" not in result
-    assert len(result["weekly_results"]) == 3
+
+    # Oracle is hardest to beat, replacement is easiest
+    assert result["vs_oracle"]["win_rate"] <= result["vs_replacement"]["win_rate"]
+
+    # Weekly results have all keys
     for wr in result["weekly_results"]:
-        assert "week" in wr
-        assert "model_actual" in wr
-        assert "opponent_actual" in wr
-        assert "margin" in wr
-        assert "won" in wr
+        assert "won_vs_oracle" in wr
+        assert "won_vs_hindsight" in wr
+        assert "won_vs_replacement" in wr
+        assert "vs_oracle_margin" in wr
+        assert "vs_hindsight_margin" in wr
+        assert "vs_replacement_margin" in wr
+
+    # Primary metric (win_rate) is the hindsight rate
+    assert result["win_rate"] == result["vs_hindsight"]["win_rate"]
     assert result["wins"] + result["losses"] == result["n_weeks"]
 
 
@@ -162,7 +175,7 @@ def test_backtest_lineup_decisions_custom_roster_slots():
 
 
 def test_success_criteria_includes_lineup_win_rate():
-    """check_success_criteria should pick up lineup decision results."""
+    """check_success_criteria should pick up lineup decision results with tiers."""
     payload = {
         "metrics": {
             "spearman_rho": 0.7,
@@ -189,6 +202,9 @@ def test_success_criteria_includes_lineup_win_rate():
             "losses": 7,
             "n_weeks": 20,
             "avg_margin": 4.5,
+            "vs_oracle": {"win_rate": 0.10, "wins": 2, "losses": 18},
+            "vs_hindsight": {"win_rate": 0.65, "wins": 13, "losses": 7},
+            "vs_replacement": {"win_rate": 0.90, "wins": 18, "losses": 2},
         },
     }
     sc = check_success_criteria(payload)
@@ -196,6 +212,9 @@ def test_success_criteria_includes_lineup_win_rate():
     assert sc["lineup_win_rate_gt_55"] is True
     assert sc["lineup_wins"] == 13
     assert sc["lineup_losses"] == 7
+    # Tier data preserved
+    assert sc["lineup_vs_oracle"]["win_rate"] == 0.10
+    assert sc["lineup_vs_replacement"]["win_rate"] == 0.90
 
 
 def test_compare_to_expert_consensus_with_csv(tmp_path):

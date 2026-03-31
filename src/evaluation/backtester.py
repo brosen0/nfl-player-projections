@@ -910,16 +910,23 @@ class ModelBacktester:
             lines.append("-" * 70)
             lines.append("LINEUP DECISION QUALITY (did model-selected rosters win?)")
             lines.append("-" * 70)
-            wr = ld.get("win_rate", 0)
-            wr_pct = wr * 100
-            status = "PASS" if wr > 0.55 else "FAIL"
-            lines.append(f"  Win Rate:           {wr_pct:.1f}%  ({ld['wins']}W-{ld['losses']}L over {ld['n_weeks']} weeks)  [{status}: target >55%]")
-            lines.append(f"  Avg Margin:         {ld['avg_margin']:+.2f} pts/week")
-            lines.append(f"  Avg Model Score:    {ld['avg_model_score']:.2f}")
-            lines.append(f"  Avg Opponent Score: {ld['avg_opponent_score']:.2f}")
-            lines.append(f"  Best Win:           +{ld['best_win']:.2f}")
-            lines.append(f"  Worst Loss:         {ld['worst_loss']:.2f}")
-            lines.append(f"  Avg Projection Err: {ld['avg_projection_error']:+.2f} (lineup-level)")
+            lines.append(f"  Model avg score:    {ld['avg_model_score']:.2f} pts/week")
+            lines.append(f"  Projection error:   {ld['avg_projection_error']:+.2f} (lineup-level)")
+            lines.append("")
+            for tier_name, tier_key, desc in [
+                ("vs Replacement", "vs_replacement", "median-ranked players (table stakes)"),
+                ("vs Hindsight",   "vs_hindsight",   "last week's top scorers (competent drafter)"),
+                ("vs Oracle",      "vs_oracle",      "perfect hindsight (theoretical ceiling)"),
+            ]:
+                tier = ld.get(tier_key, {})
+                if not tier:
+                    continue
+                wr_pct = tier.get("win_rate", 0) * 100
+                w, l = tier.get("wins", 0), tier.get("losses", 0)
+                is_primary = tier_key == "vs_hindsight"
+                gate = f"  [{'PASS' if wr_pct > 55 else 'FAIL'}: target >55%]" if is_primary else ""
+                lines.append(f"  {tier_name} ({desc}):")
+                lines.append(f"    Win Rate: {wr_pct:.1f}%  ({w}W-{l}L)  Avg Margin: {tier.get('avg_margin', 0):+.2f}{gate}")
             lines.append("")
 
         # Success criteria (requirements Section VII - comprehensive)
@@ -1002,14 +1009,23 @@ class ModelBacktester:
     ) -> Dict:
         """Measure decision quality: did model-selected lineups win?
 
-        For each historical week, constructs two lineups from the player pool:
-        - **Model lineup**: top-N players per position ranked by model predictions.
-        - **Opponent lineup**: a representative opponent constructed from the
-          *median*-ranked player at each slot (the "replacement-level" starter).
+        For each historical week, constructs the model's lineup and three
+        opponent tiers to answer the real question at different difficulty
+        levels:
 
-        Tracks whether the model lineup's actual score beat the opponent's
-        actual score each week. This is the missing feedback loop: it measures
-        whether better predictions translate into better roster decisions.
+        - **Model lineup**: top-N players per position by model predictions.
+        - **Oracle opponent** (hardest): top-N by *actual* points — a perfect
+          drafter who knows outcomes. Winning here means the model got lucky
+          or is close to perfect. Expected win rate: low.
+        - **Hindsight opponent** (hard): top-N by *actual* points from *prior*
+          week — a competent drafter using last week's results. This is
+          realistic: most opponents draft based on recent performance.
+        - **Replacement opponent** (baseline): median-ranked players per
+          position — a casual drafter. Winning here is table stakes.
+
+        The primary decision quality metric is **win rate vs. the hindsight
+        opponent**: a competent but non-model-driven drafter. Beating >55%
+        means the model adds value over "just start last week's best players."
 
         Args:
             df: DataFrame with predictions and actuals per player-week.
@@ -1021,7 +1037,8 @@ class ModelBacktester:
                 Defaults to QB:1, RB:2, WR:2, TE:1.
 
         Returns:
-            Dict with win_rate, weekly_results, and summary statistics.
+            Dict with win rates per opponent tier, weekly details, and
+            summary statistics.
         """
         slots = roster_slots or self.DEFAULT_ROSTER_SLOTS
         required = [pred_col, actual_col, position_col, "week"]
@@ -1030,7 +1047,22 @@ class ModelBacktester:
             return {"error": f"Missing columns: {missing}"}
 
         df = df.dropna(subset=[pred_col, actual_col]).copy()
-        if "season" in df.columns:
+
+        has_season = "season" in df.columns
+        sort_cols = ["player_id", "season", "week"] if has_season and "player_id" in df.columns else None
+        if sort_cols and all(c in df.columns for c in sort_cols):
+            df = df.sort_values(sort_cols)
+
+        # Build prior-week actual scores for the hindsight opponent
+        if "player_id" in df.columns:
+            group_cols = ["player_id"]
+            if has_season:
+                group_cols.append("season")
+            df["_prior_actual"] = df.groupby(group_cols)[actual_col].shift(1)
+        else:
+            df["_prior_actual"] = np.nan
+
+        if has_season:
             week_groups = df.groupby(["season", "week"])
         else:
             week_groups = df.groupby("week")
@@ -1039,8 +1071,10 @@ class ModelBacktester:
 
         for week_key, week_df in week_groups:
             model_actual = 0.0
-            opponent_actual = 0.0
             model_projected = 0.0
+            oracle_actual = 0.0
+            hindsight_actual = 0.0
+            replacement_actual = 0.0
             slots_filled = 0
             total_slots = sum(slots.values())
 
@@ -1049,26 +1083,39 @@ class ModelBacktester:
                 if len(pos_pool) < n_starters:
                     continue
 
-                # Model lineup: top-N by prediction
-                pos_pool = pos_pool.sort_values(pred_col, ascending=False)
-                model_picks = pos_pool.head(n_starters)
+                # --- Model lineup: top-N by prediction ---
+                by_pred = pos_pool.sort_values(pred_col, ascending=False)
+                model_picks = by_pred.head(n_starters)
                 model_actual += float(model_picks[actual_col].sum())
                 model_projected += float(model_picks[pred_col].sum())
 
-                # Opponent lineup: median-ranked players (replacement level)
-                mid = len(pos_pool) // 2
-                # Take n_starters around the median
+                # --- Oracle opponent: top-N by actual (perfect hindsight) ---
+                by_actual = pos_pool.sort_values(actual_col, ascending=False)
+                oracle_actual += float(by_actual.head(n_starters)[actual_col].sum())
+
+                # --- Hindsight opponent: top-N by prior week's actual ---
+                has_prior = pos_pool["_prior_actual"].notna()
+                if has_prior.sum() >= n_starters:
+                    by_prior = pos_pool[has_prior].sort_values(
+                        "_prior_actual", ascending=False
+                    )
+                    hindsight_actual += float(
+                        by_prior.head(n_starters)[actual_col].sum()
+                    )
+                else:
+                    # Fallback: use prediction ranking (no prior data available)
+                    hindsight_actual += float(model_picks[actual_col].sum())
+
+                # --- Replacement opponent: median-ranked players ---
+                mid = len(by_pred) // 2
                 start_idx = max(0, mid - n_starters // 2)
-                opponent_picks = pos_pool.iloc[start_idx : start_idx + n_starters]
-                opponent_actual += float(opponent_picks[actual_col].sum())
+                replacement_picks = by_pred.iloc[start_idx : start_idx + n_starters]
+                replacement_actual += float(replacement_picks[actual_col].sum())
 
                 slots_filled += n_starters
 
             if slots_filled < total_slots:
-                continue  # not enough players to form full rosters
-
-            won = model_actual > opponent_actual
-            margin = model_actual - opponent_actual
+                continue
 
             season = week_key[0] if isinstance(week_key, tuple) else None
             week = week_key[1] if isinstance(week_key, tuple) else week_key
@@ -1078,40 +1125,67 @@ class ModelBacktester:
                 "week": int(week),
                 "model_actual": round(model_actual, 2),
                 "model_projected": round(model_projected, 2),
-                "opponent_actual": round(opponent_actual, 2),
-                "margin": round(margin, 2),
-                "won": bool(won),
+                "oracle_actual": round(oracle_actual, 2),
+                "hindsight_actual": round(hindsight_actual, 2),
+                "replacement_actual": round(replacement_actual, 2),
+                "vs_oracle_margin": round(model_actual - oracle_actual, 2),
+                "vs_hindsight_margin": round(model_actual - hindsight_actual, 2),
+                "vs_replacement_margin": round(model_actual - replacement_actual, 2),
+                "won_vs_oracle": bool(model_actual > oracle_actual),
+                "won_vs_hindsight": bool(model_actual > hindsight_actual),
+                "won_vs_replacement": bool(model_actual > replacement_actual),
             })
 
         if not weekly_results:
             return {"error": "No complete weeks for lineup comparison"}
 
-        wins = sum(1 for w in weekly_results if w["won"])
         n_weeks = len(weekly_results)
-        win_rate = wins / n_weeks
 
-        margins = [w["margin"] for w in weekly_results]
-        avg_margin = float(np.mean(margins))
+        def _tier_stats(margin_key: str, won_key: str) -> Dict:
+            wins = sum(1 for w in weekly_results if w[won_key])
+            margins = [w[margin_key] for w in weekly_results]
+            return {
+                "win_rate": round(wins / n_weeks, 4),
+                "wins": wins,
+                "losses": n_weeks - wins,
+                "avg_margin": round(float(np.mean(margins)), 2),
+                "worst_loss": round(float(min(margins)), 2),
+                "best_win": round(float(max(margins)), 2),
+            }
+
+        vs_oracle = _tier_stats("vs_oracle_margin", "won_vs_oracle")
+        vs_hindsight = _tier_stats("vs_hindsight_margin", "won_vs_hindsight")
+        vs_replacement = _tier_stats("vs_replacement_margin", "won_vs_replacement")
+
         projection_errors = [
             w["model_actual"] - w["model_projected"] for w in weekly_results
         ]
-        avg_projection_error = float(np.mean(projection_errors))
 
         return {
-            "win_rate": round(win_rate, 4),
-            "wins": wins,
-            "losses": n_weeks - wins,
+            # Primary metric: win rate vs hindsight opponent
+            "win_rate": vs_hindsight["win_rate"],
+            "wins": vs_hindsight["wins"],
+            "losses": vs_hindsight["losses"],
             "n_weeks": n_weeks,
-            "avg_margin": round(avg_margin, 2),
+            "avg_margin": vs_hindsight["avg_margin"],
+            # All three opponent tiers
+            "vs_oracle": vs_oracle,
+            "vs_hindsight": vs_hindsight,
+            "vs_replacement": vs_replacement,
+            # Scores
             "avg_model_score": round(
                 float(np.mean([w["model_actual"] for w in weekly_results])), 2
             ),
-            "avg_opponent_score": round(
-                float(np.mean([w["opponent_actual"] for w in weekly_results])), 2
+            "avg_oracle_score": round(
+                float(np.mean([w["oracle_actual"] for w in weekly_results])), 2
             ),
-            "avg_projection_error": round(avg_projection_error, 2),
-            "worst_loss": round(float(min(margins)), 2),
-            "best_win": round(float(max(margins)), 2),
+            "avg_hindsight_score": round(
+                float(np.mean([w["hindsight_actual"] for w in weekly_results])), 2
+            ),
+            "avg_replacement_score": round(
+                float(np.mean([w["replacement_actual"] for w in weekly_results])), 2
+            ),
+            "avg_projection_error": round(float(np.mean(projection_errors)), 2),
             "weekly_results": weekly_results,
             "roster_slots": slots,
         }
@@ -1999,18 +2073,23 @@ def check_success_criteria(backtest_results: Dict) -> Dict:
     sc["boom_prevalence"] = boom_bust.get("boom_prevalence")
     sc["bust_prevalence"] = boom_bust.get("bust_prevalence")
 
-    # --- Decision quality: lineup win rate ---
+    # --- Decision quality: lineup win rate vs three opponent tiers ---
     lineup = backtest_results.get("lineup_decisions", {})
     if lineup and "error" not in lineup:
+        # Primary metric: win rate vs hindsight opponent (competent drafter
+        # who starts last week's best performers).
         win_rate = lineup.get("win_rate")
         sc["lineup_win_rate"] = win_rate
         sc["lineup_wins"] = lineup.get("wins")
         sc["lineup_losses"] = lineup.get("losses")
         sc["lineup_n_weeks"] = lineup.get("n_weeks")
         sc["lineup_avg_margin"] = lineup.get("avg_margin")
-        # A model that translates predictions into winning decisions should
-        # beat a median opponent more than 55% of the time.
         sc["lineup_win_rate_gt_55"] = win_rate is not None and win_rate > 0.55
+        # Store per-tier summaries for reporting
+        for tier_key in ("vs_replacement", "vs_hindsight", "vs_oracle"):
+            tier = lineup.get(tier_key)
+            if tier:
+                sc[f"lineup_{tier_key}"] = tier
     else:
         sc["lineup_win_rate"] = None
         sc["lineup_win_rate_gt_55"] = None
@@ -2109,14 +2188,19 @@ def print_success_criteria_report(sc: Dict) -> str:
         cal_status = "CALIBRATED" if sc.get("ci_is_calibrated") else "MISCALIBRATED"
         lines.append(f"  Overall: {cal_status} (mean error={sc.get('ci_mean_calibration_error')}, max={sc.get('ci_max_calibration_error')})")
         lines.append("")
-    # Decision quality: lineup win rate
+    # Decision quality: lineup win rate (vs three opponent tiers)
     if sc.get("lineup_win_rate") is not None:
         wr = sc["lineup_win_rate"]
         wr_pct = wr * 100
-        lines.append("DECISION QUALITY:")
-        lines.append(f"  Win rate > 55%:        {'PASS' if sc.get('lineup_win_rate_gt_55') else 'FAIL'}  (actual: {wr_pct:.1f}%, {sc.get('lineup_wins')}W-{sc.get('lineup_losses')}L)")
+        lines.append("DECISION QUALITY (model vs three opponent tiers):")
+        lines.append(f"  vs Hindsight > 55%:    {'PASS' if sc.get('lineup_win_rate_gt_55') else 'FAIL'}  (actual: {wr_pct:.1f}%, {sc.get('lineup_wins')}W-{sc.get('lineup_losses')}L)")
         if sc.get("lineup_avg_margin") is not None:
-            lines.append(f"  Avg margin:            {sc['lineup_avg_margin']:+.2f} pts/week")
+            lines.append(f"  vs Hindsight margin:   {sc['lineup_avg_margin']:+.2f} pts/week")
+        # Show all tiers if available
+        for tier_name, key in [("vs Replacement", "vs_replacement"), ("vs Oracle", "vs_oracle")]:
+            tier = sc.get(f"lineup_{key}")
+            if tier:
+                lines.append(f"  {tier_name}:           {tier['win_rate']*100:.1f}% ({tier['wins']}W-{tier['losses']}L)")
         lines.append("")
     lines.append("MODEL HEALTH:")
     if sc.get("mae_rmse_ratio") is not None:
