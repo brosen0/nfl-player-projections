@@ -202,5 +202,50 @@ class TestUtilizationScoreEdgeCases:
         assert validate_percentile_bounds_meta(loaded_meta, [2021, 2023]) is False
 
 
+class TestPercentileNormalizationBounds:
+    """Tests for _percentile_normalize behavior with zero-width and normal bounds."""
+
+    @pytest.fixture
+    def calculator(self):
+        return UtilizationScoreCalculator()
+
+    def test_normal_bounds_linear_scaling(self, calculator):
+        """Normal bounds produce linear 0-100 scaling."""
+        calculator.position_percentiles[("WR", "target_share")] = (10.0, 90.0)
+        series = pd.Series([10.0, 50.0, 90.0])
+        result = calculator._percentile_normalize(series, "WR", "target_share")
+        np.testing.assert_allclose(result.values, [0.0, 50.0, 100.0])
+
+    def test_zero_width_bounds_varied_data_uses_rank(self, calculator):
+        """Zero-width bounds with varied data fall back to rank-based percentile."""
+        calculator.position_percentiles[("WR", "snap_share_pct")] = (0.0, 0.0)
+        series = pd.Series([0.1, 0.3, 0.5, 0.7, 0.9])
+        result = calculator._percentile_normalize(series, "WR", "snap_share_pct")
+        # Rank-based: values should be in (0, 100], preserving order
+        assert result.is_monotonic_increasing
+        assert result.min() > 0
+        assert result.max() <= 100
+
+    def test_zero_width_bounds_constant_series_returns_midpoint(self, calculator):
+        """Zero-width bounds + constant series → all 50.0 (neutral)."""
+        calculator.position_percentiles[("TE", "inline_rate")] = (100.0, 100.0)
+        series = pd.Series([0.0, 0.0, 0.0])
+        result = calculator._percentile_normalize(series, "TE", "inline_rate")
+        np.testing.assert_array_equal(result.values, [50.0, 50.0, 50.0])
+
+    def test_fit_warns_on_zero_width_bounds(self, calculator, caplog):
+        """fit_percentile_bounds logs a warning for zero-width bounds."""
+        train_df = pd.DataFrame({
+            "position": ["WR"] * 20,
+            "snap_share_pct": [0.0] * 20,
+        })
+        with caplog.at_level("WARNING", logger="src.features.utilization_score"):
+            calculator.fit_percentile_bounds(
+                train_df, "WR", ["snap_share_pct"], persist=False
+            )
+        assert any("Zero-width" in msg for msg in caplog.messages)
+        assert calculator.position_percentiles[("WR", "snap_share_pct")] == (0.0, 0.0)
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
