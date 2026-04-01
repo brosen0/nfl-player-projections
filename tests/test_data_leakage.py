@@ -22,12 +22,12 @@ from src.data.pbp_stats_aggregator import _compute_league_neutral_pass_rate
 
 class TestRollingFeatureLeakage:
     """Test that rolling features don't leak current/future data."""
-    
-    @pytest.fixture
+
+    @pytest.fixture(scope="class")
     def sample_data(self):
         """Create sample player data with known values."""
         np.random.seed(42)
-        
+
         data = []
         for player_id in ['player1', 'player2']:
             for week in range(1, 11):
@@ -55,10 +55,16 @@ class TestRollingFeatureLeakage:
                     'fumbles_lost': 0,
                     'games_played': 1,
                 })
-        
+
         return pd.DataFrame(data)
-    
-    def test_rolling_mean_uses_shift(self, sample_data):
+
+    @pytest.fixture(scope="class")
+    def featured_data(self, sample_data):
+        """Run create_features once and share across tests in this class."""
+        engineer = FeatureEngineer()
+        return engineer.create_features(sample_data.copy())
+
+    def test_rolling_mean_uses_shift(self, sample_data, featured_data):
         """Test rolling mean doesn't include current week's data.
 
         Verify by perturbing the current week's fantasy_points and checking
@@ -66,8 +72,7 @@ class TestRollingFeatureLeakage:
         Note: values may be season-normalized (z-scored), so we compare two
         runs rather than checking a raw expected value.
         """
-        engineer = FeatureEngineer()
-        result = engineer.create_features(sample_data.copy())
+        result = featured_data
 
         if 'fantasy_points_roll4_mean' not in result.columns:
             return  # Feature not generated; nothing to test
@@ -80,69 +85,67 @@ class TestRollingFeatureLeakage:
         mask = (perturbed['player_id'] == 'player1') & (perturbed['week'] == 5)
         perturbed.loc[mask, 'fantasy_points'] = 999.0
 
-        result2 = engineer.create_features(perturbed)
+        engineer2 = FeatureEngineer()
+        result2 = engineer2.create_features(perturbed)
         player1_v2 = result2[result2['player_id'] == 'player1']
         week5_val2 = player1_v2[player1_v2['week'] == 5].iloc[0]['fantasy_points_roll4_mean']
 
         assert abs(week5_val - week5_val2) < 0.01, \
             f"Rolling mean changed from {week5_val} to {week5_val2} when current week was perturbed — leakage detected."
-    
-    def test_lag_features_use_past_only(self, sample_data):
+
+    def test_lag_features_use_past_only(self, featured_data):
         """Test lag features only use past data."""
-        engineer = FeatureEngineer()
-        result = engineer.create_features(sample_data)
-        
+        result = featured_data
+
         player1 = result[result['player_id'] == 'player1']
         week5 = player1[player1['week'] == 5].iloc[0]
-        
+
         if 'fantasy_points_lag1' in result.columns:
             # Lag1 for week 5 should be week 4's value (40)
             expected = 40.0
             actual = week5['fantasy_points_lag1']
-            
+
             assert abs(actual - expected) < 0.01, \
                 f"Lag1 should be {expected}, got {actual}"
-        
+
         if 'fantasy_points_lag2' in result.columns:
             # Lag2 for week 5 should be week 3's value (30)
             expected = 30.0
             actual = week5['fantasy_points_lag2']
-            
+
             assert abs(actual - expected) < 0.01, \
                 f"Lag2 should be {expected}, got {actual}"
-    
-    def test_first_week_has_no_lagged_data(self, sample_data):
+
+    def test_first_week_has_no_lagged_data(self, featured_data):
         """Test first week's lag feature is not the current week's value (no leakage).
 
         After imputation, lag1 may be filled with the column median rather than NaN.
         The critical check is that week 1's lag1 does NOT equal its own fantasy_points
         (which would indicate lookahead bias).
         """
-        engineer = FeatureEngineer()
-        result = engineer.create_features(sample_data)
-        
+        result = featured_data
+
         player1 = result[result['player_id'] == 'player1']
         week1 = player1[player1['week'] == 1].iloc[0]
-        
+
         if 'fantasy_points_lag1' in result.columns:
             lag_val = week1['fantasy_points_lag1']
             current_fp = week1['fantasy_points']
             # Either NaN (pre-imputation) or imputed median — but NOT the current week's value
             assert pd.isna(lag_val) or lag_val != current_fp, \
                 "Week 1 lag1 must not equal current week's fantasy_points (leakage)"
-    
-    def test_ewm_uses_shift(self, sample_data):
+
+    def test_ewm_uses_shift(self, featured_data):
         """Test exponentially weighted mean doesn't include current week.
 
         After imputation, week 1's EWM may be filled with the column median
         rather than NaN. The critical check is that it doesn't equal the
         current week's fantasy_points (which would indicate lookahead bias).
         """
-        engineer = FeatureEngineer()
-        result = engineer.create_features(sample_data)
-        
+        result = featured_data
+
         player1 = result[result['player_id'] == 'player1']
-        
+
         if 'fantasy_points_ewm5' in result.columns:
             week1_row = player1[player1['week'] == 1].iloc[0]
             week1_ewm = week1_row['fantasy_points_ewm5']
@@ -150,7 +153,7 @@ class TestRollingFeatureLeakage:
             # Either NaN (pre-imputation) or imputed — but NOT the current week's value
             assert pd.isna(week1_ewm) or week1_ewm != week1_fp, \
                 "Week 1 EWM must not equal current week's fantasy_points (leakage)"
-            
+
             # Week 2's EWM should only use week 1's value (10)
             week2_ewm = player1[player1['week'] == 2].iloc[0]['fantasy_points_ewm5']
             assert abs(week2_ewm - 10.0) < 0.01, \
@@ -360,8 +363,8 @@ class TestTimeSeriesCrossValidation:
 
 class TestFeatureTargetSeparation:
     """Test features and targets are properly separated."""
-    
-    @pytest.fixture
+
+    @pytest.fixture(scope="class")
     def sample_data(self):
         """Create complete sample data with all required columns."""
         data = []
@@ -391,43 +394,49 @@ class TestFeatureTargetSeparation:
                 'games_played': 1,
             })
         return pd.DataFrame(data)
-    
-    def test_target_not_in_features(self, sample_data):
-        """Test that target column is excluded from features."""
+
+    @pytest.fixture(scope="class")
+    def engineer_with_features(self, sample_data):
+        """Run create_features once and return (engineer, featured_data)."""
         engineer = FeatureEngineer()
+        result = engineer.create_features(sample_data)
+        return engineer, result
+
+    def test_target_not_in_features(self, sample_data, engineer_with_features):
+        """Test that target column is excluded from features."""
+        engineer, _ = engineer_with_features
         X, y = engineer.prepare_training_data(sample_data, target_weeks=1)
-        
+
         # get_feature_columns() takes no arguments - returns stored columns
         feature_cols = engineer.get_feature_columns()
-        
+
         assert 'target' not in feature_cols, \
             "Target should not be in feature columns"
-        
+
         # X should not contain raw fantasy_points
         if 'fantasy_points' in X.columns:
             # This might be a leakage concern
             pass  # May be included as historical data
-    
-    def test_future_columns_not_in_features(self, sample_data):
+
+    def test_future_columns_not_in_features(self, engineer_with_features):
         """Test no forward-looking columns are used as features."""
-        engineer = FeatureEngineer()
-        result = engineer.create_features(sample_data)
-        
+        engineer, _ = engineer_with_features
+
         # get_feature_columns() takes no arguments
         feature_cols = engineer.get_feature_columns()
-        
+
         # Forbidden column names (exact matches or prefixes indicating future data)
         # Note: "targets" is a valid feature (receiving targets), not related to ML targets
         forbidden_exact = ['target', 'y', 'label']
         forbidden_patterns = ['_next', '_future', '_forward']
-        
+
         for col in feature_cols:
             col_lower = col.lower()
-            
+
             # Check exact matches
             assert col_lower not in forbidden_exact, \
                 f"Feature {col} is a forbidden target column"
-            
+
             # Check patterns that indicate future data
             for pattern in forbidden_patterns:
                 assert pattern not in col_lower, \
