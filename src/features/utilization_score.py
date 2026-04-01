@@ -16,6 +16,7 @@ Position-specific benchmarks (PPR scoring):
 
 The methodology weights different opportunity metrics by position.
 """
+import logging
 import pandas as pd
 import numpy as np
 from typing import Dict, Optional, Tuple
@@ -26,6 +27,8 @@ import sys
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from config.settings import UTILIZATION_WEIGHTS
 from src.utils.helpers import safe_divide
+
+logger = logging.getLogger(__name__)
 
 
 def _bounds_key_to_str(key: Tuple[str, str]) -> str:
@@ -538,7 +541,11 @@ class UtilizationScoreCalculator:
             lo, hi = bounds
             if hi > lo:
                 return ((series - lo) / (hi - lo) * 100).clip(0, 100)
-            return series.clip(0, 100)
+            # Zero-width bounds: training data was constant (likely all zeros from missing data).
+            # Fall back to rank-based percentile so real values get meaningful scores.
+            if series.nunique() <= 1:
+                return pd.Series(50.0, index=series.index)
+            return series.rank(pct=True) * 100
         return series.rank(pct=True, na_option="bottom") * 100
 
     _BOUNDS_DEFAULT_PATH = Path(__file__).parent.parent.parent / "data" / "utilization_percentile_bounds.json"
@@ -562,6 +569,12 @@ class UtilizationScoreCalculator:
             if len(s) < 10:
                 continue
             lo, hi = s.quantile(0.01), s.quantile(0.99)
+            if lo == hi:
+                logger.warning(
+                    "Zero-width percentile bounds for %s|%s: lo=hi=%.4f "
+                    "(likely missing data). Rank-based fallback will be used at inference.",
+                    position, col, lo,
+                )
             self.position_percentiles[(position, col)] = (float(lo), float(hi))
         
         if persist:
