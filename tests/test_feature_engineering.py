@@ -12,16 +12,16 @@ from src.features.feature_engineering import FeatureEngineer, PositionFeatureEng
 
 class TestFeatureEngineer:
     """Test suite for FeatureEngineer."""
-    
-    @pytest.fixture
+
+    @pytest.fixture(scope="class")
     def engineer(self):
         return FeatureEngineer()
-    
-    @pytest.fixture
+
+    @pytest.fixture(scope="class")
     def sample_data(self):
         """Create sample player data for testing."""
         np.random.seed(42)
-        
+
         data = []
         for player_id in ["p1", "p2"]:
             for week in range(1, 11):
@@ -72,52 +72,57 @@ class TestFeatureEngineer:
                     "snap_share": np.random.uniform(0.5, 0.9),
                     "fantasy_points": np.random.uniform(8, 25),
                 })
-        
+
         return pd.DataFrame(data)
-    
-    def test_create_features(self, engineer, sample_data):
+
+    @pytest.fixture(scope="class")
+    def featured_data(self, engineer, sample_data):
+        """Run create_features once and share across all tests in this class."""
+        return engineer.create_features(sample_data)
+
+    def test_create_features(self, featured_data):
         """Test basic feature creation."""
-        result = engineer.create_features(sample_data)
-        
+        result = featured_data
+
         # Check base features created
         assert "yards_per_carry" in result.columns
         assert "yards_per_target" in result.columns
         assert "total_touches" in result.columns
         assert "total_yards" in result.columns
         assert "is_home" in result.columns
-    
-    def test_rolling_features(self, engineer, sample_data):
+
+    def test_rolling_features(self, featured_data):
         """Test rolling average features."""
-        result = engineer.create_features(sample_data)
-        
+        result = featured_data
+
         # Check rolling features exist
         rolling_cols = [c for c in result.columns if "roll" in c]
         assert len(rolling_cols) > 0
-        
+
         # Check for different windows
         assert any("roll3" in c for c in rolling_cols)
         assert any("roll5" in c for c in rolling_cols)
-    
-    def test_lag_features(self, engineer, sample_data):
+
+    def test_lag_features(self, featured_data):
         """Test lag features."""
-        result = engineer.create_features(sample_data)
-        
+        result = featured_data
+
         lag_cols = [c for c in result.columns if "lag" in c]
         assert len(lag_cols) > 0
-        
+
         # Lag features should exist and have some NaN values (for early weeks)
         assert "fantasy_points_lag1" in result.columns
-    
-    def test_trend_features(self, engineer, sample_data):
+
+    def test_trend_features(self, featured_data):
         """Test trend features."""
-        result = engineer.create_features(sample_data)
-        
+        result = featured_data
+
         trend_cols = [c for c in result.columns if "trend" in c]
         assert len(trend_cols) > 0
 
-    def test_advanced_pbp_features(self, engineer, sample_data):
+    def test_advanced_pbp_features(self, featured_data):
         """Test advanced PBP-derived features exist and are finite."""
-        result = engineer.create_features(sample_data)
+        result = featured_data
         expected_cols = [
             "pass_epa_per_play", "rush_epa_per_play", "recv_epa_per_target",
             "pass_wpa_per_play", "rush_wpa_per_play", "recv_wpa_per_target",
@@ -128,32 +133,30 @@ class TestFeatureEngineer:
         for col in expected_cols:
             assert col in result.columns
             assert np.isfinite(result[col]).all()
-    
-    def test_feature_columns_list(self, engineer, sample_data):
+
+    def test_feature_columns_list(self, engineer, featured_data):
         """Test that feature columns are tracked."""
-        engineer.create_features(sample_data)
-        
+        # featured_data fixture already called create_features on this engineer
         feature_cols = engineer.get_feature_columns()
         assert len(feature_cols) > 0
-        
+
         # Should not include non-feature columns
         assert "player_id" not in feature_cols
         assert "name" not in feature_cols
         assert "fantasy_points" not in feature_cols
-    
-    def test_prepare_training_data(self, engineer, sample_data):
+
+    def test_prepare_training_data(self, engineer, featured_data):
         """Test training data preparation."""
-        featured_data = engineer.create_features(sample_data)
         X, y = engineer.prepare_training_data(featured_data, target_weeks=1)
-        
+
         assert len(X) > 0
         assert len(y) == len(X)
         assert not y.isna().any()
-    
-    def test_no_data_leakage(self, engineer, sample_data):
+
+    def test_no_data_leakage(self, featured_data):
         """Test that features don't leak future information."""
-        result = engineer.create_features(sample_data)
-        
+        result = featured_data
+
         # Rolling features should be shifted
         for col in result.columns:
             if "roll" in col and "mean" in col:
