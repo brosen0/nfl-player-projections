@@ -93,6 +93,7 @@ def test_season_split_fallback_with_insufficient_seasons():
 
 def test_lstm_sequences_return_season_labels():
     """_sequences returns season labels aligned with target rows."""
+    pytest.importorskip("torch")
     from src.models.horizon_models import LSTM4WeekModel
 
     model = LSTM4WeekModel(sequence_length=3)
@@ -112,6 +113,7 @@ def test_lstm_sequences_return_season_labels():
 
 def test_lstm_sequences_no_seasons_returns_none():
     """_sequences returns None for seq_seasons when seasons is not provided."""
+    pytest.importorskip("torch")
     from src.models.horizon_models import LSTM4WeekModel
 
     model = LSTM4WeekModel(sequence_length=3)
@@ -125,6 +127,7 @@ def test_lstm_sequences_no_seasons_returns_none():
 
 def test_lstm_fit_accepts_seasons_param():
     """LSTM4WeekModel.fit() accepts seasons parameter without error."""
+    pytest.importorskip("torch")
     from src.models.horizon_models import LSTM4WeekModel
 
     model = LSTM4WeekModel(sequence_length=3)
@@ -141,6 +144,7 @@ def test_lstm_fit_accepts_seasons_param():
 
 def test_deep_fit_accepts_seasons_param():
     """DeepSeasonLongModel.fit() accepts seasons parameter without error."""
+    pytest.importorskip("torch")
     from src.models.horizon_models import DeepSeasonLongModel
 
     model = DeepSeasonLongModel("RB", n_features=5)

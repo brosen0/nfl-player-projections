@@ -282,7 +282,7 @@ class NFLDataLoader:
                         "start": int(df["week"].min()) if "week" in df.columns and len(df) else None,
                         "end": int(df["week"].max()) if "week" in df.columns and len(df) else None,
                     },
-                    "pulled_at": pd.Timestamp.utcnow().isoformat(),
+                    "pulled_at": pd.Timestamp.now("UTC").isoformat(),
                 },
             )
             

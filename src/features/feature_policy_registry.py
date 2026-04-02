@@ -117,7 +117,8 @@ class FeaturePolicyRegistry:
                     df[c] = (df[c].astype(bool) | indicator_df[c].astype(bool)).astype(np.int8)
                 indicator_df = indicator_df.drop(columns=overlap)
             if not indicator_df.empty:
-                df[indicator_df.columns] = indicator_df
+                for c in indicator_df.columns:
+                    df[c] = indicator_df[c]
 
         if flagged_fail and fail_on_threshold:
             raise ValueError(f"{context}: policy fail threshold exceeded for features: {sorted(flagged_fail)}")

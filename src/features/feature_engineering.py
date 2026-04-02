@@ -68,25 +68,28 @@ class FeatureEngineer:
         
         # Create base features
         df = self._create_base_features(df)
-        
+
         # Create rolling features (historical averages)
         df = self._create_rolling_features(df)
-        
+
         # Create lag features
         df = self._create_lag_features(df)
-        
+
         # Create trend features
         df = self._create_trend_features(df)
-        
+
+        # Defragment after the heaviest column-adding phase to avoid PerformanceWarnings
+        df = df.copy()
+
         # Create opponent features
         df = self._create_opponent_features(df)
-        
+
         # Create situational features
         df = self._create_situational_features(df)
 
         # Team-change and scheme-fit features (proactive context adjustment)
         df = self._create_team_change_features(df)
-        
+
         # Create interaction features
         df = self._create_interaction_features(df)
         
@@ -138,50 +141,52 @@ class FeatureEngineer:
     
     def _create_base_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """Create basic derived features."""
+        new_cols: dict = {}
+
         # Efficiency metrics
-        df["yards_per_carry"] = safe_divide(
+        new_cols["yards_per_carry"] = safe_divide(
             df["rushing_yards"], df["rushing_attempts"]
         )
-        df["yards_per_target"] = safe_divide(
+        new_cols["yards_per_target"] = safe_divide(
             df["receiving_yards"], df["targets"]
         )
-        df["yards_per_reception"] = safe_divide(
+        new_cols["yards_per_reception"] = safe_divide(
             df["receiving_yards"], df["receptions"]
         )
-        df["catch_rate"] = safe_divide(df["receptions"], df["targets"]) * 100
+        new_cols["catch_rate"] = safe_divide(df["receptions"], df["targets"]) * 100
 
         # Advanced PBP efficiency (EPA/WPA per opportunity)
         pass_plays = df.get("pass_plays", df.get("passing_attempts", pd.Series(0, index=df.index)))
         rush_plays = df.get("rush_plays", df.get("rushing_attempts", pd.Series(0, index=df.index)))
         recv_targets = df.get("recv_targets", df.get("targets", pd.Series(0, index=df.index)))
         if "pass_epa" in df.columns:
-            df["pass_epa_per_play"] = safe_divide(df["pass_epa"], pass_plays)
+            new_cols["pass_epa_per_play"] = safe_divide(df["pass_epa"], pass_plays)
         if "rush_epa" in df.columns:
-            df["rush_epa_per_play"] = safe_divide(df["rush_epa"], rush_plays)
+            new_cols["rush_epa_per_play"] = safe_divide(df["rush_epa"], rush_plays)
         if "recv_epa" in df.columns:
-            df["recv_epa_per_target"] = safe_divide(df["recv_epa"], recv_targets)
+            new_cols["recv_epa_per_target"] = safe_divide(df["recv_epa"], recv_targets)
         if "pass_wpa" in df.columns:
-            df["pass_wpa_per_play"] = safe_divide(df["pass_wpa"], pass_plays)
+            new_cols["pass_wpa_per_play"] = safe_divide(df["pass_wpa"], pass_plays)
         if "rush_wpa" in df.columns:
-            df["rush_wpa_per_play"] = safe_divide(df["rush_wpa"], rush_plays)
+            new_cols["rush_wpa_per_play"] = safe_divide(df["rush_wpa"], rush_plays)
         if "recv_wpa" in df.columns:
-            df["recv_wpa_per_target"] = safe_divide(df["recv_wpa"], recv_targets)
-        
+            new_cols["recv_wpa_per_target"] = safe_divide(df["recv_wpa"], recv_targets)
+
         # QB-specific (only if columns exist)
         if "passing_completions" in df.columns and "passing_attempts" in df.columns:
-            df["completion_pct"] = safe_divide(
+            new_cols["completion_pct"] = safe_divide(
                 df["passing_completions"], df["passing_attempts"]
             ) * 100
-            df["yards_per_attempt"] = safe_divide(
+            new_cols["yards_per_attempt"] = safe_divide(
                 df.get("passing_yards", 0), df["passing_attempts"]
             )
-            df["td_rate"] = safe_divide(
+            new_cols["td_rate"] = safe_divide(
                 df.get("passing_tds", 0), df["passing_attempts"]
             ) * 100
-            df["int_rate"] = safe_divide(
+            new_cols["int_rate"] = safe_divide(
                 df.get("interceptions", 0), df["passing_attempts"]
             ) * 100
-        
+
         # Volume metrics (with safe defaults)
         rushing_attempts = df.get("rushing_attempts", pd.Series(0, index=df.index))
         receptions = df.get("receptions", pd.Series(0, index=df.index))
@@ -190,65 +195,61 @@ class FeatureEngineer:
         rushing_tds = df.get("rushing_tds", pd.Series(0, index=df.index))
         receiving_tds = df.get("receiving_tds", pd.Series(0, index=df.index))
         targets = df.get("targets", pd.Series(0, index=df.index))
-        
-        df["total_touches"] = rushing_attempts + receptions
-        df["total_yards"] = rushing_yards + receiving_yards
-        df["total_tds"] = rushing_tds + receiving_tds
-        df["opportunities"] = rushing_attempts + targets
-        
-        # Weighted opportunities (rushing worth more than targets)
-        df["weighted_opportunities"] = rushing_attempts * 2 + targets
-        
-        # TD dependency
-        df["yards_per_td"] = safe_divide(
-            df["total_yards"], df["total_tds"].replace(0, np.nan)
-        )
-        
+
+        total_touches = rushing_attempts + receptions
+        total_yards = rushing_yards + receiving_yards
+        total_tds = rushing_tds + receiving_tds
+        opportunities = rushing_attempts + targets
+
+        new_cols["total_touches"] = total_touches
+        new_cols["total_yards"] = total_yards
+        new_cols["total_tds"] = total_tds
+        new_cols["opportunities"] = opportunities
+        new_cols["weighted_opportunities"] = rushing_attempts * 2 + targets
+        new_cols["yards_per_td"] = safe_divide(total_yards, total_tds.replace(0, np.nan))
+
         # QB advanced: air yards per attempt, TD/INT ratio, deep ball attempts
         if "air_yards" in df.columns and "passing_attempts" in df.columns:
-            df["air_yards_per_attempt"] = safe_divide(df["air_yards"], df["passing_attempts"])
+            new_cols["air_yards_per_attempt"] = safe_divide(df["air_yards"], df["passing_attempts"])
         if "passing_tds" in df.columns and "interceptions" in df.columns:
-            df["td_int_ratio"] = safe_divide(
+            new_cols["td_int_ratio"] = safe_divide(
                 df["passing_tds"], df["interceptions"].replace(0, 0.5)
             )
         if "deep_pass_attempts" in df.columns:
-            df["deep_ball_pct"] = safe_divide(
+            new_cols["deep_ball_pct"] = safe_divide(
                 df["deep_pass_attempts"], df.get("passing_attempts", pd.Series(1, index=df.index))
             ) * 100
 
         # RB advanced: yards after contact, broken tackles
         if "yards_after_contact" in df.columns:
-            df["yac_per_carry"] = safe_divide(df["yards_after_contact"], df.get("rushing_attempts", pd.Series(1, index=df.index)))
+            new_cols["yac_per_carry"] = safe_divide(df["yards_after_contact"], df.get("rushing_attempts", pd.Series(1, index=df.index)))
         if "broken_tackles" in df.columns:
-            df["broken_tackle_rate"] = safe_divide(
+            new_cols["broken_tackle_rate"] = safe_divide(
                 df["broken_tackles"], df.get("rushing_attempts", pd.Series(1, index=df.index))
             )
 
         # WR/TE advanced: average depth of target, yards after catch, contested catch rate
-        if "average_depth_of_target" in df.columns:
-            pass  # already present as aDOT
-        elif "air_yards" in df.columns and "targets" in df.columns:
-            df["average_depth_of_target"] = safe_divide(df["air_yards"], df["targets"])
+        if "average_depth_of_target" not in df.columns:
+            if "air_yards" in df.columns and "targets" in df.columns:
+                new_cols["average_depth_of_target"] = safe_divide(df["air_yards"], df["targets"])
         if "yards_after_catch" in df.columns and "receptions" in df.columns:
-            df["yac_per_reception"] = safe_divide(df["yards_after_catch"], df["receptions"])
+            new_cols["yac_per_reception"] = safe_divide(df["yards_after_catch"], df["receptions"])
         if "contested_catches" in df.columns and "contested_targets" in df.columns:
-            df["contested_catch_rate"] = safe_divide(df["contested_catches"], df["contested_targets"])
+            new_cols["contested_catch_rate"] = safe_divide(df["contested_catches"], df["contested_targets"])
         if "slot_snaps" in df.columns and "snap_count" in df.columns:
-            df["slot_pct"] = safe_divide(df["slot_snaps"], df["snap_count"]) * 100
+            new_cols["slot_pct"] = safe_divide(df["slot_snaps"], df["snap_count"]) * 100
 
         # Route participation rate for RB receiving work
         if "routes_run" in df.columns and "snap_count" in df.columns:
-            df["route_participation_rate"] = safe_divide(df["routes_run"], df["snap_count"])
+            new_cols["route_participation_rate"] = safe_divide(df["routes_run"], df["snap_count"])
 
         # Game script indicators
-        if "home_away" in df.columns:
-            df["is_home"] = (df["home_away"] == "home").astype(int)
-        else:
-            df["is_home"] = 0
+        new_cols["is_home"] = (df["home_away"] == "home").astype(int) if "home_away" in df.columns else 0
 
         # Season progress
-        df["season_week_pct"] = df["week"] / 18
+        new_cols["season_week_pct"] = df["week"] / 18
 
+        df = df.assign(**new_cols)
         return df
     
     def _create_rolling_features(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -514,7 +515,7 @@ class FeatureEngineer:
             # In-season rolling team averages (4-week causal window) to supplement
             # stale prior-season averages.  shift(1) excludes current week.
             # Blend: 60% in-season / 40% prior-season when week >= 5, else prior-season only.
-            if 'team' in df.columns and 'season' in df.columns and 'week' in df.columns:
+            if 'team' in df.columns and 'season' in df.columns and 'week' in df.columns and 'week' in all_team_stats.columns:
                 avail_metrics = [m for m in team_metrics if m in all_team_stats.columns]
                 if avail_metrics:
                     ts_sorted = all_team_stats.sort_values(['team', 'season', 'week'])
@@ -779,49 +780,50 @@ class FeatureEngineer:
         # Situation-specific usage rates (advanced PBP)
         neutral_targets = df.get("neutral_targets", pd.Series(0, index=df.index))
         team_neutral_pass_plays = df.get("team_neutral_pass_plays", pd.Series(0, index=df.index))
-        df["neutral_target_share"] = safe_divide(neutral_targets, team_neutral_pass_plays)
-
-        df["third_down_target_rate"] = safe_divide(
-            df.get("third_down_targets", pd.Series(0, index=df.index)),
-            df.get("targets", pd.Series(0, index=df.index))
-        )
-        df["short_yardage_touch_rate"] = safe_divide(
-            df.get("short_yardage_rushes", pd.Series(0, index=df.index)),
-            df.get("rushing_attempts", pd.Series(0, index=df.index))
-        )
-        df["two_minute_target_rate"] = safe_divide(
-            df.get("two_minute_targets", pd.Series(0, index=df.index)),
-            df.get("targets", pd.Series(0, index=df.index))
-        )
         total_touches = df.get("rushing_attempts", pd.Series(0, index=df.index)) + df.get(
             "targets", pd.Series(0, index=df.index)
         )
-        df["high_leverage_touch_rate"] = safe_divide(
-            df.get("high_leverage_touches", pd.Series(0, index=df.index)),
-            total_touches
-        )
-        
-        # Bye week indicator (no game previous week)
-        df["post_bye"] = df.groupby("player_id")["week"].transform(
+
+        # Bye/rest timing — computed before the batch so interactions can reference them
+        post_bye = df.groupby("player_id")["week"].transform(
             lambda x: (x.diff() > 1).astype(int)
         )
-        # Days since last game (approx: 7 per week gap; required for data spec)
-        df["days_since_last_game"] = df.groupby("player_id")["week"].transform(
+        days_since_last_game = df.groupby("player_id")["week"].transform(
             lambda x: (x.diff().fillna(1).clip(lower=1) * 7).astype(float)
-        )
-        df["days_since_last_game"] = df["days_since_last_game"].fillna(7.0)
+        ).fillna(7.0)
+        short_week = (days_since_last_game <= 4.0).astype(int)
 
-        # Short week indicator: Thursday games after Sunday (3 rest days vs 6-7 normal)
-        # Detectable from game_time if available, or inferred from week spacing
-        df["short_week"] = (df["days_since_last_game"] <= 4.0).astype(int)
-        # Rest advantage: positive = more rest than typical 7 days, negative = short week
-        df["rest_advantage"] = (df["days_since_last_game"] - 7.0).clip(-4.0, 7.0)
-        # Post-bye boost interaction: bye week * recent production trend
+        situational_cols: dict = {
+            "neutral_target_share": safe_divide(neutral_targets, team_neutral_pass_plays),
+            "third_down_target_rate": safe_divide(
+                df.get("third_down_targets", pd.Series(0, index=df.index)),
+                df.get("targets", pd.Series(0, index=df.index)),
+            ),
+            "short_yardage_touch_rate": safe_divide(
+                df.get("short_yardage_rushes", pd.Series(0, index=df.index)),
+                df.get("rushing_attempts", pd.Series(0, index=df.index)),
+            ),
+            "two_minute_target_rate": safe_divide(
+                df.get("two_minute_targets", pd.Series(0, index=df.index)),
+                df.get("targets", pd.Series(0, index=df.index)),
+            ),
+            "high_leverage_touch_rate": safe_divide(
+                df.get("high_leverage_touches", pd.Series(0, index=df.index)),
+                total_touches,
+            ),
+            "post_bye": post_bye,
+            "days_since_last_game": days_since_last_game,
+            "short_week": short_week,
+            # Rest advantage: positive = more rest than typical 7 days, negative = short week
+            "rest_advantage": (days_since_last_game - 7.0).clip(-4.0, 7.0),
+        }
+
         if "fantasy_points_roll3_mean" in df.columns:
-            df["post_bye_x_recent_form"] = df["post_bye"] * df["fantasy_points_roll3_mean"].fillna(0)
-        # Short week penalty interaction
-        if "fantasy_points_roll3_mean" in df.columns:
-            df["short_week_x_recent_form"] = df["short_week"] * df["fantasy_points_roll3_mean"].fillna(0)
+            fp_roll3 = df["fantasy_points_roll3_mean"].fillna(0)
+            situational_cols["post_bye_x_recent_form"] = post_bye * fp_roll3
+            situational_cols["short_week_x_recent_form"] = short_week * fp_roll3
+
+        df = df.assign(**situational_cols)
 
         # Add schedule-based features if available
         df = self._add_schedule_features(df)
@@ -854,24 +856,24 @@ class FeatureEngineer:
         season_changed = (df["season"] != prev_season) & prev_season.notna()
         team_changed = (df["team"] != prev_team) & prev_team.notna()
 
-        df["team_changed"] = team_changed.astype(int)
-        df["new_season"] = season_changed.astype(int)
-
         # Weeks on current team (reset on team change or season boundary)
         change_flag = (team_changed | season_changed).astype(int)
+        # Temporary helper columns needed for cumcount groupby — assigned individually
+        # because they are consumed immediately and dropped before return.
         df["_team_change_flag"] = change_flag
         df["_team_stint_id"] = grp["_team_change_flag"].cumsum()
-        df["weeks_on_team"] = df.groupby(["player_id", "_team_stint_id"]).cumcount() + 1
+        weeks_on_team = df.groupby(["player_id", "_team_stint_id"]).cumcount() + 1
 
         # Team pass rate delta (use prior row for same player as a proxy)
+        team_changed_int = team_changed.astype(int)
         if "team_a_pass_rate" in df.columns:
             prev_pass = grp["team_a_pass_rate"].shift(1)
             delta = (df["team_a_pass_rate"] - prev_pass).fillna(0.0)
-            df["team_pass_rate_delta"] = delta
-            df["team_change_pass_rate_delta"] = (delta * df["team_changed"]).fillna(0.0)
+            team_pass_rate_delta = delta
+            team_change_pass_rate_delta = (delta * team_changed_int).fillna(0.0)
         else:
-            df["team_pass_rate_delta"] = 0.0
-            df["team_change_pass_rate_delta"] = 0.0
+            team_pass_rate_delta = 0.0
+            team_change_pass_rate_delta = 0.0
 
         # Scheme fit: position-specific preferred pass rate
         if "team_a_pass_rate" in df.columns and "position" in df.columns:
@@ -884,13 +886,13 @@ class FeatureEngineer:
             mismatch = (df["team_a_pass_rate"] - pass_pref).abs()
             # Normalize mismatch to [0, 1] with 0.6 as a wide max band
             mismatch_norm = (mismatch / 0.6).clip(0.0, 1.0)
-            df["scheme_fit_score"] = (1.0 - mismatch_norm).fillna(0.5)
-            df["scheme_mismatch"] = mismatch_norm.fillna(0.5)
-            df["scheme_mismatch_on_change"] = (df["scheme_mismatch"] * df["team_changed"]).fillna(0.0)
+            scheme_fit_score = (1.0 - mismatch_norm).fillna(0.5)
+            scheme_mismatch = mismatch_norm.fillna(0.5)
+            scheme_mismatch_on_change = (scheme_mismatch * team_changed_int).fillna(0.0)
         else:
-            df["scheme_fit_score"] = 0.5
-            df["scheme_mismatch"] = 0.5
-            df["scheme_mismatch_on_change"] = 0.0
+            scheme_fit_score = 0.5
+            scheme_mismatch = 0.5
+            scheme_mismatch_on_change = 0.0
 
         # Recent utilization prior to change (lagged utilization only)
         util_col = None
@@ -899,12 +901,25 @@ class FeatureEngineer:
                 util_col = cand
                 break
         if util_col:
-            df["team_change_recent_util"] = np.where(df["team_changed"] == 1,
-                                                     df[util_col].fillna(0.0), 0.0)
+            team_change_recent_util = np.where(team_changed_int == 1,
+                                               df[util_col].fillna(0.0), 0.0)
         else:
-            df["team_change_recent_util"] = 0.0
+            team_change_recent_util = 0.0
 
         df = df.drop(columns=["_team_change_flag", "_team_stint_id"], errors="ignore")
+
+        new_cols = {
+            "team_changed": team_changed_int,
+            "new_season": season_changed.astype(int),
+            "weeks_on_team": weeks_on_team,
+            "team_pass_rate_delta": team_pass_rate_delta,
+            "team_change_pass_rate_delta": team_change_pass_rate_delta,
+            "scheme_fit_score": scheme_fit_score,
+            "scheme_mismatch": scheme_mismatch,
+            "scheme_mismatch_on_change": scheme_mismatch_on_change,
+            "team_change_recent_util": team_change_recent_util,
+        }
+        df = df.assign(**new_cols)
         return df
     
     def _add_game_script_adjustment(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -937,23 +952,21 @@ class FeatureEngineer:
             # Estimate from final score if available
             df = self._estimate_garbage_time_from_result(df)
         
-        # Create game script adjustment factor
+        # Create game script adjustment factor and competitive snaps — batch together
+        script_cols: dict = {}
         if 'garbage_time_pct' in df.columns:
             # Discount utilization by garbage time percentage
             # e.g., if 30% of stats came in garbage time, adjustment = 0.85
-            df['game_script_factor'] = 1.0 - (0.5 * df['garbage_time_pct'])
-            df['game_script_factor'] = df['game_script_factor'].clip(0.5, 1.0)
+            script_cols['game_script_factor'] = (1.0 - 0.5 * df['garbage_time_pct']).clip(0.5, 1.0)
         else:
-            df['game_script_factor'] = 1.0
-        
-        # Calculate competitive snaps percentage if possible
+            script_cols['game_script_factor'] = 1.0
+
         if 'competitive_snaps' in df.columns and 'snap_count' in df.columns:
-            df['competitive_snaps_pct'] = safe_divide(
-                df['competitive_snaps'], df['snap_count']
-            )
+            script_cols['competitive_snaps_pct'] = safe_divide(df['competitive_snaps'], df['snap_count'])
         else:
-            df['competitive_snaps_pct'] = 1.0 - df.get('garbage_time_pct', 0)
-        
+            script_cols['competitive_snaps_pct'] = 1.0 - df.get('garbage_time_pct', 0)
+
+        df = df.assign(**script_cols)
         return df
     
     def _calculate_garbage_time_from_score(
@@ -978,14 +991,16 @@ class FeatureEngineer:
                 # 3rd quarter blowouts
                 ((df['quarter'] == 3) & (df[score_diff_col].abs() >= 24))
             )
-            df['is_garbage_time'] = garbage_conditions.astype(int)
-            
-            # Calculate percentage of plays in garbage time
-            df['garbage_time_pct'] = df.groupby(['player_id', 'season', 'week'])['is_garbage_time'].transform('mean')
+            is_garbage_time = garbage_conditions.astype(int)
+            # groupby.transform needs the column in df, so assign both at once after computing
+            df = df.assign(is_garbage_time=is_garbage_time)
+            df = df.assign(
+                garbage_time_pct=df.groupby(['player_id', 'season', 'week'])['is_garbage_time'].transform('mean')
+            )
         else:
             # Estimate from final score differential
             # Games with 17+ point differential likely had significant garbage time
-            df['garbage_time_pct'] = np.where(
+            df = df.assign(garbage_time_pct=np.where(
                 df[score_diff_col].abs() >= 24, 0.30,
                 np.where(
                     df[score_diff_col].abs() >= 17, 0.20,
@@ -994,8 +1009,8 @@ class FeatureEngineer:
                         0.0
                     )
                 )
-            )
-        
+            ))
+
         return df
     
     def _calculate_garbage_time_from_wp(
@@ -1009,14 +1024,12 @@ class FeatureEngineer:
         Garbage time is when win probability is < 10% or > 90%.
         This is the most accurate method when play-by-play data is available.
         """
-        # Binary garbage time indicator
-        df['is_garbage_time'] = (
-            (df[wp_col] < 0.10) | (df[wp_col] > 0.90)
-        ).astype(int)
-        
-        # Calculate percentage of plays in garbage time by game
-        df['garbage_time_pct'] = df.groupby(['player_id', 'season', 'week'])['is_garbage_time'].transform('mean')
-        
+        # Binary garbage time indicator — assign before the groupby that reads it
+        is_garbage_time = ((df[wp_col] < 0.10) | (df[wp_col] > 0.90)).astype(int)
+        df = df.assign(is_garbage_time=is_garbage_time)
+        df = df.assign(
+            garbage_time_pct=df.groupby(['player_id', 'season', 'week'])['is_garbage_time'].transform('mean')
+        )
         return df
     
     def _estimate_garbage_time_from_result(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -1028,27 +1041,26 @@ class FeatureEngineer:
         """
         # Calculate or get final score differential
         if 'team_score' in df.columns and 'opponent_score' in df.columns:
-            df['final_margin'] = df['team_score'] - df['opponent_score']
+            final_margin = df['team_score'] - df['opponent_score']
         elif 'margin' in df.columns:
-            df['final_margin'] = df['margin']
+            final_margin = df['margin']
         else:
             # No score data available
-            df['garbage_time_pct'] = 0.0
-            return df
-        
+            return df.assign(garbage_time_pct=0.0)
+
         # Estimate garbage time based on final margin
         # Larger margins = more likely there was garbage time
-        df['garbage_time_pct'] = np.select(
+        garbage_time_pct = np.select(
             [
-                df['final_margin'].abs() >= 28,  # Blowout: ~35% garbage time
-                df['final_margin'].abs() >= 21,  # Big win: ~25% garbage time
-                df['final_margin'].abs() >= 14,  # Comfortable: ~15% garbage time
-                df['final_margin'].abs() >= 7,   # Close-ish: ~5% garbage time
+                final_margin.abs() >= 28,  # Blowout: ~35% garbage time
+                final_margin.abs() >= 21,  # Big win: ~25% garbage time
+                final_margin.abs() >= 14,  # Comfortable: ~15% garbage time
+                final_margin.abs() >= 7,   # Close-ish: ~5% garbage time
             ],
             [0.35, 0.25, 0.15, 0.05],
             default=0.0
         )
-        
+        df = df.assign(final_margin=final_margin, garbage_time_pct=garbage_time_pct)
         return df
     
     def create_adjusted_utilization(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -1124,18 +1136,12 @@ class FeatureEngineer:
             # Schedule features are optional - don't fail if unavailable
             print(f"  WARNING: Schedule features unavailable ({type(e).__name__}: {e})")
         
-        # Fill missing schedule features with neutral values
-        if 'team_sos' not in df.columns:
-            df['team_sos'] = 50.0
-        if 'matchup_difficulty' not in df.columns:
-            df['matchup_difficulty'] = 50.0
-        if 'opponent_rating' not in df.columns:
-            df['opponent_rating'] = 50.0
-        
-        df['team_sos'] = df['team_sos'].fillna(50.0)
-        df['matchup_difficulty'] = df['matchup_difficulty'].fillna(50.0)
-        df['opponent_rating'] = df['opponent_rating'].fillna(50.0)
-        
+        # Fill missing schedule features with neutral values — batch together
+        sos_defaults: dict = {
+            col: df[col].fillna(50.0) if col in df.columns else 50.0
+            for col in ('team_sos', 'matchup_difficulty', 'opponent_rating')
+        }
+        df = df.assign(**sos_defaults)
         return df
     
     def refresh_matchup_features(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -1168,19 +1174,25 @@ class FeatureEngineer:
             util_lagged = df["utilization_score_lag_1"]
         elif "utilization_score_roll3_mean" in df.columns:
             util_lagged = df["utilization_score_roll3_mean"]
+
+        interaction_cols: dict = {}
+
         if util_lagged is not None:
             if "yards_per_carry" in df.columns:
-                df["util_x_ypc"] = util_lagged * df["yards_per_carry"]
+                interaction_cols["util_x_ypc"] = util_lagged * df["yards_per_carry"]
             if "yards_per_target" in df.columns:
-                df["util_x_ypt"] = util_lagged * df["yards_per_target"]
-        
+                interaction_cols["util_x_ypt"] = util_lagged * df["yards_per_target"]
+
         # Volume x Efficiency
-        df["touches_x_ypc"] = df["total_touches"] * df.get("yards_per_carry", 0)
-        
+        interaction_cols["touches_x_ypc"] = df["total_touches"] * df.get("yards_per_carry", 0)
+
         # Opportunity x TD rate
         if "total_tds" in df.columns and "opportunities" in df.columns:
             td_rate = safe_divide(df["total_tds"], df["opportunities"])
-            df["opp_x_td_rate"] = df["opportunities"] * td_rate
+            interaction_cols["opp_x_td_rate"] = df["opportunities"] * td_rate
+
+        if interaction_cols:
+            df = df.assign(**interaction_cols)
         
         # --- Matchup Quality Indicator (requirements III.B) ---
         # Composite score combining opponent defense weakness, game script favorability,
@@ -1232,28 +1244,27 @@ class FeatureEngineer:
             mqi_components.append(df["is_home"].fillna(0) * 0.15)
         
         if mqi_components:
-            df["matchup_quality_indicator"] = sum(mqi_components)
+            mqi_raw = sum(mqi_components)
             # Normalize to 0-100 scale using expanding min/max with shift(1)
             # to exclude current row from its own normalization bounds
-            mqi = df["matchup_quality_indicator"]
             if "season" in df.columns and "week" in df.columns:
                 # Sort by time FIRST so expanding windows are causal
                 sort_order = df.sort_values(["season", "week"]).index
-                mqi_sorted = mqi.reindex(sort_order)
+                mqi_sorted = mqi_raw.reindex(sort_order)
                 shifted = mqi_sorted.shift(1)
                 expanding_min = shifted.expanding(min_periods=1).min()
                 expanding_max = shifted.expanding(min_periods=1).max()
                 denom = (expanding_max - expanding_min).replace(0, np.nan)
-                normalized = (((mqi_sorted - expanding_min) / denom) * 100).fillna(50.0).clip(0, 100)
-                df["matchup_quality_indicator"] = normalized.reindex(df.index)
+                mqi_final = (((mqi_sorted - expanding_min) / denom) * 100).fillna(50.0).clip(0, 100).reindex(df.index)
             else:
-                mqi_min, mqi_max = mqi.min(), mqi.max()
+                mqi_min, mqi_max = mqi_raw.min(), mqi_raw.max()
                 if mqi_max > mqi_min:
-                    df["matchup_quality_indicator"] = ((mqi - mqi_min) / (mqi_max - mqi_min) * 100).clip(0, 100)
+                    mqi_final = ((mqi_raw - mqi_min) / (mqi_max - mqi_min) * 100).clip(0, 100)
                 else:
-                    df["matchup_quality_indicator"] = 50.0
+                    mqi_final = 50.0
+            df = df.assign(matchup_quality_indicator=mqi_final)
         else:
-            df["matchup_quality_indicator"] = 50.0
+            df = df.assign(matchup_quality_indicator=50.0)
         
         return df
     
@@ -1455,10 +1466,7 @@ class FeatureEngineer:
         - return_from_injury_discount: performance discount factor (0.7-1.0)
         """
         if df.empty or "player_id" not in df.columns:
-            df["games_since_injury"] = np.nan
-            df["is_first_3_games_back"] = 0
-            df["return_from_injury_discount"] = 1.0
-            return df
+            return df.assign(games_since_injury=np.nan, is_first_3_games_back=0, return_from_injury_discount=1.0)
 
         new_cols = {"games_since_injury": pd.Series(np.nan, index=df.index),
                     "is_first_3_games_back": pd.Series(0, index=df.index, dtype=int),
@@ -1486,9 +1494,8 @@ class FeatureEngineer:
                     discount = [0.70, 0.85, 0.95][min(games_since, 2)]
                     new_cols["return_from_injury_discount"].at[row_label] = discount
 
-        for col_name, series in new_cols.items():
-            df[col_name] = series
-        df["games_since_injury"] = df["games_since_injury"].fillna(99.0)
+        new_cols["games_since_injury"] = new_cols["games_since_injury"].fillna(99.0)
+        df = df.assign(**new_cols)
         return df
 
     def _create_vegas_game_script_features(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -1500,14 +1507,16 @@ class FeatureEngineer:
         """
         # Check if vegas features already added by external_data.py
         if "spread" in df.columns and "game_total" in df.columns:
-            # Ensure implied team total exists
+            early_cols: dict = {}
             if "implied_team_total" not in df.columns:
-                df["implied_team_total"] = (df["game_total"] + df["spread"]) / 2
-            # Win probability proxy from spread
+                early_cols["implied_team_total"] = (df["game_total"] + df["spread"]) / 2
             if "win_probability" not in df.columns:
                 # Rough conversion: spread of -7 ~ 70% win probability
-                df["win_probability"] = 0.5 + df["spread"].clip(-14, 14) / 28.0 * (-1)
-                df["win_probability"] = df["win_probability"].clip(0.05, 0.95)
+                early_cols["win_probability"] = (
+                    (0.5 + df["spread"].clip(-14, 14) / 28.0 * (-1)).clip(0.05, 0.95)
+                )
+            if early_cols:
+                df = df.assign(**early_cols)
             return df
 
         # Try to load from schedule data
@@ -1560,21 +1569,28 @@ class FeatureEngineer:
         except Exception:
             pass
 
-        # Defaults for missing values
+        # Defaults for missing values — compute all new columns before assigning
+        default_cols: dict = {}
         for col, default in [("spread", 0.0), ("game_total", 46.0), ("implied_team_total", 23.0)]:
             if col not in df.columns:
-                df[col] = default
+                default_cols[col] = default
             else:
-                df[col] = df[col].fillna(default)
+                filled = df[col].fillna(default)
+                if filled is not df[col]:
+                    default_cols[col] = filled
+        if default_cols:
+            df = df.assign(**default_cols)
 
-        # Win probability from spread
+        # Win probability from spread and is_favorite — batch together
+        derived_cols: dict = {}
         if "win_probability" not in df.columns:
-            df["win_probability"] = 0.5 + df["spread"].clip(-14, 14) / 28.0 * (-1)
-            df["win_probability"] = df["win_probability"].clip(0.05, 0.95)
-
-        # Is favorite
+            derived_cols["win_probability"] = (
+                (0.5 + df["spread"].clip(-14, 14) / 28.0 * (-1)).clip(0.05, 0.95)
+            )
         if "is_favorite" not in df.columns:
-            df["is_favorite"] = (df["spread"] < 0).astype(int)
+            derived_cols["is_favorite"] = (df["spread"] < 0).astype(int)
+        if derived_cols:
+            df = df.assign(**derived_cols)
 
         return df
 
@@ -1593,22 +1609,28 @@ class FeatureEngineer:
         """
         if df.empty:
             return df
+
+        injury_cols: dict = {}
+
         # Injury: from external_data when available; else full availability
-        if "injury_score" not in df.columns:
-            df["injury_score"] = 1.0
-        else:
-            df["injury_score"] = df["injury_score"].fillna(1.0).clip(0.0, 1.0)
-        if "is_injured" not in df.columns:
-            df["is_injured"] = 0
-        else:
-            df["is_injured"] = df["is_injured"].fillna(0).astype(int).clip(0, 1)
+        injury_cols["injury_score"] = (
+            df["injury_score"].fillna(1.0).clip(0.0, 1.0)
+            if "injury_score" in df.columns else 1.0
+        )
+        injury_cols["is_injured"] = (
+            df["is_injured"].fillna(0).astype(int).clip(0, 1)
+            if "is_injured" in df.columns else 0
+        )
+
         # Rookie: first season or very few games in current season (improves utilization prediction)
         if "games_count" in df.columns:
-            df["is_rookie"] = (df["games_count"] <= 8).astype(int)
+            injury_cols["is_rookie"] = (df["games_count"] <= 8).astype(int)
         else:
             # Approximate: count rows per player up to this row (no full history in single df)
             games_per_player = df.groupby("player_id").cumcount() + 1
-            df["is_rookie"] = (games_per_player <= 8).astype(int)
+            injury_cols["is_rookie"] = (games_per_player <= 8).astype(int)
+
+        df = df.assign(**injury_cols)
         return df
     
     def _flag_outliers(self, df: pd.DataFrame, sigma_threshold: float = 3.0) -> pd.DataFrame:
@@ -1624,9 +1646,8 @@ class FeatureEngineer:
         key_cols = ["fantasy_points", "total_yards", "total_touches", "utilization_score"]
         key_cols = [c for c in key_cols if c in df.columns]
         if not key_cols:
-            df["is_statistical_outlier"] = 0
-            return df
-        
+            return df.assign(is_statistical_outlier=0)
+
         outlier_mask = pd.Series(False, index=df.index)
 
         # Use expanding mean/std to avoid future data leakage in outlier thresholds
@@ -1649,7 +1670,6 @@ class FeatureEngineer:
             col_outlier = (df[col] - mean_val).abs() > sigma_threshold * std_val
             outlier_mask = outlier_mask | col_outlier.fillna(False)
 
-        df["is_statistical_outlier"] = outlier_mask.astype(int)
         n_outliers = outlier_mask.sum()
         if n_outliers > 0:
             print(f"  Outlier detection: {n_outliers} rows flagged (>{sigma_threshold}σ in {key_cols})")
@@ -1665,14 +1685,16 @@ class FeatureEngineer:
                 fp_mean = df["fantasy_points"].mean()
                 fp_std = df["fantasy_points"].std()
             if isinstance(fp_std, (int, float)) and (pd.isna(fp_std) or fp_std == 0):
-                df["is_outlier_injury"] = 0
+                is_outlier_injury = 0
             else:
                 low_perf = df["fantasy_points"] < (fp_mean - 2 * fp_std)
                 injured = df["injury_score"].fillna(1.0) < 0.7
-                df["is_outlier_injury"] = (low_perf & injured).fillna(False).astype(int)
+                is_outlier_injury = (low_perf & injured).fillna(False).astype(int)
         else:
-            df["is_outlier_injury"] = 0
-        
+            is_outlier_injury = 0
+
+        # Assign both outlier flags at once
+        df = df.assign(is_statistical_outlier=outlier_mask.astype(int), is_outlier_injury=is_outlier_injury)
         return df
 
     def _check_missing_rate(self, df: pd.DataFrame, threshold_pct: float = 5.0) -> None:
