@@ -190,3 +190,26 @@ silently.
 ### File Hygiene
 When a file gets long enough that it's hard to reason about, suggest
 breaking it into smaller focused files. Keep the project navigable.
+
+---
+
+## 8. Superpowers Skills
+
+This project uses the superpowers plugin. Use the following skills via the
+Skill tool at the appropriate moments:
+
+- **writing-plans**: Before any multi-step task, write a plan first.
+- **executing-plans**: Execute written plans with review checkpoints.
+- **test-driven-development**: Write tests before implementation code.
+- **systematic-debugging**: When investigating bugs or test failures,
+  follow structured debugging before proposing fixes.
+- **verification-before-completion**: Before claiming work is done,
+  committing, or creating PRs, run verification and confirm output.
+- **brainstorming**: Before any creative work — new features, components,
+  or behavioral changes — explore intent and design first.
+- **dispatching-parallel-agents**: When facing 2+ independent tasks,
+  dispatch them in parallel.
+- **requesting-code-review**: After completing major features or before
+  merging, request a structured code review.
+- **finishing-a-development-branch**: When implementation is complete and
+  tests pass, use this to guide merge/PR/cleanup decisions.
