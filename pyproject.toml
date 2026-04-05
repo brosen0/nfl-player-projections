@@ -40,6 +40,7 @@ dependencies = [
     "plotly>=5.18.0",
     # NFL data source
     "nfl-data-py>=0.3.0",
+    "prompts_0 @ git+ssh://git@github.com/bsr-0/prompts_0.git",
 ]
 
 [project.optional-dependencies]
