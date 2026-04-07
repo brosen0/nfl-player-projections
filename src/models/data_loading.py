@@ -103,13 +103,9 @@ def load_training_data(positions: list = None, min_games: int = 4,
 
     combined = pd.concat(all_data, ignore_index=True)
 
-    # Guard: training data must not contain model-output or leakage columns.
+    # Identify leakage-risk columns (dropped after validation that needs player_id)
     from src.utils.leakage import find_leakage_columns
     leaked = find_leakage_columns(combined.columns, ban_utilization_score=False)
-    if leaked:
-        logger.warning("Dropping %d leakage-risk columns from training data: %s",
-                        len(leaked), sorted(leaked)[:10])
-        combined = combined.drop(columns=leaked, errors="ignore")
 
     # Split into train/test (strict unseen test: test season must not be in train)
     assert auto_test_season not in train_seasons, (
@@ -165,6 +161,13 @@ def load_training_data(positions: list = None, min_games: int = 4,
     if strict_requirements and requirement_failures:
         joined = "; ".join(requirement_failures)
         raise ValueError(f"Strict requirements check failed: {joined}")
+
+    # Drop leakage-risk columns now that validation is done
+    if leaked:
+        logger.warning("Dropping %d leakage-risk columns from training data: %s",
+                        len(leaked), sorted(leaked)[:10])
+        train_data = train_data.drop(columns=leaked, errors="ignore")
+        test_data = test_data.drop(columns=leaked, errors="ignore")
     return train_data, test_data, train_seasons, auto_test_season
 
 
