@@ -583,6 +583,14 @@ class UtilizationScoreCalculator:
         """Auto-load persisted percentile bounds if none are in memory."""
         if not self.position_percentiles and self._BOUNDS_DEFAULT_PATH.exists():
             self.position_percentiles = load_percentile_bounds(self._BOUNDS_DEFAULT_PATH)
+            # Warn about zero-width bounds so issues are visible in logs
+            for (pos, col), (lo, hi) in self.position_percentiles.items():
+                if lo == hi:
+                    logger.warning(
+                        "Loaded zero-width percentile bounds for %s|%s: "
+                        "lo=hi=%.4f. Neutral score (50.0) will be used.",
+                        pos, col, lo,
+                    )
     
     def get_utilization_tier(self, score: float, position: str) -> str:
         """

@@ -153,6 +153,48 @@ class TestBoundsFitProducesValidWidths:
                 )
 
 
+class TestBoundsLoadValidation:
+    """Verify that loading bounds validates and warns about zero-width entries."""
+
+    def test_ensure_bounds_loaded_warns_on_zero_width(self, tmp_path, caplog):
+        """_ensure_bounds_loaded() must log a warning for zero-width bounds."""
+        import logging
+        bounds = {
+            ("RB", "snap_share_pct"): (0.0, 0.0),
+            ("RB", "rush_share_pct"): (5.0, 95.0),
+        }
+        path = tmp_path / "test_bounds.json"
+        save_percentile_bounds(bounds, path)
+
+        calc = UtilizationScoreCalculator()
+        calc._BOUNDS_DEFAULT_PATH = path
+        with caplog.at_level(logging.WARNING):
+            calc._ensure_bounds_loaded()
+        assert any("zero-width" in record.message.lower() for record in caplog.records), (
+            "Expected a warning about zero-width bounds, but none was logged"
+        )
+        assert any("RB|snap_share_pct" in record.message for record in caplog.records)
+
+    def test_ensure_bounds_loaded_no_warning_for_valid_bounds(self, tmp_path, caplog):
+        """No warning should be logged when all bounds are valid."""
+        import logging
+        bounds = {
+            ("RB", "snap_share_pct"): (5.0, 85.0),
+            ("RB", "rush_share_pct"): (10.0, 90.0),
+        }
+        path = tmp_path / "test_bounds.json"
+        save_percentile_bounds(bounds, path)
+
+        calc = UtilizationScoreCalculator()
+        calc._BOUNDS_DEFAULT_PATH = path
+        with caplog.at_level(logging.WARNING):
+            calc._ensure_bounds_loaded()
+        zero_width_warnings = [
+            r for r in caplog.records if "zero-width" in r.message.lower()
+        ]
+        assert len(zero_width_warnings) == 0
+
+
 class TestBoundsMetadata:
     """Verify that bounds metadata tracks training provenance."""
 

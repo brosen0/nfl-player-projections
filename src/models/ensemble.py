@@ -853,8 +853,6 @@ class ModelTrainer:
             # Determine target type from config: "fp" = direct fantasy points, "util" = utilization score
             pos_target_cfg = MODEL_CONFIG.get("position_target_type", {})
             target_type = pos_target_cfg.get(position, "util")
-            if position == "QB":
-                target_type = "fp"  # QB always uses FP (or dual-train above)
 
             # Prepare targets
             y_dict = {}
