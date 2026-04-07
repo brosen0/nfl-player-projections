@@ -33,6 +33,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from config.settings import DATA_DIR, MODELS_DIR, POSITIONS
+from src.utils.leakage import filter_feature_columns
 
 warnings.filterwarnings("ignore", category=UserWarning)
 
@@ -333,6 +334,9 @@ class TimeSeriesBacktester:
                         and pos_train[c].dtype in ("int64", "float64", "int32", "float32")
                     ]
 
+                    # Remove leakage-prone columns (match training pipeline)
+                    feature_cols = filter_feature_columns(feature_cols)
+
                     # Align feature columns between train and test
                     feature_cols = [c for c in feature_cols if c in pos_test.columns]
 
@@ -565,6 +569,85 @@ class TimeSeriesBacktester:
         }
 
     # ------------------------------------------------------------------
+    def compute_baseline_comparison(self) -> Dict[str, Any]:
+        """Compare model predictions against naive baselines.
+
+        Runs trailing-average, season-average, and expert-consensus
+        baselines on the same test data used by the backtest. Returns
+        per-baseline metrics so every report contextualizes R² against
+        what simple methods would achieve.
+        """
+        from src.evaluation.baselines import (
+            trailing_average_baseline,
+            season_average_baseline,
+            expert_consensus_baseline,
+        )
+
+        pred_df = pd.DataFrame(self.predictions)
+        if pred_df.empty or "actual" not in pred_df.columns:
+            return {}
+
+        valid = pred_df.dropna(subset=["actual", "predicted"])
+        if valid.empty:
+            return {}
+
+        # Build a player-week lookup from backtest data for baselines
+        season_data = self.data[self.data["season"] <= self.season].copy()
+        if "fantasy_points" not in season_data.columns:
+            return {}
+
+        baselines = {}
+
+        # Map predictions back to the full dataset for baseline computation
+        baseline_runners = {
+            "trailing_avg_3w": lambda df: trailing_average_baseline(df, n_weeks=3),
+            "season_avg": lambda df: season_average_baseline(df),
+            "expert_consensus": lambda df: expert_consensus_baseline(df),
+        }
+
+        for name, runner in baseline_runners.items():
+            try:
+                season_data_sorted = season_data.sort_values(
+                    ["player_id", "season", "week"]
+                ).reset_index(drop=True)
+                baseline_preds = runner(season_data_sorted)
+
+                # Extract baseline predictions for the test season only
+                test_mask = season_data_sorted["season"] == self.season
+                test_baseline = baseline_preds[test_mask]
+                test_actual = season_data_sorted.loc[test_mask, "fantasy_points"]
+
+                # Align and drop NaN
+                combined = pd.DataFrame({
+                    "actual": test_actual.values,
+                    "baseline_pred": test_baseline.values,
+                })
+                combined = combined.dropna()
+
+                if len(combined) < 10:
+                    continue
+
+                bl_metrics = _calc_metrics(combined["actual"], combined["baseline_pred"])
+                baselines[name] = _serialize_metrics(bl_metrics)
+            except Exception as e:
+                baselines[name] = {"error": str(e)}
+
+        # Add model metrics for direct comparison
+        model_metrics = _calc_metrics(valid["actual"], valid["predicted"])
+        baselines["model"] = _serialize_metrics(model_metrics)
+
+        # Flag whether model beats each baseline
+        model_rmse = model_metrics.get("rmse", float("inf"))
+        for name in list(baselines.keys()):
+            if name == "model":
+                continue
+            bl = baselines[name]
+            if isinstance(bl, dict) and "rmse" in bl and bl["rmse"] is not None:
+                baselines[name]["model_beats_baseline"] = model_rmse < bl["rmse"]
+
+        return baselines
+
+    # ------------------------------------------------------------------
     def get_results_dict(self) -> Dict[str, Any]:
         """Return results as a JSON-serializable dict."""
         pred_df = pd.DataFrame(self.predictions)
@@ -606,10 +689,12 @@ class TimeSeriesBacktester:
                 k: _serialize_metrics(v) for k, v in scenarios.items()
             } if scenarios else {},
             "friction_analysis": friction,
+            "baselines": self.compute_baseline_comparison(),
             "diagnostics": {
                 "model_refit_per_week": True,
                 "expanding_window": True,
                 "leakage_check_passed": True,
+                "leakage_filter_applied": True,
                 "scaling_fit_on_train_only": True,
                 "feature_engineering_per_fold": True,
             },
