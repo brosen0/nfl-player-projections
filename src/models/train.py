@@ -843,10 +843,24 @@ def train_models(positions: list = None,
             print(f"  ✗ {failure}")
         print("\nFix the data issues above and re-run. Use --skip-cache-check to bypass (not recommended).")
         import json
+        import numpy as np
+
+        class _NumpyEncoder(json.JSONEncoder):
+            def default(self, obj):
+                if isinstance(obj, (np.bool_,)):
+                    return bool(obj)
+                if isinstance(obj, (np.integer,)):
+                    return int(obj)
+                if isinstance(obj, (np.floating,)):
+                    return float(obj)
+                if isinstance(obj, np.ndarray):
+                    return obj.tolist()
+                return super().default(obj)
+
         gate_path = MODELS_DIR / "data_integrity_gate_report.json"
         gate_path.parent.mkdir(parents=True, exist_ok=True)
         with open(gate_path, "w") as f:
-            json.dump(cache_result.report, f, indent=2)
+            json.dump(cache_result.report, f, indent=2, cls=_NumpyEncoder)
         print(f"Full report: {gate_path}")
         return
     else:
