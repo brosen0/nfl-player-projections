@@ -809,7 +809,8 @@ def train_models(positions: list = None,
                  optimize_training_years: bool = False,
                  walk_forward: bool = False,
                  strict_requirements: bool = None,
-                 fast: bool = False):
+                 fast: bool = False,
+                 skip_cache_check: bool = False):
     """
     Main training function with automatic train/test split.
 
@@ -834,8 +835,12 @@ def train_models(positions: list = None,
         strict_requirements = bool(MODEL_CONFIG.get("strict_requirements_default", False))
 
     # Pre-training data integrity gate — block on critical cache corruption
-    cache_result = validate_training_cache_integrity()
-    if not cache_result.passed:
+    if skip_cache_check:
+        print("⚠ Skipping data integrity gate (--skip-cache-check)")
+        cache_result = None
+    else:
+        cache_result = validate_training_cache_integrity()
+    if cache_result is not None and not cache_result.passed:
         print("\n" + "=" * 60)
         print("TRAINING BLOCKED: Data integrity gate FAILED")
         print("=" * 60)
@@ -1526,6 +1531,12 @@ def main():
              "Reduces Optuna trials, CV folds, stability bootstrap, LSTM/deep epochs, "
              "and skips SHAP/PDP and robust CV report."
     )
+    parser.add_argument(
+        "--skip-cache-check",
+        action="store_true",
+        help="Skip the data integrity gate (not recommended). Use when the gate "
+             "fails on stale cache and you want to retrain with fresh data loading."
+    )
     args = parser.parse_args()
 
     train_models(
@@ -1537,6 +1548,7 @@ def main():
         walk_forward=args.walk_forward,
         strict_requirements=args.strict_requirements,
         fast=args.fast,
+        skip_cache_check=args.skip_cache_check,
     )
 
 
