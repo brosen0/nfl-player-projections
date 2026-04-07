@@ -186,7 +186,7 @@ def load_player_weekly_stats(db_path: Optional[Path] = None) -> pd.DataFrame:
                 p.position,
                 pws.snap_count,
                 pws.targets,
-                pws.carries,
+                pws.rushing_attempts,
                 pws.passing_attempts,
                 pws.fantasy_points
             FROM player_weekly_stats pws

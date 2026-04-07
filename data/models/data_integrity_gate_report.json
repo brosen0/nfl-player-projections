@@ -1,0 +1,43 @@
+{
+  "generated_at": "2026-04-07T04:17:04.162326+00:00",
+  "status": "fail",
+  "checks": {
+    "cache_exists": {
+      "passed": true,
+      "rows": 101697
+    },
+    "snap_data_populated": {
+      "passed": false,
+      "nonzero_snap_rows": 0
+    },
+    "no_duplicates": {
+      "passed": true,
+      "duplicate_rows": 0
+    },
+    "fantasy_points_formula": {
+      "passed": true,
+      "rows_with_diff_gt_1": 0,
+      "mean_abs_diff": 0.0029
+    },
+    "no_ghost_rows": {
+      "passed": true,
+      "ghost_rows": 0,
+      "ghost_pct": 0.0
+    },
+    "position_coverage": {
+      "passed": true,
+      "counts": {
+        "WR": 44064,
+        "RB": 26628,
+        "TE": 18130,
+        "QB": 12786,
+        "K": 57,
+        "DST": 32
+      },
+      "missing": []
+    }
+  },
+  "failures": [
+    "snap_count is zero for every row \u2014 snap data ingestion has failed"
+  ]
+}
