@@ -541,11 +541,10 @@ class UtilizationScoreCalculator:
             lo, hi = bounds
             if hi > lo:
                 return ((series - lo) / (hi - lo) * 100).clip(0, 100)
-            # Zero-width bounds: training data was constant (likely all zeros from missing data).
-            # Fall back to rank-based percentile so real values get meaningful scores.
-            if series.nunique() <= 1:
-                return pd.Series(50.0, index=series.index)
-            return series.rank(pct=True) * 100
+            # Zero-width bounds: training data was constant (likely all zeros
+            # or missing data). Return neutral score; do NOT rank within
+            # current data — that leaks test-set information.
+            return pd.Series(50.0, index=series.index)
         return series.rank(pct=True, na_option="bottom") * 100
 
     _BOUNDS_DEFAULT_PATH = Path(__file__).parent.parent.parent / "data" / "utilization_percentile_bounds.json"
@@ -584,6 +583,14 @@ class UtilizationScoreCalculator:
         """Auto-load persisted percentile bounds if none are in memory."""
         if not self.position_percentiles and self._BOUNDS_DEFAULT_PATH.exists():
             self.position_percentiles = load_percentile_bounds(self._BOUNDS_DEFAULT_PATH)
+            # Warn about zero-width bounds so issues are visible in logs
+            for (pos, col), (lo, hi) in self.position_percentiles.items():
+                if lo == hi:
+                    logger.warning(
+                        "Loaded zero-width percentile bounds for %s|%s: "
+                        "lo=hi=%.4f. Neutral score (50.0) will be used.",
+                        pos, col, lo,
+                    )
     
     def get_utilization_tier(self, score: float, position: str) -> str:
         """

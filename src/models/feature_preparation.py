@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 from sklearn.preprocessing import MinMaxScaler
 
-from config.settings import POSITIONS, MODELS_DIR
+from config.settings import POSITIONS, MODELS_DIR, MODEL_CONFIG
 from src.features.feature_engineering import FeatureEngineer, PositionFeatureEngineer
 from src.features.utilization_score import (
     calculate_utilization_scores,
@@ -406,10 +406,16 @@ def _prepare_training_data(
         n_weeks_list=[1, 4, 18], test_data=None if fast else test_data,
     )
 
-    # Utilization -> FP conversion
-    try:
-        train_utilization_to_fp_per_position(train_data, positions=["RB", "WR", "TE", "QB"])
-    except Exception as e:
-        logger.warning("Utilization-to-FP conversion training skipped: %s", e)
+    # Utilization -> FP conversion (only for positions trained on util targets)
+    pos_target_cfg = MODEL_CONFIG.get("position_target_type", {})
+    converter_positions = [
+        pos for pos in ["RB", "WR", "TE", "QB"]
+        if pos_target_cfg.get(pos, "util") != "fp"
+    ]
+    if converter_positions:
+        try:
+            train_utilization_to_fp_per_position(train_data, positions=converter_positions)
+        except Exception as e:
+            logger.warning("Utilization-to-FP conversion training skipped: %s", e)
 
     return train_data, test_data, trainer
