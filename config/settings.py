@@ -249,9 +249,48 @@ FAST_MODEL_CONFIG = {
 }
 
 # =============================================================================
+# FEATURE MODE: "full" (400+ features) or "causal" (7-8 per position)
+# =============================================================================
+# Council recommendation (2026-04-01): strip to 5-10 causal features with
+# demonstrated causal relationships to production. Full mode remains default;
+# causal mode is opt-in for evaluation and comparison.
+FEATURE_MODE = os.environ.get("NFL_FEATURE_MODE", "full")
+
+CAUSAL_ROLLING_WINDOW = 3  # Only rolling window used in causal mode
+
+# Per-position causal feature lists: opportunity shares, short-window volume,
+# one efficiency metric, opponent context, and Vegas implied total.
+CAUSAL_FEATURES = {
+    "RB": [
+        "snap_share_pct", "rush_share_pct", "target_share_pct",
+        "rushing_attempts_roll3_mean", "targets_roll3_mean",
+        "yards_per_carry_roll3_mean",
+        "opp_fpts_allowed", "implied_team_total",
+    ],
+    "WR": [
+        "snap_share_pct", "target_share_pct", "air_yards_share_pct",
+        "targets_roll3_mean", "receptions_roll3_mean",
+        "yards_per_target_roll3_mean",
+        "opp_fpts_allowed", "implied_team_total",
+    ],
+    "TE": [
+        "snap_share_pct", "target_share_pct",
+        "targets_roll3_mean", "receptions_roll3_mean",
+        "yards_per_target_roll3_mean",
+        "opp_fpts_allowed", "implied_team_total",
+    ],
+    "QB": [
+        "snap_share_pct",
+        "passing_attempts_roll3_mean", "rushing_attempts_roll3_mean",
+        "yards_per_attempt_roll3_mean", "completion_pct_roll3_mean",
+        "opp_fpts_allowed", "implied_team_total",
+    ],
+}
+
+# =============================================================================
 # TRAINING DATA WINDOW
 # =============================================================================
-# 
+#
 # The NFL has evolved significantly over time:
 #   - 2000-2010: Run-heavy offenses, fewer spread concepts
 #   - 2011-2019: Pass-first revolution, RPO emergence

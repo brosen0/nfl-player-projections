@@ -479,7 +479,11 @@ def select_features_simple(X: pd.DataFrame, y: pd.Series,
 
     Fits on X, y. Returns (X with selected columns only, list of selected feature names).
     """
-    from config.settings import MODEL_CONFIG
+    from config.settings import MODEL_CONFIG, FEATURE_MODE
+    if FEATURE_MODE == "causal":
+        # Causal mode: features are already the final set — no further selection.
+        cols = list(X.columns)
+        return X, cols
     n_cols_in = len(X.columns)
     X = X.copy().fillna(0).replace([np.inf, -np.inf], np.nan).fillna(0)
 

@@ -948,82 +948,94 @@ class ModelTrainer:
                     decay = np.power(0.5, (max_season - seasons.values.astype(float)) / float(halflife))
                     sample_weight = decay / decay.max()
             
-            # Per-horizon feature selection: select features relevant to each horizon's target
-            from src.features.dimensionality_reduction import adaptive_feature_count
-            base_n = MODEL_CONFIG.get("n_features_per_position", 50)
-            if MODEL_CONFIG.get("adaptive_feature_count", True):
-                n_features = adaptive_feature_count(len(X), default=base_n)
+            # Feature selection: causal mode uses predefined feature lists;
+            # full mode runs correlation/MI/VIF selection pipeline.
+            from config.settings import FEATURE_MODE, CAUSAL_FEATURES
+            if FEATURE_MODE == "causal":
+                causal_cols = CAUSAL_FEATURES.get(position, [])
+                available_causal = [c for c in causal_cols if c in X.columns]
+                if available_causal:
+                    X = X[available_causal]
+                print(f"  Causal mode: using {len(X.columns)} features for {position}: "
+                      f"{list(X.columns)}", flush=True)
+
             else:
-                n_features = base_n
-            corr_thresh = MODEL_CONFIG.get("correlation_threshold", 0.92)
-            val_pct = float(MODEL_CONFIG.get("validation_pct", 0.2))
-            fs_split = int(len(X) * (1 - val_pct))
+                # Per-horizon feature selection: select features relevant to each horizon's target
+                from src.features.dimensionality_reduction import adaptive_feature_count
+                base_n = MODEL_CONFIG.get("n_features_per_position", 50)
+                if MODEL_CONFIG.get("adaptive_feature_count", True):
+                    n_features = adaptive_feature_count(len(X), default=base_n)
+                else:
+                    n_features = base_n
+                corr_thresh = MODEL_CONFIG.get("correlation_threshold", 0.92)
+                val_pct = float(MODEL_CONFIG.get("validation_pct", 0.2))
+                fs_split = int(len(X) * (1 - val_pct))
 
-            if len(X.columns) > n_features:
-                # Select features separately per horizon for better horizon-specific modeling
-                # skip_vif=True here because a final VIF prune runs on the union below
-                horizon_features = {}
-                for n_weeks, y_horizon in y_dict.items():
-                    print(f"  Feature selection for {n_weeks}w horizon ({len(X.columns)} candidates)...",
-                          flush=True)
-                    y_fs = y_horizon.iloc[:fs_split]
-                    X_fs = X.iloc[:fs_split]
-                    _, sel_cols = select_features_simple(
-                        X_fs, y_fs,
-                        n_features=n_features,
-                        correlation_threshold=corr_thresh,
-                        skip_vif=True,
-                    )
-                    horizon_features[n_weeks] = sel_cols if sel_cols else list(X.columns)
+                if len(X.columns) > n_features:
+                    # Select features separately per horizon for better horizon-specific modeling
+                    # skip_vif=True here because a final VIF prune runs on the union below
+                    horizon_features = {}
+                    for n_weeks, y_horizon in y_dict.items():
+                        print(f"  Feature selection for {n_weeks}w horizon ({len(X.columns)} candidates)...",
+                              flush=True)
+                        y_fs = y_horizon.iloc[:fs_split]
+                        X_fs = X.iloc[:fs_split]
+                        _, sel_cols = select_features_simple(
+                            X_fs, y_fs,
+                            n_features=n_features,
+                            correlation_threshold=corr_thresh,
+                            skip_vif=True,
+                        )
+                        horizon_features[n_weeks] = sel_cols if sel_cols else list(X.columns)
 
-                # Union all horizon features (each model gets its optimal features,
-                # but we pass the union so MultiWeekModel can train each horizon)
-                all_selected = set()
-                for cols in horizon_features.values():
-                    all_selected.update(cols)
+                    # Union all horizon features (each model gets its optimal features,
+                    # but we pass the union so MultiWeekModel can train each horizon)
+                    all_selected = set()
+                    for cols in horizon_features.values():
+                        all_selected.update(cols)
 
-                # Stability selection: boost features consistently selected across bootstrap Lasso
+                    # Stability selection: boost features consistently selected across bootstrap Lasso
+                    try:
+                        from src.models.feature_engineering_pipeline import StabilitySelector
+                        y_primary = y_dict.get(1, list(y_dict.values())[0])
+                        stability_n_bootstrap = MODEL_CONFIG.get("stability_n_bootstrap", 30)
+                        stability_sel = StabilitySelector(n_bootstrap=stability_n_bootstrap, threshold=0.5)
+                        stable_features = stability_sel.fit(
+                            X.iloc[:fs_split], y_primary.iloc[:fs_split],
+                            n_features_to_select=n_features
+                        )
+                        if stable_features:
+                            # Add stability-selected features to the union
+                            pre_count = len(all_selected)
+                            all_selected.update(stable_features)
+                            n_added = len(all_selected) - pre_count
+                            if n_added > 0:
+                                print(f"  Stability selection added {n_added} features", flush=True)
+                    except Exception as e:
+                        import logging
+                        logging.getLogger(__name__).warning("Stability selection skipped: %s", e)
+
+                    X = X[sorted(all_selected)]
+                    print(f"  Selected {len(X.columns)} features for {position} "
+                          f"(union across {len(y_dict)} horizons + stability)", flush=True)
+
+                # Actionable VIF pruning: iteratively drop highest-VIF feature
+                # Compute VIF on training portion only to avoid val→train leakage
+                print(f"  Running final VIF pruning on {X.shape[1]} features...", flush=True)
                 try:
-                    from src.models.feature_engineering_pipeline import StabilitySelector
-                    y_primary = y_dict.get(1, list(y_dict.values())[0])
-                    stability_n_bootstrap = MODEL_CONFIG.get("stability_n_bootstrap", 30)
-                    stability_sel = StabilitySelector(n_bootstrap=stability_n_bootstrap, threshold=0.5)
-                    stable_features = stability_sel.fit(
-                        X.iloc[:fs_split], y_primary.iloc[:fs_split],
-                        n_features_to_select=n_features
-                    )
-                    if stable_features:
-                        # Add stability-selected features to the union
-                        pre_count = len(all_selected)
-                        all_selected.update(stable_features)
-                        n_added = len(all_selected) - pre_count
-                        if n_added > 0:
-                            print(f"  Stability selection added {n_added} features", flush=True)
+                    from src.features.dimensionality_reduction import prune_by_vif
+                    vif_thresh = MODEL_CONFIG.get("vif_threshold", 10.0)
+                    pre_vif_count = X.shape[1]
+                    _, vif_removed = prune_by_vif(X.iloc[:fs_split], threshold=vif_thresh)
+                    if vif_removed:
+                        X = X.drop(columns=vif_removed)
+                        print(f"  VIF pruning: removed {len(vif_removed)} features (VIF>{vif_thresh}), "
+                              f"{pre_vif_count} -> {X.shape[1]}", flush=True)
+                    else:
+                        print(f"  Multicollinearity: OK (all VIF <= {vif_thresh})", flush=True)
                 except Exception as e:
                     import logging
-                    logging.getLogger(__name__).warning("Stability selection skipped: %s", e)
-
-                X = X[sorted(all_selected)]
-                print(f"  Selected {len(X.columns)} features for {position} "
-                      f"(union across {len(y_dict)} horizons + stability)", flush=True)
-
-            # Actionable VIF pruning: iteratively drop highest-VIF feature
-            # Compute VIF on training portion only to avoid val→train leakage
-            print(f"  Running final VIF pruning on {X.shape[1]} features...", flush=True)
-            try:
-                from src.features.dimensionality_reduction import prune_by_vif
-                vif_thresh = MODEL_CONFIG.get("vif_threshold", 10.0)
-                pre_vif_count = X.shape[1]
-                _, vif_removed = prune_by_vif(X.iloc[:fs_split], threshold=vif_thresh)
-                if vif_removed:
-                    X = X.drop(columns=vif_removed)
-                    print(f"  VIF pruning: removed {len(vif_removed)} features (VIF>{vif_thresh}), "
-                          f"{pre_vif_count} -> {X.shape[1]}", flush=True)
-                else:
-                    print(f"  Multicollinearity: OK (all VIF <= {vif_thresh})", flush=True)
-            except Exception as e:
-                import logging
-                logging.getLogger(__name__).warning("VIF pruning failed: %s", e)
+                    logging.getLogger(__name__).warning("VIF pruning failed: %s", e)
 
             # Extract season labels for season-aware CV splits
             seasons_arr = None
