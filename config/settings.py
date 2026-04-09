@@ -194,9 +194,10 @@ MODEL_CONFIG = {
     "cv_gap_seasons": 1,  # Gap between train and val for purged CV (1 = purge last season before test)
     # Per-position target override: "fp" trains directly on fantasy points (no util conversion),
     # "util" trains on utilization score then converts to FP (original two-stage approach).
-    # QB/WR/TE use "fp" because the two-stage approach produces negative R² for these positions.
-    # RB uses "util" as it still benefits from the utilization-based approach.
-    "position_target_type": {"QB": "fp", "RB": "util", "WR": "fp", "TE": "fp"},
+    # Target type per position: "fp" (direct), "util" (two-stage), "component" (predict stats, assemble FP).
+    # Component mode predicts individual stat lines (yards, TDs, receptions) then assembles fantasy points.
+    # Council Phase 2: component prediction has higher per-component autocorrelation and lower TD noise.
+    "position_target_type": {"QB": "component", "RB": "component", "WR": "component", "TE": "component"},
     # Horizon-specific models (per requirements): 4w LSTM+ARIMA, 18w deep feedforward
     "use_4w_hybrid": True,   # Use Hybrid4WeekModel for n_weeks in 4w band when TF available
     "use_18w_deep": True,   # Use DeepSeasonLongModel for long horizon when TF available
@@ -285,6 +286,34 @@ CAUSAL_FEATURES = {
         "yards_per_attempt_roll3_mean", "completion_pct_roll3_mean",
         "opp_fpts_allowed", "implied_team_total",
     ],
+}
+
+# =============================================================================
+# COMPONENT PREDICTION (predict stat lines, assemble fantasy points)
+# =============================================================================
+# Council Phase 2: predict stable components separately (targets, receptions,
+# yards, TDs) then assemble FP from those predictions.  Each component has
+# higher autocorrelation and lower touchdown contamination than raw FP.
+
+# PPR scoring weights: stat_column -> points_per_unit
+PPR_SCORING_WEIGHTS = {
+    "passing_yards": 0.04,
+    "passing_tds": 4.0,
+    "interceptions": -2.0,
+    "rushing_yards": 0.1,
+    "rushing_tds": 6.0,
+    "receiving_yards": 0.1,
+    "receiving_tds": 6.0,
+    "receptions": 1.0,
+    "fumbles_lost": -2.0,
+}
+
+# Which stat components to predict per position (only the meaningful ones)
+COMPONENT_TARGETS = {
+    "QB": ["passing_yards", "passing_tds", "interceptions", "rushing_yards", "rushing_tds"],
+    "RB": ["rushing_yards", "rushing_tds", "receptions", "receiving_yards", "receiving_tds"],
+    "WR": ["receptions", "receiving_yards", "receiving_tds"],
+    "TE": ["receptions", "receiving_yards", "receiving_tds"],
 }
 
 # =============================================================================

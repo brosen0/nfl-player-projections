@@ -106,6 +106,7 @@ class EnsemblePredictor:
     def __init__(self):
         self.position_models: Dict[str, MultiWeekModel] = {}
         self.single_week_models: Dict[str, PositionModel] = {}
+        self.component_predictors: Dict[str, Any] = {}  # ComponentPredictor per position
         self.util_to_fp: Dict[str, UtilizationToFPConverter] = {}
         self.hybrid_4w: Dict[str, Any] = {}
         self.deep_18w: Dict[str, Any] = {}
@@ -174,6 +175,18 @@ class EnsemblePredictor:
                         print(f"Loaded single-week model for {position}")
             except Exception as e:
                 print(f"Warning: Could not load model for {position}: {e}")
+
+            # Try to load component predictor
+            comp_path = MODELS_DIR / f"component_{position.lower()}.json"
+            if comp_path.exists():
+                try:
+                    import json
+                    from src.models.component_predictor import ComponentPredictor
+                    with open(comp_path) as f:
+                        self.component_predictors[position] = ComponentPredictor.from_dict(json.load(f))
+                    print(f"Loaded component predictor for {position}")
+                except Exception as e:
+                    print(f"Warning: Could not load component predictor for {position}: {e}")
 
         for pos in POSITIONS:
             try:
@@ -461,7 +474,15 @@ class EnsemblePredictor:
                 continue
             
             pos_data = results[mask].copy()
-            
+
+            # Component prediction path: predict stat components, assemble FP
+            if position in self.component_predictors:
+                cp = self.component_predictors[position]
+                fp_pred = cp.predict(pos_data)
+                results.loc[mask, "predicted_points"] = fp_pred * n_weeks
+                results.loc[mask, "predicted_utilization"] = fp_pred * n_weeks
+                continue
+
             # Ensure feature consistency: fill missing columns with training medians
             def _fill_missing_features(data, pm):
                 pos_model = pm.models.get(1) or list(pm.models.values())[0]
@@ -855,8 +876,9 @@ class ModelTrainer:
     
     def __init__(self):
         self.trained_models: Dict[str, PositionModel] = {}
+        self.component_predictors: Dict[str, Any] = {}
         self.training_metrics: Dict[str, Dict] = {}
-    
+
     def train_all_positions(self, data: pd.DataFrame,
                             positions: List[str] = None,
                             tune_hyperparameters: bool = True,
@@ -941,9 +963,89 @@ class ModelTrainer:
             # Single model path (RB, WR, TE or QB fallback)
             multi_model = MultiWeekModel(position)
 
-            # Determine target type from config: "fp" = direct fantasy points, "util" = utilization score
+            # Determine target type: "fp", "util", or "component"
             pos_target_cfg = MODEL_CONFIG.get("position_target_type", {})
             target_type = pos_target_cfg.get(position, "util")
+
+            # Component prediction path: predict stat lines, assemble FP
+            if target_type == "component":
+                from src.models.component_predictor import ComponentPredictor
+                from config.settings import COMPONENT_TARGETS
+                comp_pred = ComponentPredictor(position)
+                comp_targets = COMPONENT_TARGETS.get(position, [])
+
+                # Build component targets: next-week stat values
+                y_components = {}
+                for comp in comp_targets:
+                    if comp in pos_data.columns:
+                        y_components[comp] = pos_data.groupby("player_id")[comp].transform(
+                            lambda x: x.shift(-1)
+                        )
+
+                # Get feature columns (same logic as fp/util path below)
+                exclude_cols = [
+                    "player_id", "name", "position", "team", "season", "week",
+                    "fantasy_points", "target", "opponent", "home_away",
+                    "created_at", "updated_at", "id", "birth_date", "college",
+                    "game_id", "game_time",
+                    "fp_over_expected", "expected_fp",
+                    "utilization_score",
+                ]
+                feature_cols = [c for c in pos_data.columns
+                                if c not in exclude_cols
+                                and not c.startswith("target_")
+                                and pos_data[c].dtype in ("int64", "float64", "int32", "float32")]
+                from src.utils.leakage import filter_feature_columns
+                feature_cols = filter_feature_columns(feature_cols)
+
+                # Apply causal feature filter if active
+                from config.settings import FEATURE_MODE, CAUSAL_FEATURES
+                if FEATURE_MODE == "causal":
+                    causal_cols = CAUSAL_FEATURES.get(position, [])
+                    feature_cols = [c for c in causal_cols if c in pos_data.columns]
+
+                # Filter to rows with valid targets for at least one component
+                any_valid = pd.Series(False, index=pos_data.index)
+                for comp, y in y_components.items():
+                    any_valid = any_valid | y.notna()
+                valid_mask = any_valid & pos_data[feature_cols].notna().all(axis=1)
+
+                X = pos_data.loc[valid_mask, feature_cols].fillna(0)
+                y_comp_valid = {k: v[valid_mask] for k, v in y_components.items()}
+
+                # Recency weighting (same as fp/util path)
+                sample_weight = None
+                halflife = MODEL_CONFIG.get("recency_decay_halflife")
+                if halflife and "season" in pos_data.columns:
+                    seasons = pos_data.loc[valid_mask, "season"]
+                    max_season = seasons.max()
+                    if max_season > seasons.min():
+                        decay = np.power(0.5, (max_season - seasons.values.astype(float)) / float(halflife))
+                        sample_weight = decay / decay.max()
+
+                print(f"  {position}: component mode — training {len(comp_targets)} "
+                      f"component models on {len(X)} rows with {len(feature_cols)} features",
+                      flush=True)
+
+                comp_pred.fit(X, y_comp_valid, sample_weight=sample_weight)
+
+                if comp_pred.is_fitted:
+                    self.component_predictors[position] = comp_pred
+                    self.trained_models[position] = None  # placeholder
+                    # Save component predictor
+                    import json as _json
+                    comp_save_path = MODELS_DIR / f"component_{position.lower()}.json"
+                    with open(comp_save_path, "w") as f:
+                        _json.dump(comp_pred.to_dict(), f, indent=2)
+                    print(f"  {position}: component models trained: "
+                          f"{list(comp_pred.models.keys())}", flush=True)
+                else:
+                    print(f"  WARNING: {position} component prediction failed, "
+                          f"falling back to fp mode", flush=True)
+                    target_type = "fp"  # fall through to normal path
+
+            if target_type == "component" and position in self.component_predictors:
+                continue
 
             # Prepare targets
             y_dict = {}
