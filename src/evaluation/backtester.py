@@ -1640,9 +1640,11 @@ def run_backtest(test_season: int = None) -> Tuple[Dict, str]:
         for tier_name, mask in tiers.items():
             if mask.sum() < 5:
                 continue
-            sub = test_data.loc[mask]
+            sub = test_data.loc[mask].dropna(subset=["fantasy_points", "predicted_points"])
+            if len(sub) < 5:
+                continue
             by_tier[tier_name] = {
-                "n_samples": int(mask.sum()),
+                "n_samples": int(len(sub)),
                 "rmse": float(np.sqrt(mean_squared_error(sub["fantasy_points"], sub["predicted_points"]))),
                 "mae": float(mean_absolute_error(sub["fantasy_points"], sub["predicted_points"])),
             }
