@@ -21,7 +21,7 @@ from src.evaluation.metrics import (
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from config.settings import POSITIONS, DATA_DIR, MODELS_DIR, MODEL_CONFIG
+from config.settings import POSITIONS, DATA_DIR, MODELS_DIR, MODEL_CONFIG, LOYO_CONFIG
 
 
 class ModelBacktester:
@@ -1887,6 +1887,246 @@ def run_multi_season_backtest(n_seasons: int = 3) -> Dict:
         json.dump(agg, f, indent=2, default=str)
     print(f"Summary saved to {out_path}")
     return agg
+
+
+def run_loyo_backtest(
+    test_seasons: List[int] = None,
+    positions: List[str] = None,
+    tune_hyperparameters: bool = True,
+    n_trials: int = None,
+    fast: bool = False,
+    strict_requirements: bool = None,
+    _fold_runner=None,
+    _data_loader=None,
+) -> Dict:
+    """
+    LOYO walk-forward backtest: train a fresh model per fold, test on each season.
+
+    For each test season, trains on all prior seasons (minus purge gap), predicts
+    on the test season, and computes full metrics. Aggregates across folds with
+    stability diagnostics.
+
+    Args:
+        test_seasons: Seasons to test on. None = use LOYO_CONFIG range.
+        positions: Positions to evaluate. None = all.
+        tune_hyperparameters: Whether to run Optuna tuning per fold.
+        n_trials: Optuna trials override.
+        fast: Use FAST_MODEL_CONFIG overrides.
+        strict_requirements: Fail on insufficient data (None = use config default).
+        _fold_runner: Override for _run_one_fold (testing only).
+        _data_loader: Override for load_training_data (testing only).
+
+    Returns:
+        Dict with per_fold results, aggregate metrics, and stability diagnostics.
+    """
+    import tempfile
+    from scipy.stats import spearmanr
+    import config.settings as settings
+
+    if _fold_runner is None:
+        from src.models.train import _run_one_fold
+        _fold_runner = _run_one_fold
+    if _data_loader is None:
+        from src.models.data_loading import load_training_data
+        _data_loader = load_training_data
+
+    positions = positions or POSITIONS
+
+    # Determine test seasons
+    if test_seasons is None:
+        dm = DataManager()
+        available = sorted(
+            dm.check_data_availability().get("available_seasons", [])
+            or dm.get_available_seasons_from_db()
+        )
+        start = LOYO_CONFIG["default_test_seasons_start"]
+        end = LOYO_CONFIG["default_test_seasons_end"]
+        if end is None:
+            end = available[-1] if available else start
+        min_train = LOYO_CONFIG["min_train_seasons"] + LOYO_CONFIG["purge_gap"]
+        test_seasons = [
+            s for s in available
+            if start <= s <= end
+            and sum(1 for a in available if a < s) >= min_train
+        ]
+
+    if not test_seasons:
+        print("No valid test seasons for LOYO backtest.")
+        return {}
+
+    print("=" * 60)
+    print("LOYO WALK-FORWARD BACKTEST")
+    print("=" * 60)
+    print(f"Test seasons: {test_seasons}")
+    print(f"Purge gap: {LOYO_CONFIG['purge_gap']} season(s)")
+    print(f"Fast mode: {fast}")
+
+    per_fold = []
+    old_models_dir = settings.MODELS_DIR
+
+    for fold_idx, ts in enumerate(test_seasons):
+        print(f"\n{'─' * 60}")
+        print(f"Fold {fold_idx + 1}/{len(test_seasons)}: test season {ts}")
+        print(f"{'─' * 60}")
+        try:
+            td, td_test, tr_ss, _ = _data_loader(
+                positions,
+                test_season=ts,
+                optimize_training_years=False,
+                strict_requirements=strict_requirements,
+            )
+        except Exception as e:
+            print(f"  Skipping fold {ts}: data load failed ({e})")
+            continue
+        if len(td_test) < 20:
+            print(f"  Skipping fold {ts}: only {len(td_test)} test rows (<20)")
+            continue
+
+        with tempfile.TemporaryDirectory() as tmp:
+            settings.MODELS_DIR = Path(tmp)
+            try:
+                _, res = _fold_runner(
+                    td, td_test, tr_ss, ts, positions,
+                    tune_hyperparameters, n_trials,
+                )
+                if res and "error" not in res:
+                    res["train_seasons"] = tr_ss
+                    per_fold.append(res)
+                    m = res.get("metrics", {})
+                    print(
+                        f"  => RMSE {m.get('rmse', '?'):.2f}  "
+                        f"MAE {m.get('mae', '?'):.2f}  "
+                        f"R² {m.get('r2', '?'):.3f}  "
+                        f"ρ {m.get('correlation', '?'):.3f}"
+                    )
+                else:
+                    print(f"  Fold {ts} returned no results")
+            except Exception as e:
+                print(f"  Fold {ts} failed: {e}")
+            finally:
+                settings.MODELS_DIR = old_models_dir
+
+    if not per_fold:
+        print("No folds completed successfully.")
+        return {}
+
+    # Aggregate metrics across folds
+    agg_metrics = ["rmse", "mae", "r2", "correlation", "spearman_rho",
+                   "within_5_pts_pct", "within_7_pts_pct",
+                   "tier_classification_accuracy"]
+
+    def _aggregate(values):
+        arr = np.array([v for v in values if v is not None and np.isfinite(v)])
+        if len(arr) == 0:
+            return {"mean": None, "std": None, "min": None, "max": None}
+        return {
+            "mean": round(float(np.mean(arr)), 3),
+            "std": round(float(np.std(arr)), 3),
+            "min": round(float(np.min(arr)), 3),
+            "max": round(float(np.max(arr)), 3),
+        }
+
+    overall_agg = {}
+    for metric in agg_metrics:
+        vals = [f["metrics"].get(metric) for f in per_fold]
+        overall_agg[metric] = _aggregate(vals)
+
+    by_position_agg = {}
+    all_positions = set()
+    for f in per_fold:
+        all_positions.update(f.get("by_position", {}).keys())
+    for pos in sorted(all_positions):
+        by_position_agg[pos] = {}
+        for metric in agg_metrics:
+            vals = [
+                f["by_position"][pos].get(metric)
+                for f in per_fold if pos in f.get("by_position", {})
+            ]
+            by_position_agg[pos][metric] = _aggregate(vals)
+
+    # Stability diagnostics
+    rmse_vals = [f["metrics"].get("rmse") for f in per_fold]
+    r2_vals = [f["metrics"].get("r2") for f in per_fold]
+    rmse_clean = [v for v in rmse_vals if v is not None and np.isfinite(v)]
+    r2_clean = [v for v in r2_vals if v is not None and np.isfinite(v)]
+
+    rmse_cv = float(np.std(rmse_clean) / np.mean(rmse_clean)) if rmse_clean and np.mean(rmse_clean) != 0 else None
+
+    if len(r2_clean) >= 3:
+        rho, pval = spearmanr(range(len(r2_clean)), r2_clean)
+        r2_trend_rho = round(float(rho), 3)
+        r2_trend_pval = round(float(pval), 4)
+    else:
+        r2_trend_rho = None
+        r2_trend_pval = None
+
+    fold_summaries = [
+        {"season": f["season"], "rmse": f["metrics"].get("rmse"), "r2": f["metrics"].get("r2")}
+        for f in per_fold
+    ]
+    worst = max(fold_summaries, key=lambda x: x.get("rmse") or 0)
+    best = min(fold_summaries, key=lambda x: x.get("rmse") or float("inf"))
+
+    result = {
+        "backtest_type": "loyo_walk_forward",
+        "backtest_date": datetime.now().isoformat(),
+        "test_seasons": [f["season"] for f in per_fold],
+        "n_folds": len(per_fold),
+        "n_total_predictions": sum(f.get("n_predictions", 0) for f in per_fold),
+        "per_fold": per_fold,
+        "aggregate": {
+            "overall": overall_agg,
+            "by_position": by_position_agg,
+        },
+        "stability": {
+            "rmse_cv": round(rmse_cv, 3) if rmse_cv is not None else None,
+            "rmse_cv_flag": rmse_cv is not None and rmse_cv > 0.3,
+            "r2_trend_rho": r2_trend_rho,
+            "r2_trend_pval": r2_trend_pval,
+            "worst_fold": worst,
+            "best_fold": best,
+        },
+        "config": {
+            "purge_gap": LOYO_CONFIG["purge_gap"],
+            "tune_hyperparameters": tune_hyperparameters,
+            "n_trials": n_trials,
+            "fast": fast,
+        },
+    }
+
+    # Save results
+    ts_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+    out_path = DATA_DIR / "backtest_results" / f"loyo_backtest_{ts_str}.json"
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(out_path, "w") as f:
+        json.dump(result, f, indent=2, default=str)
+
+    # Print summary
+    print("\n" + "=" * 60)
+    print("LOYO WALK-FORWARD BACKTEST SUMMARY")
+    print("=" * 60)
+    print(f"Folds completed: {len(per_fold)}/{len(test_seasons)}")
+    print(f"Total predictions: {result['n_total_predictions']:,}")
+    o = overall_agg
+    print(f"\nOverall (mean +/- std):")
+    print(f"  RMSE  {o['rmse']['mean']} +/- {o['rmse']['std']}")
+    print(f"  MAE   {o['mae']['mean']} +/- {o['mae']['std']}")
+    print(f"  R²    {o['r2']['mean']} +/- {o['r2']['std']}")
+    print(f"  Corr  {o['correlation']['mean']} +/- {o['correlation']['std']}")
+    print(f"\nBy position:")
+    for pos, pm in sorted(by_position_agg.items()):
+        r = pm.get("rmse", {})
+        r2 = pm.get("r2", {})
+        print(f"  {pos}: RMSE {r.get('mean', '?')} +/- {r.get('std', '?')}  R² {r2.get('mean', '?')} +/- {r2.get('std', '?')}")
+    print(f"\nStability:")
+    print(f"  RMSE CV: {result['stability']['rmse_cv']}" + (" (UNSTABLE > 0.3)" if result['stability']['rmse_cv_flag'] else " (OK)"))
+    if r2_trend_rho is not None:
+        print(f"  R² trend: rho={r2_trend_rho} p={r2_trend_pval}" + (" (degrading)" if r2_trend_rho < -0.5 and (r2_trend_pval or 1) < 0.1 else ""))
+    print(f"  Best fold:  {best['season']} (RMSE {best['rmse']})")
+    print(f"  Worst fold: {worst['season']} (RMSE {worst['rmse']})")
+    print(f"\nResults saved to {out_path}")
+    print("=" * 60)
+    return result
 
 
 def check_success_criteria(backtest_results: Dict) -> Dict:
