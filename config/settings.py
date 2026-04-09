@@ -288,6 +288,19 @@ CAUSAL_FEATURES = {
 }
 
 # =============================================================================
+# CALIBRATION GATE (post-prediction sanity check)
+# =============================================================================
+# Council recommendation: if ensemble prediction deviates from a trailing-
+# average baseline by more than CALIBRATION_GATE_THRESHOLD_PCT, blend it back
+# toward the baseline.  This catches catastrophic over/under-prediction before
+# it reaches downstream consumers (lineup optimizer, start/sit decisions).
+CALIBRATION_GATE_ENABLED = True
+CALIBRATION_GATE_THRESHOLD_PCT = 50.0   # % deviation that triggers blending
+CALIBRATION_GATE_BLEND_WEIGHT = 0.5     # How much to pull toward baseline (0=no pull, 1=full baseline)
+CALIBRATION_GATE_BASELINE_WINDOW = 3    # Trailing-average window (weeks) for baseline
+CALIBRATION_GATE_MIN_HISTORY = 2        # Minimum games of history required to compute baseline
+
+# =============================================================================
 # TRAINING DATA WINDOW
 # =============================================================================
 #
