@@ -138,29 +138,35 @@ def leakage_safe_features(
     test_df: pd.DataFrame,
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
-    Apply feature engineering to train and test separately, then align columns.
-    Rolling/lag features are recomputed on train only so that test features
-    use only data available before the cutoff.
+    Apply feature engineering to train and test separately to prevent leakage.
 
-    For the test fold (a single week), we concatenate train + test, compute
-    features on the whole chronologically-ordered block, then slice out the
-    test rows.  Because rolling/lag features use shift(1), the test rows only
-    see data from prior weeks.
+    Train features are computed from train data only.
+    Test features are computed from the combined (train+test) block so rolling
+    windows have enough history, then only test rows are extracted.
+
+    Why separate passes? Computing features on a combined block and then
+    extracting both halves lets test-period rows influence train-period
+    rolling/positional statistics (train/test contamination). The production
+    training code in feature_preparation._apply_with_temporal_context uses
+    the same two-pass pattern implemented here.
     """
     from src.features.feature_engineering import FeatureEngineer
 
     engineer = FeatureEngineer()
 
-    # Concatenate so rolling windows have enough history for test rows
+    # Step 1: Train features from train data only (no test contamination)
+    train_out = engineer.create_features(train_df.copy(), include_target=False)
+
+    # Step 2: Test features from combined block (test rows see train history)
+    if test_df.empty:
+        return train_out, test_df.copy()
+
     combined = pd.concat([train_df, test_df], ignore_index=True)
     combined = combined.sort_values(["player_id", "season", "week"]).reset_index(
         drop=True
     )
 
     # Mark test rows
-    n_train = len(train_df)
-    combined["_is_test"] = False
-    # We need a more robust way to mark test rows
     test_keys = set()
     for _, row in test_df.iterrows():
         key = (row.get("player_id", ""), int(row.get("season", 0)), int(row.get("week", 0)))
@@ -171,11 +177,8 @@ def leakage_safe_features(
         axis=1,
     )
 
-    # Apply feature engineering on the combined block
     combined = engineer.create_features(combined, include_target=False)
 
-    # Split back
-    train_out = combined[~combined["_is_test"]].drop(columns=["_is_test"])
     test_out = combined[combined["_is_test"]].drop(columns=["_is_test"])
 
     return train_out, test_out
@@ -321,12 +324,15 @@ class TimeSeriesBacktester:
 
                     # Get feature columns: causal mode uses predefined lists;
                     # full mode auto-detects numeric non-target columns.
+                    # If causal mode yields zero features (e.g., synthetic data
+                    # without causal columns), fall back to auto-detection.
                     from config.settings import FEATURE_MODE, CAUSAL_FEATURES
                     if FEATURE_MODE == "causal":
                         causal_cols = CAUSAL_FEATURES.get(position, [])
                         feature_cols = [c for c in causal_cols
                                         if c in pos_train.columns and c in pos_test.columns]
-                    else:
+
+                    if FEATURE_MODE != "causal" or not feature_cols:
                         exclude = {
                             "player_id", "name", "position", "team", "opponent",
                             "season", "week", "home_away", "created_at", "id",
