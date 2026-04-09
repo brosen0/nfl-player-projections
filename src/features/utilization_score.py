@@ -569,11 +569,19 @@ class UtilizationScoreCalculator:
                 continue
             lo, hi = s.quantile(0.01), s.quantile(0.99)
             if lo == hi:
-                logger.warning(
-                    "Zero-width percentile bounds for %s|%s: lo=hi=%.4f "
-                    "(likely missing data). Rank-based fallback will be used at inference.",
-                    position, col, lo,
-                )
+                if col.endswith("_pct") or "rate" in col:
+                    logger.warning(
+                        "Zero-width percentile bounds for %s|%s: lo=hi=%.4f "
+                        "(likely missing data). Expanding to default range [0.0, 100.0].",
+                        position, col, lo,
+                    )
+                    lo, hi = 0.0, 100.0
+                else:
+                    logger.warning(
+                        "Zero-width percentile bounds for %s|%s: lo=hi=%.4f "
+                        "(likely missing data).",
+                        position, col, lo,
+                    )
             self.position_percentiles[(position, col)] = (float(lo), float(hi))
         
         if persist:
