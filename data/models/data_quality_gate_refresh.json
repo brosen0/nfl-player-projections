@@ -1,0 +1,75 @@
+{
+  "generated_at": "2026-04-09T02:45:42.393558+00:00",
+  "status": "fail",
+  "checks": {
+    "freshness": {
+      "passed": true,
+      "expected": {
+        "season": 2025,
+        "week": 18
+      },
+      "observed": {
+        "season": 2025,
+        "week": 21
+      }
+    },
+    "completeness": {
+      "passed": false,
+      "latest_window": {
+        "season": 2025,
+        "week": 21
+      },
+      "missing_teams": [
+        "ARI",
+        "ATL",
+        "BAL",
+        "BUF",
+        "CAR",
+        "CHI",
+        "CIN",
+        "CLE",
+        "DAL",
+        "DET",
+        "GB",
+        "HOU",
+        "IND",
+        "JAX",
+        "KC",
+        "LAC",
+        "LV",
+        "MIA",
+        "MIN",
+        "NO",
+        "NYG",
+        "NYJ",
+        "PHI",
+        "PIT",
+        "SF",
+        "TB",
+        "TEN",
+        "WAS"
+      ],
+      "missing_positions": [],
+      "active_players": 37
+    },
+    "anomalies": {
+      "passed": false,
+      "latest_window": {
+        "season": 2025,
+        "week": 21,
+        "row_count": 37
+      },
+      "baseline_row_count": 220.5,
+      "ratio_vs_baseline": 0.168,
+      "bounds": {
+        "lower": 0.6,
+        "upper": 1.6
+      }
+    }
+  },
+  "latest_observed": {
+    "season": 2025,
+    "week": 21,
+    "rows": 110266
+  }
+}
