@@ -51,7 +51,7 @@ def test_policy_registry_sets_indicator_and_threshold_fail():
 
 
 def test_feature_engineering_policy_is_deterministic_with_partial_missing_data():
-    engineer = FeatureEngineer()
+    engineer = FeatureEngineer(feature_mode="full")
     src = _minimal_df()
 
     first = engineer.create_features(src)

@@ -194,9 +194,10 @@ MODEL_CONFIG = {
     "cv_gap_seasons": 1,  # Gap between train and val for purged CV (1 = purge last season before test)
     # Per-position target override: "fp" trains directly on fantasy points (no util conversion),
     # "util" trains on utilization score then converts to FP (original two-stage approach).
-    # QB/WR/TE use "fp" because the two-stage approach produces negative R² for these positions.
-    # RB uses "util" as it still benefits from the utilization-based approach.
-    "position_target_type": {"QB": "fp", "RB": "util", "WR": "fp", "TE": "fp"},
+    # Target type per position: "fp" (direct), "util" (two-stage), "component" (predict stats, assemble FP).
+    # Component mode predicts individual stat lines (yards, TDs, receptions) then assembles fantasy points.
+    # Council Phase 2: component prediction has higher per-component autocorrelation and lower TD noise.
+    "position_target_type": {"QB": "component", "RB": "component", "WR": "component", "TE": "component"},
     # Horizon-specific models (per requirements): 4w LSTM+ARIMA, 18w deep feedforward
     "use_4w_hybrid": True,   # Use Hybrid4WeekModel for n_weeks in 4w band when TF available
     "use_18w_deep": True,   # Use DeepSeasonLongModel for long horizon when TF available
@@ -249,39 +250,119 @@ FAST_MODEL_CONFIG = {
 }
 
 # =============================================================================
+# FEATURE MODE: "full" (400+ features) or "causal" (7-8 per position)
+# =============================================================================
+# Council recommendation (2026-04-01): strip to 5-10 causal features with
+# demonstrated causal relationships to production. Causal mode is the default
+# per council recommendation; full mode available via NFL_FEATURE_MODE=full.
+FEATURE_MODE = os.environ.get("NFL_FEATURE_MODE", "causal")
+
+CAUSAL_ROLLING_WINDOW = 3  # Only rolling window used in causal mode
+
+# Per-position causal feature lists: opportunity shares, short-window volume,
+# one efficiency metric, opponent context, and Vegas implied total.
+CAUSAL_FEATURES = {
+    "RB": [
+        "snap_share_pct", "rush_share_pct", "target_share_pct",
+        "rushing_attempts_roll3_mean", "targets_roll3_mean",
+        "yards_per_carry_roll3_mean",
+        "opp_fpts_allowed", "implied_team_total",
+    ],
+    "WR": [
+        "snap_share_pct", "target_share_pct", "air_yards_share_pct",
+        "targets_roll3_mean", "receptions_roll3_mean",
+        "yards_per_target_roll3_mean",
+        "opp_fpts_allowed", "implied_team_total",
+    ],
+    "TE": [
+        "snap_share_pct", "target_share_pct",
+        "targets_roll3_mean", "receptions_roll3_mean",
+        "yards_per_target_roll3_mean",
+        "opp_fpts_allowed", "implied_team_total",
+    ],
+    "QB": [
+        "snap_share_pct",
+        "passing_attempts_roll3_mean", "rushing_attempts_roll3_mean",
+        "yards_per_attempt_roll3_mean", "completion_pct_roll3_mean",
+        "opp_fpts_allowed", "implied_team_total",
+    ],
+}
+
+# =============================================================================
+# COMPONENT PREDICTION (predict stat lines, assemble fantasy points)
+# =============================================================================
+# Council Phase 2: predict stable components separately (targets, receptions,
+# yards, TDs) then assemble FP from those predictions.  Each component has
+# higher autocorrelation and lower touchdown contamination than raw FP.
+
+# PPR scoring weights: stat_column -> points_per_unit
+PPR_SCORING_WEIGHTS = {
+    "passing_yards": 0.04,
+    "passing_tds": 4.0,
+    "interceptions": -2.0,
+    "rushing_yards": 0.1,
+    "rushing_tds": 6.0,
+    "receiving_yards": 0.1,
+    "receiving_tds": 6.0,
+    "receptions": 1.0,
+    "fumbles_lost": -2.0,
+}
+
+# Which stat components to predict per position (only the meaningful ones)
+COMPONENT_TARGETS = {
+    "QB": ["passing_yards", "passing_tds", "interceptions", "rushing_yards", "rushing_tds"],
+    "RB": ["rushing_yards", "rushing_tds", "receptions", "receiving_yards", "receiving_tds"],
+    "WR": ["receptions", "receiving_yards", "receiving_tds"],
+    "TE": ["receptions", "receiving_yards", "receiving_tds"],
+}
+
+# =============================================================================
+# CALIBRATION GATE (post-prediction sanity check)
+# =============================================================================
+# Council recommendation: if ensemble prediction deviates from a trailing-
+# average baseline by more than CALIBRATION_GATE_THRESHOLD_PCT, blend it back
+# toward the baseline.  This catches catastrophic over/under-prediction before
+# it reaches downstream consumers (lineup optimizer, start/sit decisions).
+CALIBRATION_GATE_ENABLED = True
+CALIBRATION_GATE_THRESHOLD_PCT = 50.0   # % deviation that triggers blending
+CALIBRATION_GATE_BLEND_WEIGHT = 0.5     # How much to pull toward baseline (0=no pull, 1=full baseline)
+CALIBRATION_GATE_BASELINE_WINDOW = 3    # Trailing-average window (weeks) for baseline
+CALIBRATION_GATE_MIN_HISTORY = 2        # Minimum games of history required to compute baseline
+
+# =============================================================================
 # TRAINING DATA WINDOW
 # =============================================================================
-# 
+#
 # The NFL has evolved significantly over time:
 #   - 2000-2010: Run-heavy offenses, fewer spread concepts
 #   - 2011-2019: Pass-first revolution, RPO emergence
 #   - 2020+: RPO explosion, increased passing efficiency
 #
-# Training on older data (pre-2011) may teach outdated patterns.
-# Default training window: end_year = current NFL season (single source: CURRENT_NFL_SEASON).
-# start_year defaults are explicit so training windows are coherent and overridable.
-TRAINING_START_YEAR_DEFAULT = 2014   # Default first year for training (10+ seasons for 18w model)
+# Training on older data (pre-2018) teaches outdated patterns from a
+# fundamentally different era of NFL football (council recommendation:
+# drop pre-2018 data).  The modern passing game, RPO schemes, and rule
+# changes make pre-2018 data actively harmful for generalization.
+TRAINING_START_YEAR_DEFAULT = 2018   # Modern NFL era (council: drop pre-2018)
 TRAINING_END_YEAR_DEFAULT = CURRENT_NFL_SEASON   # Latest season (same as CURRENT_NFL_SEASON)
 TRAINING_YEARS = {
     "start_year": TRAINING_START_YEAR_DEFAULT,
     "end_year": TRAINING_END_YEAR_DEFAULT,
     "test_years": [TRAINING_END_YEAR_DEFAULT],   # Latest season held out for testing
-    "min_years": 5,
+    "min_years": 3,
 }
 
 # Requirement-derived minimum training seasons per horizon (see docs/fantasy requirements)
 MIN_TRAINING_SEASONS_1W = 3   # 1-week model: min 3, optimal 5+
-MIN_TRAINING_SEASONS_18W = 8  # 18-week model: min 8, optimal 10+
-MIN_TRAINING_SEASONS_4W = 5  # 4-week horizon (LSTM+ARIMA): min 5, optimal 8+
+MIN_TRAINING_SEASONS_18W = 5  # 18-week model: min 5 (adjusted for 2018+ window)
+MIN_TRAINING_SEASONS_4W = 4   # 4-week horizon (LSTM+ARIMA): min 4
 # Per-position minimum players for training (requirements: ~30 QB, 60 RB, 70 WR, 30 TE)
 MIN_PLAYERS_PER_POSITION = {"QB": 30, "RB": 60, "WR": 70, "TE": 30}
 
 # Alternative training windows (end_year = CURRENT_NFL_SEASON; start_year explicit)
 TRAINING_WINDOW_PRESETS = {
-    "modern": {"start_year": MIN_HISTORICAL_YEAR, "end_year": TRAINING_END_YEAR_DEFAULT},
-    "balanced": {"start_year": TRAINING_START_YEAR_DEFAULT, "end_year": TRAINING_END_YEAR_DEFAULT},
-    "extended": {"start_year": 2010, "end_year": TRAINING_END_YEAR_DEFAULT},
-    "full": {"start_year": 2000, "end_year": TRAINING_END_YEAR_DEFAULT},
+    "modern": {"start_year": TRAINING_START_YEAR_DEFAULT, "end_year": TRAINING_END_YEAR_DEFAULT},
+    "extended": {"start_year": 2014, "end_year": TRAINING_END_YEAR_DEFAULT},
+    "full": {"start_year": MIN_HISTORICAL_YEAR, "end_year": TRAINING_END_YEAR_DEFAULT},
 }
 
 # Feature engineering rolling windows (rubric-required windows included).

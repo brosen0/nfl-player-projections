@@ -106,6 +106,7 @@ class EnsemblePredictor:
     def __init__(self):
         self.position_models: Dict[str, MultiWeekModel] = {}
         self.single_week_models: Dict[str, PositionModel] = {}
+        self.component_predictors: Dict[str, Any] = {}  # ComponentPredictor per position
         self.util_to_fp: Dict[str, UtilizationToFPConverter] = {}
         self.hybrid_4w: Dict[str, Any] = {}
         self.deep_18w: Dict[str, Any] = {}
@@ -174,6 +175,18 @@ class EnsemblePredictor:
                         print(f"Loaded single-week model for {position}")
             except Exception as e:
                 print(f"Warning: Could not load model for {position}: {e}")
+
+            # Try to load component predictor
+            comp_path = MODELS_DIR / f"component_{position.lower()}.json"
+            if comp_path.exists():
+                try:
+                    import json
+                    from src.models.component_predictor import ComponentPredictor
+                    with open(comp_path) as f:
+                        self.component_predictors[position] = ComponentPredictor.from_dict(json.load(f))
+                    print(f"Loaded component predictor for {position}")
+                except Exception as e:
+                    print(f"Warning: Could not load component predictor for {position}: {e}")
 
         for pos in POSITIONS:
             try:
@@ -461,7 +474,15 @@ class EnsemblePredictor:
                 continue
             
             pos_data = results[mask].copy()
-            
+
+            # Component prediction path: predict stat components, assemble FP
+            if position in self.component_predictors:
+                cp = self.component_predictors[position]
+                fp_pred = cp.predict(pos_data)
+                results.loc[mask, "predicted_points"] = fp_pred * n_weeks
+                results.loc[mask, "predicted_utilization"] = fp_pred * n_weeks
+                continue
+
             # Ensure feature consistency: fill missing columns with training medians
             def _fill_missing_features(data, pm):
                 pos_model = pm.models.get(1) or list(pm.models.values())[0]
@@ -638,6 +659,10 @@ class EnsemblePredictor:
         # Apply TD regression (mean-reversion) adjustments
         results = self._apply_td_regression(results, player_data)
 
+        # Calibration gate: blend predictions toward trailing-avg baseline
+        # when deviation exceeds threshold (council "circuit breaker").
+        results = self._apply_calibration_gate(results, player_data, n_weeks)
+
         # Prediction sanity bounds: clip to reasonable fantasy point ranges per position per week
         _BOUNDS_PER_WEEK = {"QB": (0, 65), "RB": (0, 55), "WR": (0, 55), "TE": (0, 45)}
         for position in POSITIONS:
@@ -660,7 +685,94 @@ class EnsemblePredictor:
         results.attrs["prediction_speed_ok"] = per_player <= MAX_PREDICTION_TIME_PER_PLAYER_SECONDS
 
         return results
-    
+
+    def _apply_calibration_gate(
+        self,
+        results: pd.DataFrame,
+        player_data: pd.DataFrame,
+        n_weeks: int,
+    ) -> pd.DataFrame:
+        """Blend predictions toward trailing-average baseline when deviation is extreme.
+
+        Council recommendation ("circuit breaker"): if the ensemble prediction
+        deviates from a simple trailing-average baseline by more than a
+        configurable threshold, pull it back toward the baseline.  This catches
+        the kind of catastrophic +44% over-prediction seen in the 2025 backtest
+        before it reaches downstream consumers.
+
+        The baseline is a per-player trailing N-game mean of ``fantasy_points``
+        (shifted to exclude the current week).  When the model prediction
+        deviates by more than ``threshold_pct`` from that baseline, we blend::
+
+            adjusted = (1 - w) * model_pred + w * baseline
+
+        where ``w = blend_weight``.  Players with insufficient history are left
+        untouched — we cannot sanity-check without a reference point.
+        """
+        from config.settings import (
+            CALIBRATION_GATE_ENABLED,
+            CALIBRATION_GATE_THRESHOLD_PCT,
+            CALIBRATION_GATE_BLEND_WEIGHT,
+            CALIBRATION_GATE_BASELINE_WINDOW,
+            CALIBRATION_GATE_MIN_HISTORY,
+        )
+        if not CALIBRATION_GATE_ENABLED:
+            return results
+        if "predicted_points" not in results.columns:
+            return results
+
+        threshold = CALIBRATION_GATE_THRESHOLD_PCT / 100.0
+        blend_w = CALIBRATION_GATE_BLEND_WEIGHT
+        window = CALIBRATION_GATE_BASELINE_WINDOW
+        min_hist = CALIBRATION_GATE_MIN_HISTORY
+
+        # Compute per-player trailing-average baseline from historical data.
+        # player_data has the full feature rows; results has one row per player
+        # with the prediction attached.
+        baseline = pd.Series(np.nan, index=results.index)
+        if "fantasy_points" in player_data.columns and "player_id" in player_data.columns:
+            trailing = (
+                player_data.sort_values(["player_id", "season", "week"])
+                .groupby("player_id")["fantasy_points"]
+                .apply(lambda x: x.iloc[-window:].mean() if len(x) >= min_hist else np.nan)
+            )
+            if "player_id" in results.columns:
+                baseline = results["player_id"].map(trailing)
+
+        # Scale baseline for multi-week predictions
+        baseline_scaled = baseline * n_weeks
+
+        pred = results["predicted_points"].values.astype(float)
+        base = baseline_scaled.values.astype(float)
+
+        # Identify rows where we have both a prediction and a baseline
+        valid = np.isfinite(pred) & np.isfinite(base) & (base > 0)
+        if not valid.any():
+            return results
+
+        deviation = np.abs(pred - base) / base
+        exceeds = valid & (deviation > threshold)
+        n_adjusted = int(exceeds.sum())
+
+        if n_adjusted > 0:
+            # Blend: pull prediction toward baseline
+            adjusted = (1 - blend_w) * pred + blend_w * base
+            results.loc[exceeds, "predicted_points"] = adjusted[exceeds]
+
+            # Tag adjusted rows for transparency
+            results["calibration_gate_adjusted"] = exceeds.astype(int)
+            results["calibration_gate_baseline"] = baseline_scaled
+
+            import logging
+            logging.getLogger(__name__).info(
+                "Calibration gate: adjusted %d/%d predictions "
+                "(threshold=%.0f%%, blend=%.0f%%)",
+                n_adjusted, int(valid.sum()),
+                CALIBRATION_GATE_THRESHOLD_PCT, blend_w * 100,
+            )
+
+        return results
+
     def predict_player(self, player_id: str, player_features: pd.Series,
                        position: str, n_weeks: int = 1) -> Dict:
         """
@@ -764,8 +876,9 @@ class ModelTrainer:
     
     def __init__(self):
         self.trained_models: Dict[str, PositionModel] = {}
+        self.component_predictors: Dict[str, Any] = {}
         self.training_metrics: Dict[str, Dict] = {}
-    
+
     def train_all_positions(self, data: pd.DataFrame,
                             positions: List[str] = None,
                             tune_hyperparameters: bool = True,
@@ -850,9 +963,89 @@ class ModelTrainer:
             # Single model path (RB, WR, TE or QB fallback)
             multi_model = MultiWeekModel(position)
 
-            # Determine target type from config: "fp" = direct fantasy points, "util" = utilization score
+            # Determine target type: "fp", "util", or "component"
             pos_target_cfg = MODEL_CONFIG.get("position_target_type", {})
             target_type = pos_target_cfg.get(position, "util")
+
+            # Component prediction path: predict stat lines, assemble FP
+            if target_type == "component":
+                from src.models.component_predictor import ComponentPredictor
+                from config.settings import COMPONENT_TARGETS
+                comp_pred = ComponentPredictor(position)
+                comp_targets = COMPONENT_TARGETS.get(position, [])
+
+                # Build component targets: next-week stat values
+                y_components = {}
+                for comp in comp_targets:
+                    if comp in pos_data.columns:
+                        y_components[comp] = pos_data.groupby("player_id")[comp].transform(
+                            lambda x: x.shift(-1)
+                        )
+
+                # Get feature columns (same logic as fp/util path below)
+                exclude_cols = [
+                    "player_id", "name", "position", "team", "season", "week",
+                    "fantasy_points", "target", "opponent", "home_away",
+                    "created_at", "updated_at", "id", "birth_date", "college",
+                    "game_id", "game_time",
+                    "fp_over_expected", "expected_fp",
+                    "utilization_score",
+                ]
+                feature_cols = [c for c in pos_data.columns
+                                if c not in exclude_cols
+                                and not c.startswith("target_")
+                                and pos_data[c].dtype in ("int64", "float64", "int32", "float32")]
+                from src.utils.leakage import filter_feature_columns
+                feature_cols = filter_feature_columns(feature_cols)
+
+                # Apply causal feature filter if active
+                from config.settings import FEATURE_MODE, CAUSAL_FEATURES
+                if FEATURE_MODE == "causal":
+                    causal_cols = CAUSAL_FEATURES.get(position, [])
+                    feature_cols = [c for c in causal_cols if c in pos_data.columns]
+
+                # Filter to rows with valid targets for at least one component
+                any_valid = pd.Series(False, index=pos_data.index)
+                for comp, y in y_components.items():
+                    any_valid = any_valid | y.notna()
+                valid_mask = any_valid & pos_data[feature_cols].notna().all(axis=1)
+
+                X = pos_data.loc[valid_mask, feature_cols].fillna(0)
+                y_comp_valid = {k: v[valid_mask] for k, v in y_components.items()}
+
+                # Recency weighting (same as fp/util path)
+                sample_weight = None
+                halflife = MODEL_CONFIG.get("recency_decay_halflife")
+                if halflife and "season" in pos_data.columns:
+                    seasons = pos_data.loc[valid_mask, "season"]
+                    max_season = seasons.max()
+                    if max_season > seasons.min():
+                        decay = np.power(0.5, (max_season - seasons.values.astype(float)) / float(halflife))
+                        sample_weight = decay / decay.max()
+
+                print(f"  {position}: component mode — training {len(comp_targets)} "
+                      f"component models on {len(X)} rows with {len(feature_cols)} features",
+                      flush=True)
+
+                comp_pred.fit(X, y_comp_valid, sample_weight=sample_weight)
+
+                if comp_pred.is_fitted:
+                    self.component_predictors[position] = comp_pred
+                    self.trained_models[position] = None  # placeholder
+                    # Save component predictor
+                    import json as _json
+                    comp_save_path = MODELS_DIR / f"component_{position.lower()}.json"
+                    with open(comp_save_path, "w") as f:
+                        _json.dump(comp_pred.to_dict(), f, indent=2)
+                    print(f"  {position}: component models trained: "
+                          f"{list(comp_pred.models.keys())}", flush=True)
+                else:
+                    print(f"  WARNING: {position} component prediction failed, "
+                          f"falling back to fp mode", flush=True)
+                    target_type = "fp"  # fall through to normal path
+
+            if target_type == "component" and position in self.component_predictors:
+                continue
 
             # Prepare targets
             y_dict = {}
@@ -948,82 +1141,94 @@ class ModelTrainer:
                     decay = np.power(0.5, (max_season - seasons.values.astype(float)) / float(halflife))
                     sample_weight = decay / decay.max()
             
-            # Per-horizon feature selection: select features relevant to each horizon's target
-            from src.features.dimensionality_reduction import adaptive_feature_count
-            base_n = MODEL_CONFIG.get("n_features_per_position", 50)
-            if MODEL_CONFIG.get("adaptive_feature_count", True):
-                n_features = adaptive_feature_count(len(X), default=base_n)
+            # Feature selection: causal mode uses predefined feature lists;
+            # full mode runs correlation/MI/VIF selection pipeline.
+            from config.settings import FEATURE_MODE, CAUSAL_FEATURES
+            if FEATURE_MODE == "causal":
+                causal_cols = CAUSAL_FEATURES.get(position, [])
+                available_causal = [c for c in causal_cols if c in X.columns]
+                if available_causal:
+                    X = X[available_causal]
+                print(f"  Causal mode: using {len(X.columns)} features for {position}: "
+                      f"{list(X.columns)}", flush=True)
+
             else:
-                n_features = base_n
-            corr_thresh = MODEL_CONFIG.get("correlation_threshold", 0.92)
-            val_pct = float(MODEL_CONFIG.get("validation_pct", 0.2))
-            fs_split = int(len(X) * (1 - val_pct))
+                # Per-horizon feature selection: select features relevant to each horizon's target
+                from src.features.dimensionality_reduction import adaptive_feature_count
+                base_n = MODEL_CONFIG.get("n_features_per_position", 50)
+                if MODEL_CONFIG.get("adaptive_feature_count", True):
+                    n_features = adaptive_feature_count(len(X), default=base_n)
+                else:
+                    n_features = base_n
+                corr_thresh = MODEL_CONFIG.get("correlation_threshold", 0.92)
+                val_pct = float(MODEL_CONFIG.get("validation_pct", 0.2))
+                fs_split = int(len(X) * (1 - val_pct))
 
-            if len(X.columns) > n_features:
-                # Select features separately per horizon for better horizon-specific modeling
-                # skip_vif=True here because a final VIF prune runs on the union below
-                horizon_features = {}
-                for n_weeks, y_horizon in y_dict.items():
-                    print(f"  Feature selection for {n_weeks}w horizon ({len(X.columns)} candidates)...",
-                          flush=True)
-                    y_fs = y_horizon.iloc[:fs_split]
-                    X_fs = X.iloc[:fs_split]
-                    _, sel_cols = select_features_simple(
-                        X_fs, y_fs,
-                        n_features=n_features,
-                        correlation_threshold=corr_thresh,
-                        skip_vif=True,
-                    )
-                    horizon_features[n_weeks] = sel_cols if sel_cols else list(X.columns)
+                if len(X.columns) > n_features:
+                    # Select features separately per horizon for better horizon-specific modeling
+                    # skip_vif=True here because a final VIF prune runs on the union below
+                    horizon_features = {}
+                    for n_weeks, y_horizon in y_dict.items():
+                        print(f"  Feature selection for {n_weeks}w horizon ({len(X.columns)} candidates)...",
+                              flush=True)
+                        y_fs = y_horizon.iloc[:fs_split]
+                        X_fs = X.iloc[:fs_split]
+                        _, sel_cols = select_features_simple(
+                            X_fs, y_fs,
+                            n_features=n_features,
+                            correlation_threshold=corr_thresh,
+                            skip_vif=True,
+                        )
+                        horizon_features[n_weeks] = sel_cols if sel_cols else list(X.columns)
 
-                # Union all horizon features (each model gets its optimal features,
-                # but we pass the union so MultiWeekModel can train each horizon)
-                all_selected = set()
-                for cols in horizon_features.values():
-                    all_selected.update(cols)
+                    # Union all horizon features (each model gets its optimal features,
+                    # but we pass the union so MultiWeekModel can train each horizon)
+                    all_selected = set()
+                    for cols in horizon_features.values():
+                        all_selected.update(cols)
 
-                # Stability selection: boost features consistently selected across bootstrap Lasso
+                    # Stability selection: boost features consistently selected across bootstrap Lasso
+                    try:
+                        from src.models.feature_engineering_pipeline import StabilitySelector
+                        y_primary = y_dict.get(1, list(y_dict.values())[0])
+                        stability_n_bootstrap = MODEL_CONFIG.get("stability_n_bootstrap", 30)
+                        stability_sel = StabilitySelector(n_bootstrap=stability_n_bootstrap, threshold=0.5)
+                        stable_features = stability_sel.fit(
+                            X.iloc[:fs_split], y_primary.iloc[:fs_split],
+                            n_features_to_select=n_features
+                        )
+                        if stable_features:
+                            # Add stability-selected features to the union
+                            pre_count = len(all_selected)
+                            all_selected.update(stable_features)
+                            n_added = len(all_selected) - pre_count
+                            if n_added > 0:
+                                print(f"  Stability selection added {n_added} features", flush=True)
+                    except Exception as e:
+                        import logging
+                        logging.getLogger(__name__).warning("Stability selection skipped: %s", e)
+
+                    X = X[sorted(all_selected)]
+                    print(f"  Selected {len(X.columns)} features for {position} "
+                          f"(union across {len(y_dict)} horizons + stability)", flush=True)
+
+                # Actionable VIF pruning: iteratively drop highest-VIF feature
+                # Compute VIF on training portion only to avoid val→train leakage
+                print(f"  Running final VIF pruning on {X.shape[1]} features...", flush=True)
                 try:
-                    from src.models.feature_engineering_pipeline import StabilitySelector
-                    y_primary = y_dict.get(1, list(y_dict.values())[0])
-                    stability_n_bootstrap = MODEL_CONFIG.get("stability_n_bootstrap", 30)
-                    stability_sel = StabilitySelector(n_bootstrap=stability_n_bootstrap, threshold=0.5)
-                    stable_features = stability_sel.fit(
-                        X.iloc[:fs_split], y_primary.iloc[:fs_split],
-                        n_features_to_select=n_features
-                    )
-                    if stable_features:
-                        # Add stability-selected features to the union
-                        pre_count = len(all_selected)
-                        all_selected.update(stable_features)
-                        n_added = len(all_selected) - pre_count
-                        if n_added > 0:
-                            print(f"  Stability selection added {n_added} features", flush=True)
+                    from src.features.dimensionality_reduction import prune_by_vif
+                    vif_thresh = MODEL_CONFIG.get("vif_threshold", 10.0)
+                    pre_vif_count = X.shape[1]
+                    _, vif_removed = prune_by_vif(X.iloc[:fs_split], threshold=vif_thresh)
+                    if vif_removed:
+                        X = X.drop(columns=vif_removed)
+                        print(f"  VIF pruning: removed {len(vif_removed)} features (VIF>{vif_thresh}), "
+                              f"{pre_vif_count} -> {X.shape[1]}", flush=True)
+                    else:
+                        print(f"  Multicollinearity: OK (all VIF <= {vif_thresh})", flush=True)
                 except Exception as e:
                     import logging
-                    logging.getLogger(__name__).warning("Stability selection skipped: %s", e)
-
-                X = X[sorted(all_selected)]
-                print(f"  Selected {len(X.columns)} features for {position} "
-                      f"(union across {len(y_dict)} horizons + stability)", flush=True)
-
-            # Actionable VIF pruning: iteratively drop highest-VIF feature
-            # Compute VIF on training portion only to avoid val→train leakage
-            print(f"  Running final VIF pruning on {X.shape[1]} features...", flush=True)
-            try:
-                from src.features.dimensionality_reduction import prune_by_vif
-                vif_thresh = MODEL_CONFIG.get("vif_threshold", 10.0)
-                pre_vif_count = X.shape[1]
-                _, vif_removed = prune_by_vif(X.iloc[:fs_split], threshold=vif_thresh)
-                if vif_removed:
-                    X = X.drop(columns=vif_removed)
-                    print(f"  VIF pruning: removed {len(vif_removed)} features (VIF>{vif_thresh}), "
-                          f"{pre_vif_count} -> {X.shape[1]}", flush=True)
-                else:
-                    print(f"  Multicollinearity: OK (all VIF <= {vif_thresh})", flush=True)
-            except Exception as e:
-                import logging
-                logging.getLogger(__name__).warning("VIF pruning failed: %s", e)
+                    logging.getLogger(__name__).warning("VIF pruning failed: %s", e)
 
             # Extract season labels for season-aware CV splits
             seasons_arr = None

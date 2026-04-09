@@ -41,26 +41,31 @@ warnings.filterwarnings("ignore", message="Mean of empty slice", category=Runtim
 
 class FeatureEngineer:
     """Feature engineering for NFL player performance prediction."""
-    
-    def __init__(self):
+
+    def __init__(self, feature_mode: Optional[str] = None):
+        from config.settings import FEATURE_MODE
+        self.feature_mode = feature_mode or FEATURE_MODE
         self.rolling_windows = ROLLING_WINDOWS
         self.lag_weeks = LAG_WEEKS
         self.feature_columns = []
         self.policy_registry = FeaturePolicyRegistry.from_config()
         self.last_imputation_report: Dict[str, Any] = {}
-    
-    def create_features(self, df: pd.DataFrame, 
+
+    def create_features(self, df: pd.DataFrame,
                         include_target: bool = True) -> pd.DataFrame:
         """
         Create all features for model training/prediction.
-        
+
         Args:
             df: DataFrame with player weekly stats
             include_target: Whether to include target variable
-            
+
         Returns:
             DataFrame with engineered features
         """
+        if self.feature_mode == "causal":
+            return self.create_causal_features(df, include_target=include_target)
+
         df = df.copy()
         
         # Sort by player and time
@@ -138,7 +143,60 @@ class FeatureEngineer:
         self._update_feature_columns(df)
         
         return df
-    
+
+    def create_causal_features(self, df: pd.DataFrame,
+                               include_target: bool = True) -> pd.DataFrame:
+        """Create minimal causal feature set (7-8 per position).
+
+        Council recommendation: opportunity share, snap %, short-window
+        volume, one efficiency metric, and opponent/Vegas context only.
+        Skips rolling windows > 3 weeks, lag features, trends, interactions,
+        boom/bust, team change, and all other derived features.
+        """
+        df = df.copy()
+        df = df.sort_values(["player_id", "season", "week"]).reset_index(drop=True)
+
+        # Base efficiency features (yards_per_carry, yards_per_target, etc.)
+        df = self._create_base_features(df)
+
+        # Rolling features — 3-week window only
+        df = self._create_causal_rolling_features(df)
+
+        # Opponent features (creates opp_fpts_allowed)
+        df = self._create_opponent_features(df)
+
+        # Vegas features (creates implied_team_total)
+        df = self._create_vegas_game_script_features(df)
+
+        # Impute NaN/inf
+        df = self._impute_missing(df)
+
+        self._update_feature_columns(df)
+        return df
+
+    def _create_causal_rolling_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Create rolling features with 3-week window only (causal mode).
+
+        Uses shift(1) to exclude the current week, matching the full
+        pipeline's leakage prevention.
+        """
+        from config.settings import CAUSAL_ROLLING_WINDOW
+        window = CAUSAL_ROLLING_WINDOW
+        roll_cols = [
+            "rushing_attempts", "targets", "receptions", "passing_attempts",
+            "yards_per_carry", "yards_per_target", "yards_per_attempt",
+            "completion_pct",
+        ]
+        for col in roll_cols:
+            if col not in df.columns:
+                continue
+            col_name = f"{col}_roll3_mean"
+            df[col_name] = (
+                df.groupby("player_id")[col]
+                .transform(lambda x: x.shift(1).rolling(window, min_periods=1).mean())
+            )
+        return df
+
     def _create_base_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """Create basic derived features."""
         new_cols: dict = {}
@@ -1942,9 +2000,9 @@ class FeatureEngineer:
 
 class PositionFeatureEngineer(FeatureEngineer):
     """Position-specific feature engineering."""
-    
-    def __init__(self, position: str):
-        super().__init__()
+
+    def __init__(self, position: str, feature_mode: Optional[str] = None):
+        super().__init__(feature_mode=feature_mode)
         self.position = position
     
     def create_features(self, df: pd.DataFrame, 

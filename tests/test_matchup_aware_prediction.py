@@ -105,7 +105,7 @@ def test_get_prediction_target_week_preseason_week_1():
 
 def test_refresh_matchup_features_empty_df():
     """Empty df returns empty; df without 'team' returns early (unchanged)."""
-    fe = FeatureEngineer()
+    fe = FeatureEngineer(feature_mode="full")
     empty = pd.DataFrame()
     assert fe.refresh_matchup_features(empty).empty
 
@@ -118,7 +118,7 @@ def test_refresh_matchup_features_empty_df():
 
 def test_refresh_matchup_features_adds_neutral_defaults():
     """refresh_matchup_features ensures team_sos, matchup_difficulty, opponent_rating exist with 50.0 fill."""
-    fe = FeatureEngineer()
+    fe = FeatureEngineer(feature_mode="full")
     df = pd.DataFrame({
         "team": ["KC", "SF"],
         "season": [2025, 2025],
@@ -136,7 +136,7 @@ def test_refresh_matchup_features_adds_neutral_defaults():
 
 def test_refresh_matchup_features_calls_schedule_and_matchup():
     """refresh_matchup_features calls _add_schedule_features and _add_team_matchup_features."""
-    fe = FeatureEngineer()
+    fe = FeatureEngineer(feature_mode="full")
     df = pd.DataFrame({
         "team": ["KC"],
         "season": [2025],
@@ -176,7 +176,7 @@ def test_add_team_matchup_features_seahawks_patriots_matchup():
     mock_db.get_team_stats.return_value = team_stats
 
     with patch("src.utils.database.DatabaseManager", return_value=mock_db):
-        fe = FeatureEngineer()
+        fe = FeatureEngineer(feature_mode="full")
         out = fe._add_team_matchup_features(df)
 
     # SEA row: TeamA = SEA, TeamB = NE
@@ -237,7 +237,7 @@ def test_refresh_matchup_features_produces_matchup_specific_values():
     mock_db.get_schedule.return_value = schedule_2025
 
     with patch("src.utils.database.DatabaseManager", return_value=mock_db):
-        fe = FeatureEngineer()
+        fe = FeatureEngineer(feature_mode="full")
         out = fe.refresh_matchup_features(df)
 
     row = out.iloc[0]
@@ -287,7 +287,7 @@ def test_predict_flow_opponent_specific_features_integration():
     mock_db.get_schedule.return_value = schedule_2025
 
     with patch("src.utils.database.DatabaseManager", return_value=mock_db):
-        fe = FeatureEngineer()
+        fe = FeatureEngineer(feature_mode="full")
         latest_data = fe.refresh_matchup_features(latest_data)
 
     sea_row = latest_data[latest_data["team"] == "SEA"].iloc[0]

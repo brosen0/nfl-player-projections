@@ -61,7 +61,7 @@ class TestRollingFeatureLeakage:
     @pytest.fixture(scope="class")
     def featured_data(self, sample_data):
         """Run create_features once and share across tests in this class."""
-        engineer = FeatureEngineer()
+        engineer = FeatureEngineer(feature_mode="full")
         return engineer.create_features(sample_data.copy())
 
     def test_rolling_mean_uses_shift(self, sample_data, featured_data):
@@ -85,7 +85,7 @@ class TestRollingFeatureLeakage:
         mask = (perturbed['player_id'] == 'player1') & (perturbed['week'] == 5)
         perturbed.loc[mask, 'fantasy_points'] = 999.0
 
-        engineer2 = FeatureEngineer()
+        engineer2 = FeatureEngineer(feature_mode="full")
         result2 = engineer2.create_features(perturbed)
         player1_v2 = result2[result2['player_id'] == 'player1']
         week5_val2 = player1_v2[player1_v2['week'] == 5].iloc[0]['fantasy_points_roll4_mean']
@@ -181,7 +181,7 @@ class TestTargetCreation:
     
     def test_target_is_future_value(self, sample_data):
         """Test target is next week's fantasy points."""
-        engineer = FeatureEngineer()
+        engineer = FeatureEngineer(feature_mode="full")
         # prepare_training_data returns (X, y) tuple
         X, y = engineer.prepare_training_data(sample_data, target_weeks=1)
         
@@ -195,7 +195,7 @@ class TestTargetCreation:
     
     def test_last_week_has_no_target(self, sample_data):
         """Test last week is excluded from training data (has no target)."""
-        engineer = FeatureEngineer()
+        engineer = FeatureEngineer(feature_mode="full")
         # prepare_training_data returns (X, y) tuple and drops NaN targets
         X, y = engineer.prepare_training_data(sample_data, target_weeks=1)
         
@@ -398,7 +398,7 @@ class TestFeatureTargetSeparation:
     @pytest.fixture(scope="class")
     def engineer_with_features(self, sample_data):
         """Run create_features once and return (engineer, featured_data)."""
-        engineer = FeatureEngineer()
+        engineer = FeatureEngineer(feature_mode="full")
         result = engineer.create_features(sample_data)
         return engineer, result
 
@@ -481,7 +481,7 @@ class TestNoLeakageIntegration:
         
         df = pd.DataFrame(data)
         
-        engineer = FeatureEngineer()
+        engineer = FeatureEngineer(feature_mode="full")
         X, y = engineer.prepare_training_data(df, target_weeks=1)
         
         if y is None or len(y) == 0:

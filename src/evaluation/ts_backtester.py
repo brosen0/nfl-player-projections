@@ -319,26 +319,33 @@ class TimeSeriesBacktester:
                     # Refit model (production behavior)
                     model = self.model_factory(pos_train, position)
 
-                    # Get feature columns (numeric, non-target, non-ID)
-                    exclude = {
-                        "player_id", "name", "position", "team", "opponent",
-                        "season", "week", "home_away", "created_at", "id",
-                        "game_date", "fantasy_points",
-                    }
-                    target_cols = {c for c in pos_train.columns if c.startswith("target_")}
-                    exclude |= target_cols
+                    # Get feature columns: causal mode uses predefined lists;
+                    # full mode auto-detects numeric non-target columns.
+                    from config.settings import FEATURE_MODE, CAUSAL_FEATURES
+                    if FEATURE_MODE == "causal":
+                        causal_cols = CAUSAL_FEATURES.get(position, [])
+                        feature_cols = [c for c in causal_cols
+                                        if c in pos_train.columns and c in pos_test.columns]
+                    else:
+                        exclude = {
+                            "player_id", "name", "position", "team", "opponent",
+                            "season", "week", "home_away", "created_at", "id",
+                            "game_date", "fantasy_points",
+                        }
+                        target_cols = {c for c in pos_train.columns if c.startswith("target_")}
+                        exclude |= target_cols
 
-                    feature_cols = [
-                        c for c in pos_train.columns
-                        if c not in exclude
-                        and pos_train[c].dtype in ("int64", "float64", "int32", "float32")
-                    ]
+                        feature_cols = [
+                            c for c in pos_train.columns
+                            if c not in exclude
+                            and pos_train[c].dtype in ("int64", "float64", "int32", "float32")
+                        ]
 
-                    # Remove leakage-prone columns (match training pipeline)
-                    feature_cols = filter_feature_columns(feature_cols)
+                        # Remove leakage-prone columns (match training pipeline)
+                        feature_cols = filter_feature_columns(feature_cols)
 
-                    # Align feature columns between train and test
-                    feature_cols = [c for c in feature_cols if c in pos_test.columns]
+                        # Align feature columns between train and test
+                        feature_cols = [c for c in feature_cols if c in pos_test.columns]
 
                     X_train = pos_train[feature_cols].fillna(0)
                     y_train = pos_train["fantasy_points"]
