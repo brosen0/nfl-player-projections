@@ -309,31 +309,31 @@ CALIBRATION_GATE_MIN_HISTORY = 2        # Minimum games of history required to c
 #   - 2011-2019: Pass-first revolution, RPO emergence
 #   - 2020+: RPO explosion, increased passing efficiency
 #
-# Training on older data (pre-2011) may teach outdated patterns.
-# Default training window: end_year = current NFL season (single source: CURRENT_NFL_SEASON).
-# start_year defaults are explicit so training windows are coherent and overridable.
-TRAINING_START_YEAR_DEFAULT = 2014   # Default first year for training (10+ seasons for 18w model)
+# Training on older data (pre-2018) teaches outdated patterns from a
+# fundamentally different era of NFL football (council recommendation:
+# drop pre-2018 data).  The modern passing game, RPO schemes, and rule
+# changes make pre-2018 data actively harmful for generalization.
+TRAINING_START_YEAR_DEFAULT = 2018   # Modern NFL era (council: drop pre-2018)
 TRAINING_END_YEAR_DEFAULT = CURRENT_NFL_SEASON   # Latest season (same as CURRENT_NFL_SEASON)
 TRAINING_YEARS = {
     "start_year": TRAINING_START_YEAR_DEFAULT,
     "end_year": TRAINING_END_YEAR_DEFAULT,
     "test_years": [TRAINING_END_YEAR_DEFAULT],   # Latest season held out for testing
-    "min_years": 5,
+    "min_years": 3,
 }
 
 # Requirement-derived minimum training seasons per horizon (see docs/fantasy requirements)
 MIN_TRAINING_SEASONS_1W = 3   # 1-week model: min 3, optimal 5+
-MIN_TRAINING_SEASONS_18W = 8  # 18-week model: min 8, optimal 10+
-MIN_TRAINING_SEASONS_4W = 5  # 4-week horizon (LSTM+ARIMA): min 5, optimal 8+
+MIN_TRAINING_SEASONS_18W = 5  # 18-week model: min 5 (adjusted for 2018+ window)
+MIN_TRAINING_SEASONS_4W = 4   # 4-week horizon (LSTM+ARIMA): min 4
 # Per-position minimum players for training (requirements: ~30 QB, 60 RB, 70 WR, 30 TE)
 MIN_PLAYERS_PER_POSITION = {"QB": 30, "RB": 60, "WR": 70, "TE": 30}
 
 # Alternative training windows (end_year = CURRENT_NFL_SEASON; start_year explicit)
 TRAINING_WINDOW_PRESETS = {
-    "modern": {"start_year": MIN_HISTORICAL_YEAR, "end_year": TRAINING_END_YEAR_DEFAULT},
-    "balanced": {"start_year": TRAINING_START_YEAR_DEFAULT, "end_year": TRAINING_END_YEAR_DEFAULT},
-    "extended": {"start_year": 2010, "end_year": TRAINING_END_YEAR_DEFAULT},
-    "full": {"start_year": 2000, "end_year": TRAINING_END_YEAR_DEFAULT},
+    "modern": {"start_year": TRAINING_START_YEAR_DEFAULT, "end_year": TRAINING_END_YEAR_DEFAULT},
+    "extended": {"start_year": 2014, "end_year": TRAINING_END_YEAR_DEFAULT},
+    "full": {"start_year": MIN_HISTORICAL_YEAR, "end_year": TRAINING_END_YEAR_DEFAULT},
 }
 
 # Feature engineering rolling windows (rubric-required windows included).

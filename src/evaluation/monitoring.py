@@ -540,3 +540,140 @@ class ModelMonitor:
                 f.write(json.dumps(metrics, default=str) + "\n")
         except Exception:
             pass
+
+
+# ======================================================================
+# Scoring environment shift detection (pre-training diagnostic)
+# ======================================================================
+
+def detect_scoring_environment_shift(
+    df: "pd.DataFrame",
+    target_col: str = "fantasy_points",
+    shift_threshold: float = 0.15,
+    positions: Optional[List[str]] = None,
+) -> Dict[str, Any]:
+    """Detect year-over-year scoring environment shifts before training.
+
+    The NFL scoring environment is non-stationary — rule changes, offensive
+    scheme evolution, and pace-of-play shifts cause season-level mean fantasy
+    points to drift.  Training a model on data from a different scoring
+    regime produces systematically biased predictions (the 2025 backtest
+    collapsed to R²=-0.685 partly because of this).
+
+    This function computes per-season, per-position mean fantasy points and
+    flags seasons where the mean shifted by more than ``shift_threshold``
+    relative to the prior season.  It also computes the overall trend
+    (increasing or decreasing) across the training window.
+
+    Call this before training to:
+    1. Log which seasons have shifted scoring environments.
+    2. Warn if the most recent training season deviates significantly from
+       earlier seasons (the model will over- or under-predict).
+    3. Recommend whether to narrow the training window or increase recency
+       decay.
+
+    Args:
+        df: Training DataFrame with season, position, and target columns.
+        target_col: Column with fantasy points.
+        shift_threshold: Fractional change that constitutes a "shift"
+            (0.15 = 15% year-over-year change).
+        positions: Positions to analyze (default: QB, RB, WR, TE).
+
+    Returns:
+        Dict with per-position shift analysis, overall trend, and
+        recommendations.
+    """
+    import pandas as pd
+
+    positions = positions or ["QB", "RB", "WR", "TE"]
+    result: Dict[str, Any] = {
+        "shifts_detected": [],
+        "per_position": {},
+        "overall_trend": "stable",
+        "recommendation": None,
+    }
+
+    if df.empty or target_col not in df.columns or "season" not in df.columns:
+        return result
+
+    seasons = sorted(df["season"].unique())
+    if len(seasons) < 2:
+        return result
+
+    all_shifts: List[Dict[str, Any]] = []
+
+    for pos in positions:
+        pos_df = df[df["position"] == pos] if "position" in df.columns else df
+        if pos_df.empty:
+            continue
+
+        # Per-season mean fantasy points
+        season_means = (
+            pos_df.groupby("season")[target_col]
+            .mean()
+            .reindex(seasons)
+        )
+        season_means = season_means.dropna()
+        if len(season_means) < 2:
+            continue
+
+        # Year-over-year shifts
+        shifts = []
+        prev_mean = None
+        for season in season_means.index:
+            mean_val = float(season_means[season])
+            if prev_mean is not None and prev_mean > 0:
+                pct_change = (mean_val - prev_mean) / prev_mean
+                if abs(pct_change) > shift_threshold:
+                    shift_info = {
+                        "position": pos,
+                        "season": int(season),
+                        "prev_season_mean": round(prev_mean, 2),
+                        "season_mean": round(mean_val, 2),
+                        "pct_change": round(pct_change * 100, 1),
+                    }
+                    shifts.append(shift_info)
+                    all_shifts.append(shift_info)
+            prev_mean = mean_val
+
+        # Trend: compare first half of seasons to second half
+        midpoint = len(season_means) // 2
+        early_mean = float(season_means.iloc[:midpoint].mean())
+        late_mean = float(season_means.iloc[midpoint:].mean())
+        trend_pct = (late_mean - early_mean) / early_mean if early_mean > 0 else 0
+
+        result["per_position"][pos] = {
+            "season_means": {int(s): round(float(v), 2) for s, v in season_means.items()},
+            "shifts": shifts,
+            "trend_pct": round(trend_pct * 100, 1),
+            "trend": "increasing" if trend_pct > 0.05 else ("decreasing" if trend_pct < -0.05 else "stable"),
+            "latest_mean": round(float(season_means.iloc[-1]), 2),
+            "training_window_mean": round(float(season_means.mean()), 2),
+        }
+
+    result["shifts_detected"] = all_shifts
+
+    # Overall trend
+    n_increasing = sum(1 for p in result["per_position"].values() if p["trend"] == "increasing")
+    n_decreasing = sum(1 for p in result["per_position"].values() if p["trend"] == "decreasing")
+    if n_decreasing > n_increasing:
+        result["overall_trend"] = "decreasing"
+    elif n_increasing > n_decreasing:
+        result["overall_trend"] = "increasing"
+
+    # Recommendations
+    if all_shifts:
+        recent_shifts = [s for s in all_shifts if s["season"] >= seasons[-2]]
+        if recent_shifts:
+            result["recommendation"] = (
+                f"Scoring environment shifted in recent season(s) for "
+                f"{len(recent_shifts)} position(s). Consider increasing "
+                f"recency_decay_halflife or narrowing training window."
+            )
+        else:
+            result["recommendation"] = (
+                f"{len(all_shifts)} scoring shift(s) detected in older seasons. "
+                f"Current training window may include outdated regimes."
+            )
+
+    return result

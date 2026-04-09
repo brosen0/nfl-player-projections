@@ -904,6 +904,29 @@ def train_models(positions: list = None,
     print(f"Training records: {len(train_data)}")
     print(f"Test records: {len(test_data)}")
 
+    # Scoring environment shift detection (council: non-stationarity check)
+    try:
+        from src.evaluation.monitoring import detect_scoring_environment_shift
+        shift_report = detect_scoring_environment_shift(train_data)
+        if shift_report["shifts_detected"]:
+            print(f"\n  === SCORING ENVIRONMENT SHIFT DETECTED ===")
+            for s in shift_report["shifts_detected"]:
+                print(f"    {s['position']} {s['season']}: "
+                      f"{s['prev_season_mean']:.1f} -> {s['season_mean']:.1f} "
+                      f"({s['pct_change']:+.1f}%)")
+            if shift_report["recommendation"]:
+                print(f"    Recommendation: {shift_report['recommendation']}")
+            print()
+        else:
+            print("  Scoring environment: stable across training window")
+        _write_json_artifact(
+            MODELS_DIR / "scoring_environment_report.json",
+            shift_report,
+            "scoring environment shift report",
+        )
+    except Exception as e:
+        logger.warning("Scoring environment shift detection skipped: %s", e)
+
     bronze_parent_ids = find_artifact_ids(
         layer="bronze",
         source="nflverse_weekly_stats",
