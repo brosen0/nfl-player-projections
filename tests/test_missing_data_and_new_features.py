@@ -46,7 +46,7 @@ def sample_data_with_nulls():
 
 def test_create_features_produces_no_nan_or_inf_in_numeric_columns(sample_data_with_nulls):
     """After create_features, no numeric column should contain NaN or inf."""
-    eng = FeatureEngineer()
+    eng = FeatureEngineer(feature_mode="full")
     result = eng.create_features(sample_data_with_nulls, include_target=False)
     numeric = result.select_dtypes(include=[np.number])
     for col in numeric.columns:
@@ -56,7 +56,7 @@ def test_create_features_produces_no_nan_or_inf_in_numeric_columns(sample_data_w
 
 def test_prepare_training_data_returns_clean_X_y(sample_data_with_nulls):
     """prepare_training_data must return X with no NaN and no inf."""
-    eng = FeatureEngineer()
+    eng = FeatureEngineer(feature_mode="full")
     df = eng.create_features(sample_data_with_nulls, include_target=True)
     X, y = eng.prepare_training_data(df, target_weeks=1)
     assert X is not None and len(X) > 0
@@ -67,7 +67,7 @@ def test_prepare_training_data_returns_clean_X_y(sample_data_with_nulls):
 
 def test_injury_rookie_features_exist_with_defaults_when_missing(sample_data_with_nulls):
     """injury_score, is_injured, is_rookie must exist and have safe defaults when not provided."""
-    eng = FeatureEngineer()
+    eng = FeatureEngineer(feature_mode="full")
     # Sample has no injury_score, is_injured, games_count
     result = eng.create_features(sample_data_with_nulls, include_target=False)
     assert "injury_score" in result.columns
@@ -83,7 +83,7 @@ def test_injury_rookie_features_exist_with_defaults_when_missing(sample_data_wit
 
 def test_injury_rookie_features_preserve_valid_input():
     """When injury_score/is_injured are provided, they are clipped/filled but not overwritten arbitrarily."""
-    eng = FeatureEngineer()
+    eng = FeatureEngineer(feature_mode="full")
     df = pd.DataFrame({
         "player_id": ["p1", "p2"],
         "name": ["A", "B"],
@@ -114,7 +114,7 @@ def test_injury_rookie_features_preserve_valid_input():
 
 def test_impute_missing_removes_inf():
     """_impute_missing replaces inf with finite values."""
-    eng = FeatureEngineer()
+    eng = FeatureEngineer(feature_mode="full")
     df = pd.DataFrame({
         "player_id": ["p1"],
         "a": [1.0],
@@ -128,7 +128,7 @@ def test_impute_missing_removes_inf():
 
 def test_impute_missing_fills_nan():
     """_impute_missing fills NaN in numeric columns."""
-    eng = FeatureEngineer()
+    eng = FeatureEngineer(feature_mode="full")
     df = pd.DataFrame({
         "player_id": ["p1", "p2"],
         "x": [1.0, np.nan],
@@ -141,7 +141,7 @@ def test_impute_missing_fills_nan():
 
 def test_refresh_matchup_features_handles_missing_with_defaults():
     """refresh_matchup_features fills team_sos, matchup_difficulty, opponent_rating when missing."""
-    eng = FeatureEngineer()
+    eng = FeatureEngineer(feature_mode="full")
     df = pd.DataFrame({
         "team": ["KC"],
         "season": [2025],

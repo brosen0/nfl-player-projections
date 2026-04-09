@@ -41,14 +41,16 @@ warnings.filterwarnings("ignore", message="Mean of empty slice", category=Runtim
 
 class FeatureEngineer:
     """Feature engineering for NFL player performance prediction."""
-    
-    def __init__(self):
+
+    def __init__(self, feature_mode: Optional[str] = None):
+        from config.settings import FEATURE_MODE
+        self.feature_mode = feature_mode or FEATURE_MODE
         self.rolling_windows = ROLLING_WINDOWS
         self.lag_weeks = LAG_WEEKS
         self.feature_columns = []
         self.policy_registry = FeaturePolicyRegistry.from_config()
         self.last_imputation_report: Dict[str, Any] = {}
-    
+
     def create_features(self, df: pd.DataFrame,
                         include_target: bool = True) -> pd.DataFrame:
         """
@@ -61,8 +63,7 @@ class FeatureEngineer:
         Returns:
             DataFrame with engineered features
         """
-        from config.settings import FEATURE_MODE
-        if FEATURE_MODE == "causal":
+        if self.feature_mode == "causal":
             return self.create_causal_features(df, include_target=include_target)
 
         df = df.copy()
@@ -1999,9 +2000,9 @@ class FeatureEngineer:
 
 class PositionFeatureEngineer(FeatureEngineer):
     """Position-specific feature engineering."""
-    
-    def __init__(self, position: str):
-        super().__init__()
+
+    def __init__(self, position: str, feature_mode: Optional[str] = None):
+        super().__init__(feature_mode=feature_mode)
         self.position = position
     
     def create_features(self, df: pd.DataFrame, 

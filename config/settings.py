@@ -252,9 +252,9 @@ FAST_MODEL_CONFIG = {
 # FEATURE MODE: "full" (400+ features) or "causal" (7-8 per position)
 # =============================================================================
 # Council recommendation (2026-04-01): strip to 5-10 causal features with
-# demonstrated causal relationships to production. Full mode remains default;
-# causal mode is opt-in for evaluation and comparison.
-FEATURE_MODE = os.environ.get("NFL_FEATURE_MODE", "full")
+# demonstrated causal relationships to production. Causal mode is the default
+# per council recommendation; full mode available via NFL_FEATURE_MODE=full.
+FEATURE_MODE = os.environ.get("NFL_FEATURE_MODE", "causal")
 
 CAUSAL_ROLLING_WINDOW = 3  # Only rolling window used in causal mode
 

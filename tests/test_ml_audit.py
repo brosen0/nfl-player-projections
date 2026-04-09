@@ -118,7 +118,7 @@ class TestPhase1RealitySimulation:
         including the current row's data."""
         from src.features.feature_engineering import FeatureEngineer
 
-        engineer = FeatureEngineer()
+        engineer = FeatureEngineer(feature_mode="full")
         df = synthetic_data.copy()
         df = df.sort_values(["player_id", "season", "week"]).reset_index(drop=True)
         result = engineer.create_features(df, include_target=False)
@@ -149,7 +149,7 @@ class TestPhase1RealitySimulation:
         """1.2 Lag features should reference prior weeks, not current."""
         from src.features.feature_engineering import FeatureEngineer
 
-        engineer = FeatureEngineer()
+        engineer = FeatureEngineer(feature_mode="full")
         df = synthetic_data.copy()
         df = df.sort_values(["player_id", "season", "week"]).reset_index(drop=True)
         result = engineer.create_features(df, include_target=False)
@@ -267,7 +267,7 @@ class TestPhase2LeakageAssassination:
         df = synthetic_data.copy()
         df = df.sort_values(["player_id", "season", "week"]).reset_index(drop=True)
 
-        engineer = FeatureEngineer()
+        engineer = FeatureEngineer(feature_mode="full")
         result = engineer.create_features(df, include_target=False)
 
         # Create a random "target" (should be uncorrelated with features)
@@ -301,7 +301,7 @@ class TestPhase2LeakageAssassination:
         df = synthetic_data.copy()
         df = df.sort_values(["player_id", "season", "week"]).reset_index(drop=True)
 
-        engineer = FeatureEngineer()
+        engineer = FeatureEngineer(feature_mode="full")
         result_ordered = engineer.create_features(df.copy(), include_target=False)
 
         # Shuffle weeks within each player
@@ -343,7 +343,7 @@ class TestPhase2LeakageAssassination:
         df = synthetic_data.copy()
         df = df.sort_values(["player_id", "season", "week"]).reset_index(drop=True)
 
-        engineer = FeatureEngineer()
+        engineer = FeatureEngineer(feature_mode="full")
         result = engineer.create_features(df, include_target=False)
 
         numeric_cols = result.select_dtypes(include=[np.number]).columns
@@ -399,7 +399,7 @@ class TestPhase3DeploymentFailure:
             if col in df.columns:
                 df = df.drop(columns=[col])
 
-        engineer = FeatureEngineer()
+        engineer = FeatureEngineer(feature_mode="full")
         result = engineer.create_features(df, include_target=False)
 
         # Check that expected features exist with reasonable defaults
@@ -419,7 +419,7 @@ class TestPhase3DeploymentFailure:
         df.loc[1, "fantasy_points"] = -5.0  # Negative (impossible but test robustness)
         df.loc[2, "rushing_yards"] = 999    # Extreme rushing
 
-        engineer = FeatureEngineer()
+        engineer = FeatureEngineer(feature_mode="full")
         # Should not raise
         result = engineer.create_features(df, include_target=False)
         assert len(result) == len(df), "Pipeline lost rows on extreme inputs"
@@ -480,7 +480,7 @@ class TestPhase4DriftTesting:
         df = synthetic_data.copy()
         seasons = sorted(df["season"].unique())
 
-        engineer = FeatureEngineer()
+        engineer = FeatureEngineer(feature_mode="full")
         col_sets = []
         for season in seasons:
             season_df = df[df["season"] == season].copy()
@@ -510,7 +510,7 @@ class TestPhase5Explainability:
         df = synthetic_data.copy()
         df = df.sort_values(["player_id", "season", "week"]).reset_index(drop=True)
 
-        engineer = FeatureEngineer()
+        engineer = FeatureEngineer(feature_mode="full")
         result = engineer.create_features(df, include_target=False)
 
         # QB and RB should have different average feature profiles
@@ -647,7 +647,7 @@ class TestPhase7FantasyReality:
         df = df[~((df["player_id"] == pid) & (df["week"] == 7))]
 
         df = df.sort_values(["player_id", "season", "week"]).reset_index(drop=True)
-        engineer = FeatureEngineer()
+        engineer = FeatureEngineer(feature_mode="full")
         result = engineer.create_features(df, include_target=False)
 
         assert "post_bye" in result.columns, "No post_bye feature for bye week detection"
@@ -665,7 +665,7 @@ class TestPhase7FantasyReality:
 
         df = synthetic_data.copy()
         df = df.sort_values(["player_id", "season", "week"]).reset_index(drop=True)
-        engineer = FeatureEngineer()
+        engineer = FeatureEngineer(feature_mode="full")
         result = engineer.create_features(df, include_target=False)
 
         assert "injury_score" in result.columns, "No injury_score feature"
@@ -677,7 +677,7 @@ class TestPhase7FantasyReality:
 
         df = synthetic_data.copy()
         df = df.sort_values(["player_id", "season", "week"]).reset_index(drop=True)
-        engineer = FeatureEngineer()
+        engineer = FeatureEngineer(feature_mode="full")
         result = engineer.create_features(df, include_target=False)
 
         assert "is_rookie" in result.columns, "No is_rookie feature"
@@ -720,7 +720,7 @@ class TestMandatoryFailureScenarios:
         combined = pd.concat([prior, week1], ignore_index=True)
         combined = combined.sort_values(["player_id", "season", "week"]).reset_index(drop=True)
 
-        engineer = FeatureEngineer()
+        engineer = FeatureEngineer(feature_mode="full")
         result = engineer.create_features(combined, include_target=False)
 
         # Week 1 rows should exist and have features
@@ -750,7 +750,7 @@ class TestMandatoryFailureScenarios:
         combined = pd.concat([df, rookie_rows], ignore_index=True)
         combined = combined.sort_values(["player_id", "season", "week"]).reset_index(drop=True)
 
-        engineer = FeatureEngineer()
+        engineer = FeatureEngineer(feature_mode="full")
         result = engineer.create_features(combined, include_target=False)
 
         rookie_data = result[result["player_id"] == "rookie_breakout"]
@@ -767,7 +767,7 @@ class TestMandatoryFailureScenarios:
                 df = df.drop(columns=[col])
 
         df = df.sort_values(["player_id", "season", "week"]).reset_index(drop=True)
-        engineer = FeatureEngineer()
+        engineer = FeatureEngineer(feature_mode="full")
         result = engineer.create_features(df, include_target=False)
 
         # Should not crash and should have defaults
@@ -821,7 +821,7 @@ class TestLeakagePlaybook:
         df = synthetic_data.copy()
         df = df.sort_values(["player_id", "season", "week"]).reset_index(drop=True)
 
-        engineer = FeatureEngineer()
+        engineer = FeatureEngineer(feature_mode="full")
         result = engineer.create_features(df, include_target=False)
         engineer._update_feature_columns(result)
         feature_cols = engineer.get_feature_columns()

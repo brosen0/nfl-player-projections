@@ -40,7 +40,7 @@ class TestEndToEndPipeline:
         assert "utilization_score" in rb_data.columns
         
         # Step 2: Engineer features
-        engineer = FeatureEngineer()
+        engineer = FeatureEngineer(feature_mode="full")
         rb_data = engineer.create_features(rb_data)
         
         # Step 3: Prepare training data
@@ -79,7 +79,7 @@ class TestEndToEndPipeline:
             
             # Process
             pos_data = calculate_utilization_scores(pos_data)
-            engineer = FeatureEngineer()
+            engineer = FeatureEngineer(feature_mode="full")
             pos_data = engineer.create_features(pos_data)
             X, y = engineer.prepare_training_data(pos_data, target_weeks=1)
             
@@ -102,7 +102,7 @@ class TestEndToEndPipeline:
         rb_data = sample_data[sample_data["position"] == "RB"].copy()
         rb_data = calculate_utilization_scores(rb_data)
         
-        engineer = FeatureEngineer()
+        engineer = FeatureEngineer(feature_mode="full")
         rb_data = engineer.create_features(rb_data)
         
         # Create targets for different horizons

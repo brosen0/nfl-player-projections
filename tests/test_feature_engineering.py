@@ -15,7 +15,7 @@ class TestFeatureEngineer:
 
     @pytest.fixture(scope="class")
     def engineer(self):
-        return FeatureEngineer()
+        return FeatureEngineer(feature_mode="full")
 
     @pytest.fixture(scope="class")
     def sample_data(self):
@@ -275,7 +275,7 @@ class TestFeatureEngineeringEdgeCases:
             "home_away": ["home"],
         })
         
-        engineer = FeatureEngineer()
+        engineer = FeatureEngineer(feature_mode="full")
         result = engineer.create_features(data)
         
         # Should not crash, rolling features will be NaN
@@ -310,7 +310,7 @@ class TestFeatureEngineeringEdgeCases:
             "home_away": ["home", "away"],
         })
         
-        engineer = FeatureEngineer()
+        engineer = FeatureEngineer(feature_mode="full")
         result = engineer.create_features(data)
         
         # Should handle NaN gracefully
