@@ -271,6 +271,64 @@ class DatabaseManager:
                 )
             """)
             
+            # Draft picks
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS draft_picks (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    player_id TEXT,
+                    player_name TEXT NOT NULL,
+                    position TEXT,
+                    college TEXT,
+                    draft_season INTEGER NOT NULL,
+                    draft_round INTEGER NOT NULL,
+                    draft_pick INTEGER NOT NULL,
+                    draft_team TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(player_name, draft_season)
+                )
+            """)
+
+            # NFL Combine data
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS combine_data (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    player_name TEXT NOT NULL,
+                    position TEXT,
+                    season INTEGER NOT NULL,
+                    height REAL,
+                    weight REAL,
+                    forty REAL,
+                    bench INTEGER,
+                    vertical REAL,
+                    broad_jump INTEGER,
+                    cone REAL,
+                    shuttle REAL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(player_name, season)
+                )
+            """)
+
+            # Rosters (years_exp, birth_date, college, etc.)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS rosters (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    player_id TEXT NOT NULL,
+                    player_name TEXT,
+                    position TEXT,
+                    team TEXT,
+                    season INTEGER NOT NULL,
+                    years_exp INTEGER DEFAULT 0,
+                    birth_date TEXT,
+                    height TEXT,
+                    weight INTEGER,
+                    college TEXT,
+                    jersey_number INTEGER,
+                    status TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(player_id, season)
+                )
+            """)
+
             # Utilization scores
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS utilization_scores (
@@ -615,7 +673,164 @@ class DatabaseManager:
             cursor.execute("SELECT COUNT(*) FROM schedule WHERE season = ?", (season,))
             return cursor.fetchone()[0] > 0
     
-    def get_player_stats(self, player_id: str = None, season: int = None, 
+    # ------------------------------------------------------------------
+    # Draft picks
+    # ------------------------------------------------------------------
+
+    def bulk_insert_draft_picks(self, df: pd.DataFrame) -> int:
+        """Bulk insert draft picks from a DataFrame (e.g. nfl.import_draft_picks())."""
+        col_map = {
+            "pfr_player_name": "player_name",
+            "round": "draft_round",
+            "pick": "draft_pick",
+            "season": "draft_season",
+        }
+        renamed = df.rename(columns={k: v for k, v in col_map.items() if k in df.columns})
+        keep = [c for c in ["player_id", "player_name", "position", "college",
+                            "draft_season", "draft_round", "draft_pick", "draft_team",
+                            "team"] if c in renamed.columns]
+        out = renamed[keep].copy()
+        if "draft_team" not in out.columns and "team" in out.columns:
+            out["draft_team"] = out["team"]
+        out = out.drop(columns=["team"], errors="ignore")
+        with self._get_connection() as conn:
+            out.to_sql("draft_picks", conn, if_exists="replace", index=False)
+            conn.commit()
+        return len(out)
+
+    def get_draft_picks(self, season: int = None, position: str = None) -> pd.DataFrame:
+        """Get draft picks with optional filters."""
+        query = "SELECT * FROM draft_picks WHERE 1=1"
+        params: list = []
+        if season:
+            query += " AND draft_season = ?"
+            params.append(season)
+        if position:
+            query += " AND position = ?"
+            params.append(position)
+        query += " ORDER BY draft_season, draft_round, draft_pick"
+        with self._get_connection() as conn:
+            return pd.read_sql_query(query, conn, params=params)
+
+    # ------------------------------------------------------------------
+    # Combine data
+    # ------------------------------------------------------------------
+
+    def bulk_insert_combine_data(self, df: pd.DataFrame) -> int:
+        """Bulk insert combine data from a DataFrame (e.g. nfl.import_combine_data())."""
+        col_map = {
+            "player_name": "player_name",
+            "pos": "position",
+            "ht": "height",
+            "wt": "weight",
+            "forty": "forty",
+            "bench": "bench",
+            "vertical": "vertical",
+            "broad_jump": "broad_jump",
+            "cone": "cone",
+            "shuttle": "shuttle",
+        }
+        renamed = df.rename(columns={k: v for k, v in col_map.items()
+                                     if k in df.columns and v not in df.columns})
+        keep = [c for c in ["player_name", "position", "season",
+                            "height", "weight", "forty", "bench",
+                            "vertical", "broad_jump", "cone", "shuttle"]
+                if c in renamed.columns]
+        out = renamed[keep].copy()
+        with self._get_connection() as conn:
+            out.to_sql("combine_data", conn, if_exists="replace", index=False)
+            conn.commit()
+        return len(out)
+
+    def get_combine_data(self, season: int = None, position: str = None) -> pd.DataFrame:
+        """Get combine data with optional filters."""
+        query = "SELECT * FROM combine_data WHERE 1=1"
+        params: list = []
+        if season:
+            query += " AND season = ?"
+            params.append(season)
+        if position:
+            query += " AND position = ?"
+            params.append(position)
+        query += " ORDER BY season, position"
+        with self._get_connection() as conn:
+            return pd.read_sql_query(query, conn, params=params)
+
+    # ------------------------------------------------------------------
+    # Rosters
+    # ------------------------------------------------------------------
+
+    def bulk_insert_rosters(self, df: pd.DataFrame) -> int:
+        """Bulk insert roster data from a DataFrame (e.g. nfl.import_rosters())."""
+        col_map = {
+            "full_name": "player_name",
+            "gsis_id": "player_id",
+            "years_exp": "years_exp",
+        }
+        renamed = df.rename(columns={k: v for k, v in col_map.items()
+                                     if k in df.columns and v not in df.columns})
+        keep = [c for c in ["player_id", "player_name", "position", "team",
+                            "season", "years_exp", "birth_date", "height",
+                            "weight", "college", "jersey_number", "status"]
+                if c in renamed.columns]
+        out = renamed[keep].copy()
+        out = out.dropna(subset=["player_id"])
+        with self._get_connection() as conn:
+            out.to_sql("rosters", conn, if_exists="replace", index=False)
+            conn.commit()
+        return len(out)
+
+    def get_rosters(self, season: int = None, position: str = None) -> pd.DataFrame:
+        """Get roster data with optional filters."""
+        query = "SELECT * FROM rosters WHERE 1=1"
+        params: list = []
+        if season:
+            query += " AND season = ?"
+            params.append(season)
+        if position:
+            query += " AND position = ?"
+            params.append(position)
+        query += " ORDER BY season, position, player_name"
+        with self._get_connection() as conn:
+            return pd.read_sql_query(query, conn, params=params)
+
+    def get_player_years_exp(self, player_id: str, season: int) -> Optional[int]:
+        """Get years of experience for a player in a given season."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT years_exp FROM rosters WHERE player_id = ? AND season = ?",
+                (player_id, season)
+            )
+            row = cursor.fetchone()
+            return row[0] if row else None
+
+    def backfill_players_from_rosters(self) -> int:
+        """Backfill college and birth_date in the players table from rosters."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE players SET
+                    college = COALESCE(players.college, (
+                        SELECT r.college FROM rosters r
+                        WHERE r.player_id = players.player_id
+                        AND r.college IS NOT NULL AND r.college != ''
+                        LIMIT 1
+                    )),
+                    birth_date = COALESCE(players.birth_date, (
+                        SELECT r.birth_date FROM rosters r
+                        WHERE r.player_id = players.player_id
+                        AND r.birth_date IS NOT NULL AND r.birth_date != ''
+                        LIMIT 1
+                    )),
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE players.college IS NULL OR players.birth_date IS NULL
+            """)
+            count = cursor.rowcount
+            conn.commit()
+            return count
+
+    def get_player_stats(self, player_id: str = None, season: int = None,
                          position: str = None) -> pd.DataFrame:
         """Get player weekly stats with optional filters."""
         query = """

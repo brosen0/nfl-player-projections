@@ -361,27 +361,44 @@ class AdvancedRookieProjector:
     
     def load_combine_data(self, season: int = None) -> pd.DataFrame:
         """
-        Load NFL Combine data from nflverse.
-        
+        Load NFL Combine data, preferring local DB then falling back to nflverse API.
+
         Args:
             season: Specific season to load (default: all available)
-            
+
         Returns:
             DataFrame with combine metrics
         """
+        # Try local DB first
+        try:
+            from src.utils.database import DatabaseManager
+            db = DatabaseManager()
+            combine_df = db.get_combine_data(season=season)
+            if not combine_df.empty:
+                # Standardize column names to match downstream expectations
+                if 'player_name' in combine_df.columns and 'name' not in combine_df.columns:
+                    combine_df['name'] = combine_df['player_name']
+                if 'broad_jump' in combine_df.columns and 'broad' not in combine_df.columns:
+                    combine_df['broad'] = combine_df['broad_jump']
+                print(f"Loaded {len(combine_df)} combine records from DB")
+                return combine_df
+        except Exception as e:
+            print(f"DB combine lookup failed, trying nflverse API: {e}")
+
+        # Fall back to nflverse API
         try:
             import nfl_data_py as nfl
-            
+
             combine_df = nfl.import_combine_data()
-            
+
             if combine_df.empty:
                 print("No combine data available")
                 return pd.DataFrame()
-            
+
             # Filter to season if specified
             if season and 'season' in combine_df.columns:
                 combine_df = combine_df[combine_df['season'] == season]
-            
+
             # Standardize column names
             column_mapping = {
                 'player_name': 'name',
@@ -393,14 +410,14 @@ class AdvancedRookieProjector:
                 'cone': 'cone',
                 'shuttle': 'shuttle',
             }
-            
+
             for old_col, new_col in column_mapping.items():
                 if old_col in combine_df.columns and new_col not in combine_df.columns:
                     combine_df[new_col] = combine_df[old_col]
-            
-            print(f"Loaded {len(combine_df)} combine records")
+
+            print(f"Loaded {len(combine_df)} combine records from nflverse API")
             return combine_df
-            
+
         except Exception as e:
             print(f"Could not load combine data: {e}")
             return pd.DataFrame()
