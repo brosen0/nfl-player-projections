@@ -331,7 +331,12 @@ COMPONENT_TARGETS = {
 # average baseline by more than CALIBRATION_GATE_THRESHOLD_PCT, blend it back
 # toward the baseline.  This catches catastrophic over/under-prediction before
 # it reaches downstream consumers (lineup optimizer, start/sit decisions).
-CALIBRATION_GATE_ENABLED = True
+CALIBRATION_GATE_ENABLED = False          # Disabled: at 50%/0.5 this was a major
+                                          # source of mean-regression, pulling valid
+                                          # boom predictions back toward trailing avg.
+                                          # Combined with Huber loss + TD regression,
+                                          # three layers of shrinkage compressed
+                                          # prediction spread to ~50% of actuals.
 CALIBRATION_GATE_THRESHOLD_PCT = 50.0   # % deviation that triggers blending
 CALIBRATION_GATE_BLEND_WEIGHT = 0.5     # How much to pull toward baseline (0=no pull, 1=full baseline)
 CALIBRATION_GATE_BASELINE_WINDOW = 3    # Trailing-average window (weeks) for baseline
