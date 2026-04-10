@@ -146,7 +146,7 @@ class FeatureEngineer:
 
     def create_causal_features(self, df: pd.DataFrame,
                                include_target: bool = True) -> pd.DataFrame:
-        """Create minimal causal feature set (7-8 per position).
+        """Create minimal causal feature set (9-11 per position).
 
         Council recommendation: opportunity share, snap %, short-window
         volume, one efficiency metric, and opponent/Vegas context only.
@@ -187,7 +187,8 @@ class FeatureEngineer:
         from config.settings import CAUSAL_ROLLING_WINDOW
         window = CAUSAL_ROLLING_WINDOW
         roll_cols = [
-            "rushing_attempts", "rushing_yards", "targets", "receptions",
+            "rushing_attempts", "rushing_yards", "rushing_tds",
+            "targets", "receptions", "receiving_tds",
             "passing_attempts", "passing_tds",
             "yards_per_carry", "yards_per_target", "yards_per_attempt",
             "completion_pct",

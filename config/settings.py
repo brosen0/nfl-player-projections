@@ -258,7 +258,7 @@ FAST_MODEL_CONFIG = {
 }
 
 # =============================================================================
-# FEATURE MODE: "full" (400+ features) or "causal" (7-8 per position)
+# FEATURE MODE: "full" (400+ features) or "causal" (9-11 per position)
 # =============================================================================
 # Council recommendation (2026-04-01): strip to 5-10 causal features with
 # demonstrated causal relationships to production. Causal mode is the default
@@ -273,20 +273,23 @@ CAUSAL_FEATURES = {
     "RB": [
         "snap_share_pct", "rush_share_pct", "target_share_pct",
         "rushing_attempts_roll3_mean", "targets_roll3_mean",
-        "yards_per_carry_roll3_mean",
-        "opp_fpts_allowed", "implied_team_total", "injury_score",
+        "rushing_tds_roll3_mean", "yards_per_carry_roll3_mean",
+        "opp_fpts_allowed", "implied_team_total", "spread",
+        "injury_score",
     ],
     "WR": [
-        "snap_share_pct", "target_share_pct", "air_yards_share_pct",
+        "target_share_pct", "air_yards_share_pct",
         "targets_roll3_mean", "receptions_roll3_mean",
-        "yards_per_target_roll3_mean",
-        "opp_fpts_allowed", "implied_team_total", "injury_score",
+        "receiving_tds_roll3_mean", "yards_per_target_roll3_mean",
+        "opp_fpts_allowed", "implied_team_total", "spread",
+        "injury_score",
     ],
     "TE": [
         "snap_share_pct", "target_share_pct",
         "targets_roll3_mean", "receptions_roll3_mean",
-        "yards_per_target_roll3_mean",
-        "opp_fpts_allowed", "implied_team_total", "injury_score",
+        "receiving_tds_roll3_mean", "yards_per_target_roll3_mean",
+        "opp_fpts_allowed", "implied_team_total", "spread",
+        "injury_score",
     ],
     "QB": [
         "passing_attempts_roll3_mean", "passing_tds_roll3_mean",
