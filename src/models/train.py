@@ -810,7 +810,9 @@ def train_models(positions: list = None,
                  walk_forward: bool = False,
                  strict_requirements: bool = None,
                  fast: bool = False,
-                 skip_cache_check: bool = False):
+                 skip_cache_check: bool = False,
+                 loyo_backtest: bool = False,
+                 loyo_seasons: list = None):
     """
     Main training function with automatic train/test split.
 
@@ -822,6 +824,8 @@ def train_models(positions: list = None,
         walk_forward: If True, run walk-forward validation (train on 1..N-1, test on N) for last 4 seasons and report mean +/- std RMSE/MAE.
         fast: If True, apply FAST_MODEL_CONFIG overrides for ~8-10x faster training
               with minimal accuracy loss.
+        loyo_backtest: If True, run LOYO walk-forward backtest across multiple seasons.
+        loyo_seasons: Override test seasons for LOYO (default: 2018-2024).
     """
     # Apply fast-mode overrides before reading any config values
     if fast:
@@ -972,6 +976,19 @@ def train_models(positions: list = None,
                     print(f"  {pos}: RMSE {np.mean(rmses):.2f} +/- {np.std(rmses):.2f}  MAE {np.mean(maes):.2f} +/- {np.std(maes):.2f}")
             return None, train_data, test_data, actual_test_season
         settings.MODELS_DIR = old_models_dir
+
+    # LOYO walk-forward backtest: train fresh per season, test on each in range
+    if loyo_backtest:
+        from src.evaluation.backtester import run_loyo_backtest
+        run_loyo_backtest(
+            test_seasons=loyo_seasons,
+            positions=positions,
+            tune_hyperparameters=tune_hyperparameters,
+            n_trials=n_trials,
+            fast=fast,
+            strict_requirements=strict_requirements,
+        )
+        return None, train_data, test_data, actual_test_season
 
     # Shared preprocessing: DVP, external, season-long, utilization, targets,
     # feature engineering, bounded scaling, winsorization, model training, util-to-fp.
@@ -1560,6 +1577,19 @@ def main():
         help="Skip the data integrity gate (not recommended). Use when the gate "
              "fails on stale cache and you want to retrain with fresh data loading."
     )
+    parser.add_argument(
+        "--loyo-backtest",
+        action="store_true",
+        help="Run LOYO walk-forward backtest: train fresh per season, "
+             "test on each of 2018-2024. Reports aggregate metrics + stability."
+    )
+    parser.add_argument(
+        "--loyo-seasons",
+        nargs="+",
+        type=int,
+        default=None,
+        help="Override test seasons for LOYO backtest (e.g., 2020 2021 2022)"
+    )
     args = parser.parse_args()
 
     train_models(
@@ -1572,6 +1602,8 @@ def main():
         strict_requirements=args.strict_requirements,
         fast=args.fast,
         skip_cache_check=args.skip_cache_check,
+        loyo_backtest=args.loyo_backtest,
+        loyo_seasons=args.loyo_seasons,
     )
 
 
