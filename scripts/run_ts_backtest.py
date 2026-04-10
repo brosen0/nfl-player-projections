@@ -6,6 +6,7 @@ Usage:
     python scripts/run_ts_backtest.py                     # Backtest latest season, Ridge
     python scripts/run_ts_backtest.py --season 2024       # Backtest specific season
     python scripts/run_ts_backtest.py --model gbm         # Use GBM instead of Ridge
+    python scripts/run_ts_backtest.py --model ensemble    # Use production ensemble stack
     python scripts/run_ts_backtest.py --positions QB RB    # Only backtest QB and RB
 """
 
@@ -32,9 +33,9 @@ def main():
     )
     parser.add_argument(
         "--model", "-m",
-        choices=["ridge", "gbm"],
+        choices=["ridge", "gbm", "ensemble"],
         default="ridge",
-        help="Model type: ridge (fast) or gbm (higher fidelity)",
+        help="Model type: ridge (fast), gbm (higher fidelity), or ensemble (production stack)",
     )
     parser.add_argument(
         "--positions", "-p",
