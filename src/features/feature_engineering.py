@@ -183,7 +183,8 @@ class FeatureEngineer:
         from config.settings import CAUSAL_ROLLING_WINDOW
         window = CAUSAL_ROLLING_WINDOW
         roll_cols = [
-            "rushing_attempts", "targets", "receptions", "passing_attempts",
+            "rushing_attempts", "rushing_yards", "targets", "receptions",
+            "passing_attempts", "passing_tds",
             "yards_per_carry", "yards_per_target", "yards_per_attempt",
             "completion_pct",
         ]

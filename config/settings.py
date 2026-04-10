@@ -289,10 +289,10 @@ CAUSAL_FEATURES = {
         "opp_fpts_allowed", "implied_team_total",
     ],
     "QB": [
-        "snap_share_pct",
-        "passing_attempts_roll3_mean", "rushing_attempts_roll3_mean",
-        "yards_per_attempt_roll3_mean", "completion_pct_roll3_mean",
-        "opp_fpts_allowed", "implied_team_total",
+        "passing_attempts_roll3_mean", "passing_tds_roll3_mean",
+        "rushing_attempts_roll3_mean", "rushing_yards_roll3_mean",
+        "yards_per_attempt_roll3_mean",
+        "opp_fpts_allowed", "implied_team_total", "spread",
     ],
 }
 
