@@ -174,6 +174,14 @@ UTILIZATION_WEIGHTS = {
     },
 }
 
+# Huber loss delta: controls the transition point between quadratic (MSE) and
+# linear loss.  Residuals below this threshold are penalized quadratically;
+# above it, linearly.  A delta of 1.0 treats any error >1 point as an outlier,
+# which over-suppresses predictions for boom/bust games.  Setting delta to 5.0
+# (roughly one standard deviation of weekly fantasy points) preserves outlier
+# robustness while giving the model meaningful gradient signal on big games.
+HUBER_DELTA = 5.0
+
 # Model settings
 MODEL_CONFIG = {
     "test_size": 0.2,
