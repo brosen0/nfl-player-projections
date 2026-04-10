@@ -274,25 +274,26 @@ CAUSAL_FEATURES = {
         "snap_share_pct", "rush_share_pct", "target_share_pct",
         "rushing_attempts_roll3_mean", "targets_roll3_mean",
         "yards_per_carry_roll3_mean",
-        "opp_fpts_allowed", "implied_team_total",
+        "opp_fpts_allowed", "implied_team_total", "injury_score",
     ],
     "WR": [
         "snap_share_pct", "target_share_pct", "air_yards_share_pct",
         "targets_roll3_mean", "receptions_roll3_mean",
         "yards_per_target_roll3_mean",
-        "opp_fpts_allowed", "implied_team_total",
+        "opp_fpts_allowed", "implied_team_total", "injury_score",
     ],
     "TE": [
         "snap_share_pct", "target_share_pct",
         "targets_roll3_mean", "receptions_roll3_mean",
         "yards_per_target_roll3_mean",
-        "opp_fpts_allowed", "implied_team_total",
+        "opp_fpts_allowed", "implied_team_total", "injury_score",
     ],
     "QB": [
         "passing_attempts_roll3_mean", "passing_tds_roll3_mean",
         "rushing_attempts_roll3_mean", "rushing_yards_roll3_mean",
         "yards_per_attempt_roll3_mean",
         "opp_fpts_allowed", "implied_team_total", "spread",
+        "injury_score",
     ],
 }
 

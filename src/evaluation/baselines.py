@@ -409,8 +409,10 @@ def compare_model_to_baselines(
     # 3. Positional rank / ADP baseline
     baselines["prior_season_rank"] = positional_rank_baseline(df, target_col=target_col).values
 
-    # 4. Expert consensus baseline (strongest non-ML baseline)
-    baselines["expert_consensus"] = expert_consensus_baseline_vectorized(
+    # 4. Blended heuristic baseline (prior-season rank + trailing avg + season avg)
+    # Not real expert projections — a synthetic blend approximating what an
+    # expert would do with publicly available historical data.
+    baselines["blended_heuristic"] = expert_consensus_baseline_vectorized(
         df, target_col=target_col
     ).values
 
@@ -488,16 +490,16 @@ def format_baseline_report(comparison: Dict[str, Dict[str, float]]) -> str:
     ]
 
     any_beaten = False
-    beats_expert = False
+    beats_heuristic = False
     for name, metrics in comparison.items():
         beaten = metrics["model_beats_baseline"]
         any_beaten = any_beaten or beaten
-        if name == "expert_consensus" and beaten:
-            beats_expert = True
+        if name == "blended_heuristic" and beaten:
+            beats_heuristic = True
         marker = "BEATS" if beaten else "LOSES TO"
         tag = ""
-        if name == "expert_consensus":
-            tag = " [SIMULATED]"
+        if name == "blended_heuristic":
+            tag = " [SYNTHETIC]"
         elif name == "vegas_implied":
             tag = " [REAL EXTERNAL]"
         lines.append(f"  {name}{tag}:")
@@ -514,11 +516,11 @@ def format_baseline_report(comparison: Dict[str, Dict[str, float]]) -> str:
         else:
             lines.append("WARNING: Model does NOT beat Vegas-implied baseline.")
             lines.append("Vegas lines (with real money at stake) are a stronger predictor.")
-    if beats_expert:
-        lines.append("MODEL BEATS EXPERT CONSENSUS (simulated) — provides value over heuristic blend.")
-    elif "expert_consensus" in comparison:
-        lines.append("WARNING: Model does NOT beat expert consensus baseline (simulated).")
-        lines.append("The model may not provide value over human expert projections.")
+    if beats_heuristic:
+        lines.append("MODEL BEATS BLENDED HEURISTIC — provides value over synthetic baseline.")
+    elif "blended_heuristic" in comparison:
+        lines.append("WARNING: Model does NOT beat blended heuristic baseline.")
+        lines.append("A simple blend of prior-season rank + trailing avg + season avg outperforms.")
     if any_beaten:
         lines.append("MODEL DEMONSTRATES EDGE over at least one strong baseline.")
     else:

@@ -168,6 +168,10 @@ class FeatureEngineer:
         # Vegas features (creates implied_team_total)
         df = self._create_vegas_game_script_features(df)
 
+        # Ensure injury_score exists (1.0 = healthy when injury data not merged)
+        if "injury_score" not in df.columns:
+            df["injury_score"] = 1.0
+
         # Impute NaN/inf
         df = self._impute_missing(df)
 
