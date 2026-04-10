@@ -14,7 +14,7 @@ import joblib
 
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from config.settings import MODELS_DIR, MODEL_CONFIG
+from config.settings import HUBER_DELTA, MODELS_DIR, MODEL_CONFIG
 
 # PyTorch for LSTM and deep net (with MPS/GPU support)
 try:
@@ -201,7 +201,7 @@ class LSTM4WeekModel:
 
             model = _LSTMNet(X_seq.shape[2], units, dropout).to(device)
             optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
-            criterion = nn.HuberLoss(delta=1.0)
+            criterion = nn.HuberLoss(delta=HUBER_DELTA)
 
             best_val = float("inf")
             patience, no_improve = 5, 0
@@ -299,7 +299,7 @@ class LSTM4WeekModel:
 
         optimizer = torch.optim.AdamW(self.model.parameters(), lr=self.learning_rate, weight_decay=1e-4)
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5)
-        criterion = nn.HuberLoss(delta=1.0)  # Robust to outlier games
+        criterion = nn.HuberLoss(delta=HUBER_DELTA)  # Robust to outlier games
 
         best_val_loss = float("inf")
         patience, patience_limit = 0, 10
@@ -780,7 +780,7 @@ class DeepSeasonLongModel:
 
             model = _DeepFeedforwardNet(X.shape[1], hidden_units=hidden_units_flat, dropout=dropout).to(device)
             optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
-            criterion = nn.HuberLoss(delta=1.0)
+            criterion = nn.HuberLoss(delta=HUBER_DELTA)
 
             loader = DataLoader(TensorDataset(X_tr, y_tr), batch_size=64, shuffle=True)
             best_val = float("inf")
@@ -846,7 +846,7 @@ class DeepSeasonLongModel:
 
         optimizer = torch.optim.AdamW(self.model.parameters(), lr=self.learning_rate, weight_decay=1e-4)
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=7)
-        criterion = nn.HuberLoss(delta=1.0)  # Robust to outlier games
+        criterion = nn.HuberLoss(delta=HUBER_DELTA)  # Robust to outlier games
 
         best_val_loss = float("inf")
         patience, patience_limit = 0, 15

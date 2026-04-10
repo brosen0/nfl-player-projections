@@ -656,8 +656,10 @@ class EnsemblePredictor:
                 continue
             self._apply_tier_uncertainty(results, mask.values, position)
 
-        # Apply TD regression (mean-reversion) adjustments
-        results = self._apply_td_regression(results, player_data)
+        # TD regression disabled: Huber loss (delta=5.0) already provides
+        # outlier robustness at the loss-function level.  Stacking TD regression
+        # on top was a second shrinkage layer that compressed prediction spread.
+        # results = self._apply_td_regression(results, player_data)
 
         # Calibration gate: blend predictions toward trailing-avg baseline
         # when deviation exceeds threshold (council "circuit breaker").

@@ -146,7 +146,7 @@ class FeatureEngineer:
 
     def create_causal_features(self, df: pd.DataFrame,
                                include_target: bool = True) -> pd.DataFrame:
-        """Create minimal causal feature set (7-8 per position).
+        """Create minimal causal feature set (9-11 per position).
 
         Council recommendation: opportunity share, snap %, short-window
         volume, one efficiency metric, and opponent/Vegas context only.
@@ -168,6 +168,10 @@ class FeatureEngineer:
         # Vegas features (creates implied_team_total)
         df = self._create_vegas_game_script_features(df)
 
+        # Ensure injury_score exists (1.0 = healthy when injury data not merged)
+        if "injury_score" not in df.columns:
+            df["injury_score"] = 1.0
+
         # Impute NaN/inf
         df = self._impute_missing(df)
 
@@ -183,7 +187,9 @@ class FeatureEngineer:
         from config.settings import CAUSAL_ROLLING_WINDOW
         window = CAUSAL_ROLLING_WINDOW
         roll_cols = [
-            "rushing_attempts", "targets", "receptions", "passing_attempts",
+            "rushing_attempts", "rushing_yards", "rushing_tds",
+            "targets", "receptions", "receiving_tds",
+            "passing_attempts", "passing_tds",
             "yards_per_carry", "yards_per_target", "yards_per_attempt",
             "completion_pct",
         ]

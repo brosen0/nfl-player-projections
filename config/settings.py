@@ -174,6 +174,14 @@ UTILIZATION_WEIGHTS = {
     },
 }
 
+# Huber loss delta: controls the transition point between quadratic (MSE) and
+# linear loss.  Residuals below this threshold are penalized quadratically;
+# above it, linearly.  A delta of 1.0 treats any error >1 point as an outlier,
+# which over-suppresses predictions for boom/bust games.  Setting delta to 5.0
+# (roughly one standard deviation of weekly fantasy points) preserves outlier
+# robustness while giving the model meaningful gradient signal on big games.
+HUBER_DELTA = 5.0
+
 # Model settings
 MODEL_CONFIG = {
     "test_size": 0.2,
@@ -250,7 +258,7 @@ FAST_MODEL_CONFIG = {
 }
 
 # =============================================================================
-# FEATURE MODE: "full" (400+ features) or "causal" (7-8 per position)
+# FEATURE MODE: "full" (400+ features) or "causal" (9-11 per position)
 # =============================================================================
 # Council recommendation (2026-04-01): strip to 5-10 causal features with
 # demonstrated causal relationships to production. Causal mode is the default
@@ -265,26 +273,30 @@ CAUSAL_FEATURES = {
     "RB": [
         "snap_share_pct", "rush_share_pct", "target_share_pct",
         "rushing_attempts_roll3_mean", "targets_roll3_mean",
-        "yards_per_carry_roll3_mean",
-        "opp_fpts_allowed", "implied_team_total",
+        "rushing_tds_roll3_mean", "yards_per_carry_roll3_mean",
+        "opp_fpts_allowed", "implied_team_total", "spread",
+        "injury_score",
     ],
     "WR": [
-        "snap_share_pct", "target_share_pct", "air_yards_share_pct",
+        "target_share_pct", "air_yards_share_pct",
         "targets_roll3_mean", "receptions_roll3_mean",
-        "yards_per_target_roll3_mean",
-        "opp_fpts_allowed", "implied_team_total",
+        "receiving_tds_roll3_mean", "yards_per_target_roll3_mean",
+        "opp_fpts_allowed", "implied_team_total", "spread",
+        "injury_score",
     ],
     "TE": [
         "snap_share_pct", "target_share_pct",
         "targets_roll3_mean", "receptions_roll3_mean",
-        "yards_per_target_roll3_mean",
-        "opp_fpts_allowed", "implied_team_total",
+        "receiving_tds_roll3_mean", "yards_per_target_roll3_mean",
+        "opp_fpts_allowed", "implied_team_total", "spread",
+        "injury_score",
     ],
     "QB": [
-        "snap_share_pct",
-        "passing_attempts_roll3_mean", "rushing_attempts_roll3_mean",
-        "yards_per_attempt_roll3_mean", "completion_pct_roll3_mean",
-        "opp_fpts_allowed", "implied_team_total",
+        "passing_attempts_roll3_mean", "passing_tds_roll3_mean",
+        "rushing_attempts_roll3_mean", "rushing_yards_roll3_mean",
+        "yards_per_attempt_roll3_mean",
+        "opp_fpts_allowed", "implied_team_total", "spread",
+        "injury_score",
     ],
 }
 
@@ -323,7 +335,12 @@ COMPONENT_TARGETS = {
 # average baseline by more than CALIBRATION_GATE_THRESHOLD_PCT, blend it back
 # toward the baseline.  This catches catastrophic over/under-prediction before
 # it reaches downstream consumers (lineup optimizer, start/sit decisions).
-CALIBRATION_GATE_ENABLED = True
+CALIBRATION_GATE_ENABLED = False          # Disabled: at 50%/0.5 this was a major
+                                          # source of mean-regression, pulling valid
+                                          # boom predictions back toward trailing avg.
+                                          # Combined with Huber loss + TD regression,
+                                          # three layers of shrinkage compressed
+                                          # prediction spread to ~50% of actuals.
 CALIBRATION_GATE_THRESHOLD_PCT = 50.0   # % deviation that triggers blending
 CALIBRATION_GATE_BLEND_WEIGHT = 0.5     # How much to pull toward baseline (0=no pull, 1=full baseline)
 CALIBRATION_GATE_BASELINE_WINDOW = 3    # Trailing-average window (weeks) for baseline

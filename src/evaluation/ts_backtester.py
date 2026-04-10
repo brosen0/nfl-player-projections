@@ -615,7 +615,7 @@ class TimeSeriesBacktester:
         baseline_runners = {
             "trailing_avg_3w": lambda df: trailing_average_baseline(df, n_weeks=3),
             "season_avg": lambda df: season_average_baseline(df),
-            "expert_consensus": lambda df: expert_consensus_baseline(df),
+            "blended_heuristic": lambda df: expert_consensus_baseline(df),
         }
 
         for name, runner in baseline_runners.items():

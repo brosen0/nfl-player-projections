@@ -28,7 +28,7 @@ except ImportError:
 
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from config.settings import MODEL_CONFIG, MODELS_DIR, POSITIONS
+from config.settings import HUBER_DELTA, MODEL_CONFIG, MODELS_DIR, POSITIONS
 
 VALIDATION_PCT = MODEL_CONFIG.get("validation_pct", 0.2)
 EARLY_STOPPING_ROUNDS = MODEL_CONFIG.get("early_stopping_rounds", 25)
@@ -809,7 +809,7 @@ class PositionModel:
                 "reg_lambda": trial.suggest_float("reg_lambda", 1e-8, 10.0, log=True),
                 "gamma": 0.0,
                 "objective": "reg:pseudohubererror",
-                "huber_slope": 1.0,
+                "huber_slope": HUBER_DELTA,
                 "random_state": MODEL_CONFIG["random_state"],
                 "tree_method": "hist",
                 "n_jobs": 1,
@@ -875,7 +875,7 @@ class PositionModel:
                 "reg_alpha": trial.suggest_float("reg_alpha", 1e-8, 10.0, log=True),
                 "reg_lambda": trial.suggest_float("reg_lambda", 1e-8, 10.0, log=True),
                 "objective": "huber",
-                "alpha": 1.0,
+                "alpha": HUBER_DELTA,
                 "random_state": MODEL_CONFIG["random_state"],
                 "verbosity": -1,
                 "n_jobs": 1,
@@ -920,7 +920,7 @@ class PositionModel:
                 "colsample_bytree": 0.8,
                 "gamma": 0.0,
                 "objective": "reg:pseudohubererror",
-                "huber_slope": 1.0,
+                "huber_slope": HUBER_DELTA,
                 "random_state": MODEL_CONFIG["random_state"],
                 "tree_method": "hist",
                 "n_jobs": 1,
@@ -940,7 +940,7 @@ class PositionModel:
                 "colsample_bytree": 0.8,
                 "min_child_samples": 20,
                 "objective": "huber",
-                "alpha": 1.0,
+                "alpha": HUBER_DELTA,
                 "random_state": MODEL_CONFIG["random_state"],
                 "verbosity": -1,
                 "n_jobs": 1,
@@ -956,7 +956,7 @@ class PositionModel:
         params["tree_method"] = "hist"  # Much faster; equivalent quality
         params["n_jobs"] = 1  # Avoid macOS fork deadlock with sequential position training
         params["objective"] = "reg:pseudohubererror"
-        params["huber_slope"] = 1.0
+        params["huber_slope"] = HUBER_DELTA
         # XGBoost 3.x moved eval_metric from fit() to constructor
         params["eval_metric"] = "rmse"
         model = xgb.XGBRegressor(**params)
@@ -1043,7 +1043,7 @@ class PositionModel:
         params["verbosity"] = -1
         params["n_jobs"] = 1
         params["objective"] = "huber"
-        params["alpha"] = 1.0
+        params["alpha"] = HUBER_DELTA
         model = lgb.LGBMRegressor(**params)
         kw = {}
         if sample_weight is not None:

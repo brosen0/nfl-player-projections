@@ -226,10 +226,10 @@ class TestFormatBaselineReport:
         report = format_baseline_report(comparison)
         assert "LOSES TO" in report
 
-    def test_expert_consensus_critical_tag(self):
-        """Expert consensus should be tagged as SIMULATED in the report."""
+    def test_blended_heuristic_tag(self):
+        """Blended heuristic should be tagged as SYNTHETIC in the report."""
         comparison = {
-            "expert_consensus": {
+            "blended_heuristic": {
                 "baseline_rmse": 5.0,
                 "baseline_mae": 3.5,
                 "model_rmse": 4.0,
@@ -241,12 +241,12 @@ class TestFormatBaselineReport:
             }
         }
         report = format_baseline_report(comparison)
-        assert "[SIMULATED]" in report
-        assert "BEATS EXPERT CONSENSUS" in report
+        assert "[SYNTHETIC]" in report
+        assert "BEATS BLENDED HEURISTIC" in report
 
-    def test_expert_consensus_warning_when_loses(self):
+    def test_blended_heuristic_warning_when_loses(self):
         comparison = {
-            "expert_consensus": {
+            "blended_heuristic": {
                 "baseline_rmse": 3.0,
                 "baseline_mae": 2.0,
                 "model_rmse": 4.0,
@@ -258,4 +258,4 @@ class TestFormatBaselineReport:
             }
         }
         report = format_baseline_report(comparison)
-        assert "does NOT beat expert consensus" in report
+        assert "does NOT beat blended heuristic" in report
