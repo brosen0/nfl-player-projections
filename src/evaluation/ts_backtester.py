@@ -812,6 +812,71 @@ def gradient_boosting_factory(train_df: pd.DataFrame, position: str):
 
 
 # ---------------------------------------------------------------------------
+# Production ensemble model factory
+# ---------------------------------------------------------------------------
+
+class _EnsembleModelWrapper:
+    """Adapts PositionModel to the sklearn fit/predict interface the backtester expects.
+
+    The backtester passes pre-scaled numpy arrays.  PositionModel does its own
+    internal scaling, so the double-scaling is harmless (StandardScaler on
+    already-standardised data is ~identity).  Hyperparameter tuning is skipped
+    for speed — defaults are used, which still exercise the full XGBoost +
+    LightGBM + RF + Ridge stacked ensemble with Huber loss.
+    """
+
+    def __init__(self, position: str, feature_names: list):
+        from src.models.position_models import PositionModel
+        self._position = position
+        self._feature_names = feature_names
+        self._model: "PositionModel" = None
+
+    def fit(self, X: np.ndarray, y) -> "_EnsembleModelWrapper":
+        from src.models.position_models import PositionModel
+        import warnings
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            X_df = pd.DataFrame(X, columns=self._feature_names)
+            y_s = pd.Series(np.asarray(y, dtype=np.float64), name="fantasy_points")
+            self._model = PositionModel(self._position, n_weeks=1)
+            self._model.fit(X_df, y_s, tune_hyperparameters=False)
+        return self
+
+    def predict(self, X: np.ndarray) -> np.ndarray:
+        X_df = pd.DataFrame(X, columns=self._feature_names)
+        return self._model.predict(X_df)
+
+
+def ensemble_model_factory(train_df: pd.DataFrame, position: str):
+    """Production ensemble factory: XGBoost + LightGBM + RF + Ridge stacked.
+
+    Returns an unfitted wrapper whose fit/predict calls go through the full
+    PositionModel pipeline (Huber loss, OOF stacking, isotonic calibration).
+    Hyperparameter tuning is disabled for backtest speed.
+    """
+    from config.settings import FEATURE_MODE, CAUSAL_FEATURES
+    if FEATURE_MODE == "causal":
+        feature_names = [c for c in CAUSAL_FEATURES.get(position, [])
+                         if c in train_df.columns]
+    else:
+        exclude = {
+            "player_id", "name", "position", "team", "opponent",
+            "season", "week", "home_away", "created_at", "id",
+            "game_date", "fantasy_points",
+        }
+        target_cols = {c for c in train_df.columns if c.startswith("target_")}
+        exclude |= target_cols
+        feature_names = [
+            c for c in train_df.columns
+            if c not in exclude
+            and train_df[c].dtype in ("int64", "float64", "int32", "float32")
+        ]
+        feature_names = filter_feature_columns(feature_names)
+
+    return _EnsembleModelWrapper(position, feature_names)
+
+
+# ---------------------------------------------------------------------------
 # Convenience: run a full backtest from raw DB data
 # ---------------------------------------------------------------------------
 
@@ -830,7 +895,7 @@ def run_ts_backtest(
 
     Args:
         season: Season to backtest (None = latest complete season).
-        model_type: "ridge" or "gbm".
+        model_type: "ridge", "gbm", or "ensemble".
         positions: Positions to backtest.
         verbose: Print progress.
     """
@@ -873,7 +938,12 @@ def run_ts_backtest(
         print(f"Loaded {len(data)} total rows across {data['season'].nunique()} seasons")
 
     # Select model factory
-    factory = gradient_boosting_factory if model_type == "gbm" else default_model_factory
+    if model_type == "ensemble":
+        factory = ensemble_model_factory
+    elif model_type == "gbm":
+        factory = gradient_boosting_factory
+    else:
+        factory = default_model_factory
 
     # Run backtest
     bt = TimeSeriesBacktester(
