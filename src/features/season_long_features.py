@@ -361,23 +361,39 @@ class DraftDataLoader:
     
     def load_draft_data(self, seasons: list = None) -> pd.DataFrame:
         """
-        Load draft picks data from nflverse.
-        
+        Load draft picks data, preferring local DB then falling back to nflverse API.
+
         Args:
             seasons: List of seasons to load (default: 2000-current)
-            
+
         Returns:
             DataFrame with draft pick data
         """
+        # Try local DB first
+        try:
+            from src.utils.database import DatabaseManager
+            db = DatabaseManager()
+            draft_df = db.get_draft_picks()
+            if not draft_df.empty:
+                # Filter to requested seasons if specified
+                if seasons and 'draft_season' in draft_df.columns:
+                    draft_df = draft_df[draft_df['draft_season'].isin(seasons)]
+                print(f"Loaded {len(draft_df)} draft pick records from DB")
+                self._draft_cache = draft_df
+                return draft_df
+        except Exception as e:
+            print(f"DB draft lookup failed, trying nflverse API: {e}")
+
+        # Fall back to nflverse API
         try:
             import nfl_data_py as nfl
-            
+
             draft_df = nfl.import_draft_picks(seasons)
-            
+
             if draft_df.empty:
                 print("No draft data available from nflverse")
                 return pd.DataFrame()
-            
+
             # Standardize column names
             column_mapping = {
                 'pfr_player_name': 'player_name',
@@ -386,11 +402,11 @@ class DraftDataLoader:
                 'pick': 'draft_pick',
                 'season': 'draft_season',
             }
-            
+
             for old_col, new_col in column_mapping.items():
                 if old_col in draft_df.columns and new_col not in draft_df.columns:
                     draft_df[new_col] = draft_df[old_col]
-            
+
             # Ensure required columns exist
             required_cols = ['player_name', 'draft_round', 'draft_pick', 'draft_season']
             for col in required_cols:
@@ -402,12 +418,12 @@ class DraftDataLoader:
                         draft_df['draft_pick'] = draft_df['pick']
                     elif col == 'draft_season' and 'season' in draft_df.columns:
                         draft_df['draft_season'] = draft_df['season']
-            
-            print(f"Loaded {len(draft_df)} draft pick records")
-            
+
+            print(f"Loaded {len(draft_df)} draft pick records from nflverse API")
+
             self._draft_cache = draft_df
             return draft_df
-            
+
         except Exception as e:
             print(f"Could not load draft data: {e}")
             return pd.DataFrame()
