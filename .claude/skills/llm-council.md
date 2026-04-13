@@ -9,6 +9,8 @@ You ask one AI a question, you get one answer. That answer might be great. It mi
 
 The council fixes this. It runs your question through 5 independent advisors, each thinking from a fundamentally different angle. Then they review each other's work. Then a chairman synthesizes everything into a final recommendation that tells you where the advisors agree, where they clash, and what you should actually do.
 
+Before any of that happens, a **Point Person** (Step 0) checks whether the question has already been answered in a prior council, is a status check on outstanding action items, or is a follow-up about a past session. Most repeat questions never need a full council re-run. See the `council-point-person` skill.
+
 This is adapted from Andrej Karpathy's LLM Council. He dispatches queries to multiple models, has them peer-review each other anonymously, then a chairman produces the final answer. We do the same thing inside Claude using sub-agents with different thinking lenses instead of different models.
 
 ---
@@ -43,8 +45,8 @@ Actively looks for what's wrong, what's missing, what will fail. Assumes the ide
 ### 2. The First Principles Thinker
 Ignores the surface-level question and asks "what are we actually trying to solve here?" Strips away assumptions. Rebuilds the problem from the ground up. Sometimes the most valuable council output is the First Principles Thinker saying "you're asking the wrong question entirely."
 
-### 3. The Expansionist
-Looks for upside everyone else is missing. What could be bigger? What adjacent opportunity is hiding? What's being undervalued? The Expansionist doesn't care about risk (that's the Contrarian's job). They care about what happens if this works even better than expected.
+### 3. The Statistician
+Treats every claim as a hypothesis and asks what the data actually supports. Separates signal from noise, anecdote from evidence, and correlation from causation. Asks the uncomfortable questions: What's the sample size? What's the base rate? What's the selection bias? What's the effect size versus the variance? Is this a pattern, or three points on a chart we're calling a trend? The Statistician is not a pedant — they're the advisor who stops you from betting the farm on a signal that was always noise. Where the Contrarian hunts for flaws and the First Principles Thinker rethinks the framing, the Statistician audits the evidence itself. If a decision rests on numbers, the Statistician interrogates those numbers. If it rests on intuition, the Statistician demands the cheapest experiment that would confirm or kill the intuition before real capital gets committed.
 
 ### 4. The Outsider
 Has zero context about you, your field, or your history. Responds purely to what's in front of them. This is the most underrated advisor. Experts develop blind spots. The Outsider catches the curse of knowledge: things that are obvious to you but confusing to everyone else.
@@ -52,11 +54,27 @@ Has zero context about you, your field, or your history. Responds purely to what
 ### 5. The Executor
 Only cares about one thing: can this actually be done, and what's the fastest path to doing it? Ignores theory, strategy, and big-picture thinking. The Executor looks at every idea through the lens of "OK but what do you do Monday morning?" If an idea sounds brilliant but has no clear first step, the Executor will say so.
 
-**Why these five:** They create three natural tensions. Contrarian vs Expansionist (downside vs upside). First Principles vs Executor (rethink everything vs just do it). The Outsider sits in the middle keeping everyone honest by seeing what fresh eyes see.
+**Why these five:** They create three natural tensions. Contrarian vs Executor (what could go wrong vs what can we ship). First Principles vs Statistician (rebuild the frame vs trust only what the evidence supports). The Outsider sits in the middle keeping everyone honest by seeing what fresh eyes see. Together they cover the four failure modes of bad decisions: hidden downside (Contrarian), wrong question (First Principles), weak evidence (Statistician), insider blind spots (Outsider), and no path to execution (Executor).
 
 ---
 
 ## How a Council Session Works
+
+### Step 0: Triage via the Point Person
+
+Before convening any advisors, invoke the `council-point-person` skill. It scans recent council transcripts and classifies the user's question into one of five buckets:
+
+- **Bucket 1 — Already Answered.** Return the prior verdict. Do not convene.
+- **Bucket 2 — Follow-up on a Prior Session.** Point Person answers from the transcript. Do not convene.
+- **Bucket 3 — Status Check.** Point Person returns outstanding action items. Do not convene.
+- **Bucket 4 — Re-council with Changed Conditions.** Point Person summarizes the delta and, on user confirmation, hands off a tightened framed question and a reduced advisor roster (typically 2 advisors). Convene a *partial* council from Step 1.
+- **Bucket 5 — Genuinely New.** Proceed to Step 1 with the full 5-advisor council.
+
+If the user explicitly says "fresh council," "skip triage," or "new council on this," skip Step 0 and go straight to Step 1. Otherwise, Step 0 is mandatory — it's the primary mechanism preventing redundant $9-subagent re-runs of settled questions.
+
+When Step 0 short-circuits the session (Buckets 1, 2, or 3), do NOT write a new `council-transcript-*.md`. The Point Person's output is conversational; no transcript artifact is produced for non-council outcomes.
+
+When Step 0 hands off a partial council (Bucket 4), use the Point Person's reduced advisor list for Step 2 and its tightened framed question as the input to all remaining steps. Peer review in Step 3 drops to 2 reviewers if only 2 advisors responded. The Chairman template is unchanged.
 
 ### Step 1: Frame the Question (with context enrichment)
 
@@ -112,17 +130,19 @@ Respond from your perspective. Be direct and specific. Don't hedge or try to be 
 Keep your response between 150-300 words. No preamble. Go straight into your analysis.
 ```
 
-### Step 3: Peer Review (5 sub-agents in parallel)
+### Step 3: Peer Review (3 sub-agents in parallel)
 
-This is the step that makes the council more than just "ask 5 times." It's the core of Karpathy's insight.
+This is the step that makes the council more than just "ask 5 times." It's the core of Karpathy's insight — but we don't need 5 reviewers to get it. Three independent peer reviews cover the same ground with 40% less compute and no meaningful loss of signal.
 
 Collect all 5 advisor responses. Anonymize them as Response A through E (randomize which advisor maps to which letter so there's no positional bias).
 
-Spawn 5 new sub-agents, one for each advisor. Each reviewer sees all 5 anonymized responses and answers three questions:
+Spawn 3 peer review sub-agents in parallel. Each reviewer sees all 5 anonymized responses and answers three questions:
 
 1. Which response is the strongest and why? (pick one)
 2. Which response has the biggest blind spot and what is it?
 3. What did ALL responses miss that the council should consider?
+
+Pick the 3 reviewers by rotating through the advisor roster (e.g., Contrarian, Statistician, Outsider for one session; First Principles, Executor, Contrarian for the next). The goal is reviewer diversity, not reviewer quantity.
 
 **Reviewer prompt template:**
 ```
@@ -134,20 +154,11 @@ You are reviewing the outputs of an LLM Council. Five advisors independently ans
 
 Here are their anonymized responses:
 
-**Response A:**
-[response]
-
-**Response B:**
-[response]
-
-**Response C:**
-[response]
-
-**Response D:**
-[response]
-
-**Response E:**
-[response]
+**Response A:** [response]
+**Response B:** [response]
+**Response C:** [response]
+**Response D:** [response]
+**Response E:** [response]
 
 Answer these three questions. Be specific. Reference responses by letter.
 
@@ -155,30 +166,32 @@ Answer these three questions. Be specific. Reference responses by letter.
 2. Which response has the biggest blind spot? What is it missing?
 3. What did ALL five responses miss that the council should consider?
 
-Keep your review under 200 words. Be direct.
+Keep your review under 150 words. Be direct. No preamble.
 ```
 
 ### Step 4: Chairman Synthesis
 
-This is the final step. One agent gets everything: the original question, all 5 advisor responses (now de-anonymized so you can see which advisor said what), and all 5 peer reviews.
+This is the final step. One agent gets everything: the original question, all 5 advisor responses (now de-anonymized so you can see which advisor said what), and the 3 peer reviews.
 
-The chairman's job is to produce the final council output. It follows this structure:
+The chairman's job is to turn raw advisor output into something the user can actually act on before closing the tab. The old "here's what everyone said" summary is dead weight — if the user wanted five opinions they'd have read five opinions. What they want is a verdict and a sequenced path forward.
 
-**COUNCIL VERDICT**
+The chairman produces output in this order, optimized for top-down scanning:
 
-1. **Where the council agrees** -- the points that multiple advisors converged on independently. These are high-confidence signals.
+1. **Bottom Line** -- one sentence: what to do. One sentence: what not to do. That's it. The user who only reads this section should already know what's next.
 
-2. **Where the council clashes** -- the genuine disagreements. Don't smooth these over. Present both sides and explain why reasonable advisors disagree.
+2. **Critical Next Steps** -- an ordered, sequenced list of 3 to 5 actions. Not a bulleted wishlist. Each step must unlock the next, and the FIRST step is marked `**DO TODAY:**`. Every step names a single owner-level action (verb + object), a rough time cost (hours/days), and a success signal (how you'll know that step worked). If a step can't be defined this concretely, it doesn't belong on the list.
 
-3. **Blind spots the council caught** -- things that only emerged through the peer review round. Things individual advisors missed that other advisors flagged.
+3. **Council Convergence** -- the points multiple advisors landed on independently. High-confidence signals. Two or three bullets, not a recap.
 
-4. **The recommendation** -- a clear, actionable recommendation. Not "it depends." Not "consider both sides." A real answer. The chairman can disagree with the majority if the reasoning supports it.
+4. **Council Disagreement** -- the real tradeoff at the center of the decision. Name the axis of disagreement in a single phrase (e.g., "speed vs. rigor"), present both sides in two sentences each, and state which side the chairman is taking and why.
 
-5. **The one thing you should do first** -- a single concrete next step. Not a list of 10 things. One thing.
+5. **Blind Spots Caught in Review** -- things only the peer review round surfaced. Skip this section if there were none — don't manufacture them.
+
+6. **Kill Criteria** -- the signal that would tell the user to stop, reverse course, or re-council. One or two concrete tripwires. This is what separates a real plan from optimistic momentum.
 
 **Chairman prompt template:**
 ```
-You are the Chairman of an LLM Council. Your job is to synthesize the work of 5 advisors and their peer reviews into a final verdict.
+You are the Chairman of an LLM Council. Your job is to turn 5 advisor responses and 3 peer reviews into a verdict the user can act on immediately.
 
 The question brought to the council:
 ---
@@ -187,94 +200,84 @@ The question brought to the council:
 
 ADVISOR RESPONSES:
 
-**The Contrarian:**
-[response]
-
-**The First Principles Thinker:**
-[response]
-
-**The Expansionist:**
-[response]
-
-**The Outsider:**
-[response]
-
-**The Executor:**
-[response]
+**The Contrarian:** [response]
+**The First Principles Thinker:** [response]
+**The Statistician:** [response]
+**The Outsider:** [response]
+**The Executor:** [response]
 
 PEER REVIEWS:
-[all 5 peer reviews]
+[the 3 peer reviews]
 
-Produce the council verdict using this exact structure:
+Produce the verdict using this exact structure and order. Be direct. No hedging, no "it depends," no recaps of what advisors said. The user wants clarity and a path, not a summary.
 
-## Where the Council Agrees
-[Points multiple advisors converged on independently. These are high-confidence signals.]
+## Bottom Line
+**Do:** [one sentence.]
+**Don't:** [one sentence.]
 
-## Where the Council Clashes
-[Genuine disagreements. Present both sides. Explain why reasonable advisors disagree.]
+## Critical Next Steps
+1. **DO TODAY:** [verb + object]. Time: [hours/days]. Success signal: [observable outcome].
+2. [verb + object]. Time: [...]. Success signal: [...].
+3. [verb + object]. Time: [...]. Success signal: [...].
+[Up to 5 total. Each step must unlock the next. No wishlists.]
 
-## Blind Spots the Council Caught
-[Things that only emerged through peer review. Things individual advisors missed that others flagged.]
+## Council Convergence
+- [high-confidence signal]
+- [high-confidence signal]
 
-## The Recommendation
-[A clear, direct recommendation. Not "it depends." A real answer with reasoning.]
+## Council Disagreement
+**The real tradeoff:** [one phrase — e.g., "speed vs. rigor"].
+**Side A:** [two sentences.]
+**Side B:** [two sentences.]
+**Chairman's call:** [which side, and the single reason why.]
 
-## The One Thing to Do First
-[A single concrete next step. Not a list. One thing.]
+## Blind Spots Caught in Review
+[Only include if the peer review round surfaced something genuinely new. Otherwise omit this section entirely.]
 
-Be direct. Don't hedge. The whole point of the council is to give the user clarity they couldn't get from a single perspective.
+## Kill Criteria
+- [concrete tripwire that would tell the user to stop or reverse course]
+- [optional second tripwire]
+
+End of output. Do not add closing commentary.
 ```
 
-### Step 5: Generate the Council Report
+### Step 5: Save the Full Transcript
 
-After the chairman synthesis is complete, generate a visual HTML report and save it to the user's workspace.
+Save the complete council session as `council-transcript-[timestamp].md`. Markdown is the only output format — no HTML, no duplicated artifact. The chairman's verdict is structured for top-down scanning in any markdown viewer (editor, GitHub, terminal), so a separate rendered report adds cost without adding signal.
 
-**File:** `council-report-[timestamp].html`
+The transcript must be organized in this exact order so the most actionable content is at the top:
 
-The report should be a single self-contained HTML file with inline CSS. Clean design, easy to scan. It should contain:
+1. **Header** -- date and one-line question.
+2. **Chairman's Verdict** -- the full output from Step 4. This is the section the user actually reads; it must come first.
+3. **Original Question** and **Framed Question** -- for reference.
+4. **Advisor Responses** -- all 5, de-anonymized, in the order listed in Section "The Five Advisors".
+5. **Peer Reviews** -- the 3 reviews, with the anonymization mapping (A→which advisor) revealed at the top of this section.
 
-1. **The question** at the top
-2. **The chairman's verdict** prominently displayed (this is what most people will read)
-3. **An agreement/disagreement visual** -- a simple visual showing which advisors aligned and which diverged. This could be a grid, a spectrum, or a simple breakdown showing advisor positions. Keep it clean and scannable.
-4. **Collapsible sections** for each advisor's full response (collapsed by default so the page isn't overwhelming, but available if the user wants to dig in)
-5. **Collapsible section** for the peer review highlights
-6. **A footer** showing the timestamp and what was counciled
+Use `##` for top-level sections and `###` for advisor/reviewer subsections. Keep the file to a single `.md` file — no companion HTML, no embedded images, no JSON sidecar.
 
-Use clean styling: white background, subtle borders, readable sans-serif font (system font stack), soft accent colors to distinguish advisor sections. Nothing flashy. It should look like a professional briefing document.
-
-Open the HTML file after generating it so the user can see it immediately.
-
-### Step 6: Save the Full Transcript
-
-Save the complete council transcript as `council-transcript-[timestamp].md` in the same location. This includes:
-
-- The original question
-- The framed question
-- All 5 advisor responses
-- All 5 peer reviews (with anonymization mapping revealed)
-- The chairman's full synthesis
-
-This transcript is the artifact. If the user wants to run the council again on the same question after making changes, having the previous transcript lets them (or a future agent) see how the thinking evolved.
+Print the file path back to the user when done. Do not open it automatically.
 
 ---
 
 ## Output Format
 
-Every council session produces two files:
+Every council session produces exactly one file:
 
 ```
-council-report-[timestamp].html   # visual report for scanning
-council-transcript-[timestamp].md # full transcript for reference
+council-transcript-[timestamp].md
 ```
 
-The user sees the HTML report. The transcript is there if they want to dig deeper or reference specific advisor arguments later.
+Markdown only. No HTML reports. The chairman's verdict sits at the top of the transcript so it's the first thing the user reads; the advisor responses and peer reviews live below for anyone who wants to dig in.
 
 ---
 
 ## Important Notes
 
-- **Always spawn all 5 advisors in parallel.** Sequential spawning wastes time and lets earlier responses bleed into later ones.
+- **Step 0 is mandatory unless the user opts out.** The Point Person prevents redundant council runs on questions already answered. Skip it only when the user explicitly says "fresh council" or similar.
+- **Always spawn all 5 advisors in parallel** (or 2 for a Bucket 4 partial council). Sequential spawning wastes time and lets earlier responses bleed into later ones.
+- **Always spawn the 3 peer reviewers in parallel** once advisor responses are in. Same reasoning. Drop to 2 reviewers for a Bucket 4 partial council.
 - **Always anonymize for peer review.** If reviewers know which advisor said what, they'll defer to certain thinking styles instead of evaluating on merit.
-- **The chairman can disagree with the majority.** If 4 out of 5 advisors say "do it" but the reasoning of the 1 dissenter is strongest, the chairman should side with the dissenter and explain why.
+- **The chairman can disagree with the majority.** If 4 out of 5 advisors say "do it" but the reasoning of the 1 dissenter is strongest, the chairman should side with the dissenter and explain why — and say so explicitly in the **Chairman's call** line.
 - **Don't council trivial questions.** If the user asks something with one right answer, just answer it. The council is for genuine uncertainty where multiple perspectives add value.
-- **The visual report matters.** Most users will scan the report, not read the full transcript. Make the HTML output clean and scannable.
+- **Markdown-only output.** The chairman's verdict is structured to be scannable in raw markdown. Do not generate HTML, PDF, or any other rendered artifact. One file per session: `council-transcript-[timestamp].md`.
+- **Don't pad the verdict.** If there are no genuine blind spots from peer review, omit that section. If the council didn't really disagree, say so in one line instead of inventing a tradeoff. Sections that get manufactured for completeness dilute the real signal.
