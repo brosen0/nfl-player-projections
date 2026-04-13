@@ -9,6 +9,8 @@ You ask one AI a question, you get one answer. That answer might be great. It mi
 
 The council fixes this. It runs your question through 5 independent advisors, each thinking from a fundamentally different angle. Then they review each other's work. Then a chairman synthesizes everything into a final recommendation that tells you where the advisors agree, where they clash, and what you should actually do.
 
+Before any of that happens, a **Point Person** (Step 0) checks whether the question has already been answered in a prior council, is a status check on outstanding action items, or is a follow-up about a past session. Most repeat questions never need a full council re-run. See the `council-point-person` skill.
+
 This is adapted from Andrej Karpathy's LLM Council. He dispatches queries to multiple models, has them peer-review each other anonymously, then a chairman produces the final answer. We do the same thing inside Claude using sub-agents with different thinking lenses instead of different models.
 
 ---
@@ -57,6 +59,22 @@ Only cares about one thing: can this actually be done, and what's the fastest pa
 ---
 
 ## How a Council Session Works
+
+### Step 0: Triage via the Point Person
+
+Before convening any advisors, invoke the `council-point-person` skill. It scans recent council transcripts and classifies the user's question into one of five buckets:
+
+- **Bucket 1 — Already Answered.** Return the prior verdict. Do not convene.
+- **Bucket 2 — Follow-up on a Prior Session.** Point Person answers from the transcript. Do not convene.
+- **Bucket 3 — Status Check.** Point Person returns outstanding action items. Do not convene.
+- **Bucket 4 — Re-council with Changed Conditions.** Point Person summarizes the delta and, on user confirmation, hands off a tightened framed question and a reduced advisor roster (typically 2 advisors). Convene a *partial* council from Step 1.
+- **Bucket 5 — Genuinely New.** Proceed to Step 1 with the full 5-advisor council.
+
+If the user explicitly says "fresh council," "skip triage," or "new council on this," skip Step 0 and go straight to Step 1. Otherwise, Step 0 is mandatory — it's the primary mechanism preventing redundant $9-subagent re-runs of settled questions.
+
+When Step 0 short-circuits the session (Buckets 1, 2, or 3), do NOT write a new `council-transcript-*.md`. The Point Person's output is conversational; no transcript artifact is produced for non-council outcomes.
+
+When Step 0 hands off a partial council (Bucket 4), use the Point Person's reduced advisor list for Step 2 and its tightened framed question as the input to all remaining steps. Peer review in Step 3 drops to 2 reviewers if only 2 advisors responded. The Chairman template is unchanged.
 
 ### Step 1: Frame the Question (with context enrichment)
 
@@ -255,8 +273,9 @@ Markdown only. No HTML reports. The chairman's verdict sits at the top of the tr
 
 ## Important Notes
 
-- **Always spawn all 5 advisors in parallel.** Sequential spawning wastes time and lets earlier responses bleed into later ones.
-- **Always spawn the 3 peer reviewers in parallel** once advisor responses are in. Same reasoning.
+- **Step 0 is mandatory unless the user opts out.** The Point Person prevents redundant council runs on questions already answered. Skip it only when the user explicitly says "fresh council" or similar.
+- **Always spawn all 5 advisors in parallel** (or 2 for a Bucket 4 partial council). Sequential spawning wastes time and lets earlier responses bleed into later ones.
+- **Always spawn the 3 peer reviewers in parallel** once advisor responses are in. Same reasoning. Drop to 2 reviewers for a Bucket 4 partial council.
 - **Always anonymize for peer review.** If reviewers know which advisor said what, they'll defer to certain thinking styles instead of evaluating on merit.
 - **The chairman can disagree with the majority.** If 4 out of 5 advisors say "do it" but the reasoning of the 1 dissenter is strongest, the chairman should side with the dissenter and explain why — and say so explicitly in the **Chairman's call** line.
 - **Don't council trivial questions.** If the user asks something with one right answer, just answer it. The council is for genuine uncertainty where multiple perspectives add value.
