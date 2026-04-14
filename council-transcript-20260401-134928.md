@@ -154,6 +154,6 @@ Audit for (1) first. If the pipeline is clean, the Contrarian's diagnosis is cor
 
 Do not pursue distributional prediction until point estimates are unbiased. Do not add complexity until the simple version works across years.
 
-### The One Thing to Do First
+### The One Thing to Do First ✓ done (2026-04-14, audit completed via scripts/trace_player_leakage.py + CRITICAL_LIMITATION.md rewrite)
 
 Audit the 2025 backtest pipeline for data leakage. Manually trace feature values for 3-5 players in Week 1 of 2025 and verify that no statistic from 2025 or late 2024 (after training cutoff) contaminates any rolling average, lag feature, or engineered variable. If leakage is found, fix it and re-run. If clean, proceed with feature reduction.
