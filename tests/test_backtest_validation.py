@@ -228,3 +228,93 @@ class TestPredictionBias:
                 for pos, pred, act, pct in biased
             )
         )
+
+
+# ---------------------------------------------------------------------------
+# Walk-forward bias regression (council 2026-04-14, Step 2)
+# ---------------------------------------------------------------------------
+# Replaces the safety function of the calibration gate (deleted in commit
+# 8f4f717).  The gate blended predictions toward a trailing-average baseline
+# whenever they deviated >50% — that worked as a circuit breaker against the
+# +44% pre-leakage-fix bias, but it also suppressed legitimate breakout
+# predictions.  This regression test enforces the same bias floor without
+# touching the predictions: if a future pipeline change reintroduces
+# systematic over- or under-prediction, the test fails at PR time.
+
+WALK_FORWARD_DIR = DATA_DIR / "backtest_results"
+WALK_FORWARD_BIAS_TOLERANCE_PCT = 10.0
+
+
+def _latest_walk_forward_predictions():
+    """Return Path of the most recent ts_backtest_*_predictions.csv, or None."""
+    if not WALK_FORWARD_DIR.exists():
+        return None
+    candidates = sorted(
+        WALK_FORWARD_DIR.glob("ts_backtest_*_predictions.csv"),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
+    return candidates[0] if candidates else None
+
+
+class TestWalkForwardBiasRegression:
+    """Pin per-position bias on the most recent walk-forward backtest.
+
+    Tolerance: ±10% per position (council verdict, 2026-04-14).
+    Reference: CRITICAL_LIMITATION.md — current per-position bias is in
+    [−5.3%, +7.5%], well within tolerance.  The pre-leakage-fix February
+    backtest showed +44% bias overall and would fail this test, which is
+    exactly the regression mode we want to catch.
+
+    Provenance: council-transcript-20260414-034617.md (Step 2).
+    """
+
+    @pytest.fixture(scope="class")
+    def predictions_df(self):
+        path = _latest_walk_forward_predictions()
+        if path is None:
+            pytest.skip("No walk-forward backtest predictions found")
+        df = pd.read_csv(path)
+        required = {"position", "predicted", "actual"}
+        missing = required - set(df.columns)
+        if missing:
+            pytest.skip(f"Walk-forward CSV missing required columns: {missing}")
+        return df
+
+    def test_overall_bias_within_tolerance(self, predictions_df):
+        """Overall mean prediction must be within ±10% of overall mean actual."""
+        avg_pred = predictions_df["predicted"].mean()
+        avg_actual = predictions_df["actual"].mean()
+        assert avg_actual > 0, "Cannot compute bias: avg_actual is zero or negative"
+        bias_pct = (avg_pred - avg_actual) / avg_actual * 100
+        assert abs(bias_pct) <= WALK_FORWARD_BIAS_TOLERANCE_PCT, (
+            f"Overall walk-forward bias is {bias_pct:+.1f}% "
+            f"(predicted {avg_pred:.2f} vs actual {avg_actual:.2f}, "
+            f"tolerance ±{WALK_FORWARD_BIAS_TOLERANCE_PCT:.0f}%). "
+            f"This is the regression the calibration gate was deleted to "
+            f"replace — see council-transcript-20260414-034617.md."
+        )
+
+    def test_per_position_bias_within_tolerance(self, predictions_df):
+        """Each position's mean prediction must be within ±10% of mean actual."""
+        offenders = []
+        for pos, group in predictions_df.groupby("position"):
+            avg_pred = group["predicted"].mean()
+            avg_actual = group["actual"].mean()
+            if avg_actual <= 0:
+                continue
+            bias_pct = (avg_pred - avg_actual) / avg_actual * 100
+            if abs(bias_pct) > WALK_FORWARD_BIAS_TOLERANCE_PCT:
+                offenders.append((pos, avg_pred, avg_actual, bias_pct, len(group)))
+
+        assert not offenders, (
+            f"{len(offenders)} position(s) exceed "
+            f"±{WALK_FORWARD_BIAS_TOLERANCE_PCT:.0f}% bias tolerance on the "
+            f"walk-forward backtest ({_latest_walk_forward_predictions().name}):\n"
+            + "\n".join(
+                f"  {pos}: {bias:+.1f}% (predicted {pred:.2f} vs actual {act:.2f}, n={n})"
+                for pos, pred, act, bias, n in offenders
+            )
+            + "\n\nThis is the regression the calibration gate was deleted "
+            "to replace — see council-transcript-20260414-034617.md."
+        )

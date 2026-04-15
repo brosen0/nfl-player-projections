@@ -3,11 +3,12 @@
 CLI runner for the leakage-free time-series backtester.
 
 Usage:
-    python scripts/run_ts_backtest.py                     # Backtest latest season, Ridge
+    python scripts/run_ts_backtest.py                     # Backtest latest season, Ridge α=1.0
     python scripts/run_ts_backtest.py --season 2024       # Backtest specific season
     python scripts/run_ts_backtest.py --model gbm         # Use GBM instead of Ridge
     python scripts/run_ts_backtest.py --model ensemble    # Use production ensemble stack
     python scripts/run_ts_backtest.py --positions QB RB    # Only backtest QB and RB
+    python scripts/run_ts_backtest.py --alpha 0.3         # Override Ridge α (default 1.0)
 """
 
 import argparse
@@ -44,6 +45,12 @@ def main():
         help="Positions to backtest (default: QB RB WR TE)",
     )
     parser.add_argument(
+        "--alpha", "-a",
+        type=float,
+        default=1.0,
+        help="Ridge regularization strength (default: 1.0). Ignored when --model is gbm or ensemble.",
+    )
+    parser.add_argument(
         "--quiet", "-q",
         action="store_true",
         help="Suppress verbose output",
@@ -56,6 +63,8 @@ def main():
     print("=" * 60)
     print(f"  Season: {args.season or 'auto (latest)'}")
     print(f"  Model: {args.model}")
+    if args.model == "ridge":
+        print(f"  Ridge alpha: {args.alpha}")
     print(f"  Positions: {args.positions or 'all'}")
     print()
 
@@ -64,6 +73,7 @@ def main():
         model_type=args.model,
         positions=args.positions,
         verbose=not args.quiet,
+        ridge_alpha=args.alpha,
     )
 
     print(f"\nDone. {len(pred_df)} predictions generated.")

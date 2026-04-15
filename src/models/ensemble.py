@@ -661,10 +661,6 @@ class EnsemblePredictor:
         # on top was a second shrinkage layer that compressed prediction spread.
         # results = self._apply_td_regression(results, player_data)
 
-        # Calibration gate: blend predictions toward trailing-avg baseline
-        # when deviation exceeds threshold (council "circuit breaker").
-        results = self._apply_calibration_gate(results, player_data, n_weeks)
-
         # Prediction sanity bounds: clip to reasonable fantasy point ranges per position per week
         _BOUNDS_PER_WEEK = {"QB": (0, 65), "RB": (0, 55), "WR": (0, 55), "TE": (0, 45)}
         for position in POSITIONS:
@@ -685,93 +681,6 @@ class EnsemblePredictor:
         results.attrs["prediction_elapsed_s"] = round(_pred_elapsed, 4)
         results.attrs["prediction_per_player_s"] = round(per_player, 6)
         results.attrs["prediction_speed_ok"] = per_player <= MAX_PREDICTION_TIME_PER_PLAYER_SECONDS
-
-        return results
-
-    def _apply_calibration_gate(
-        self,
-        results: pd.DataFrame,
-        player_data: pd.DataFrame,
-        n_weeks: int,
-    ) -> pd.DataFrame:
-        """Blend predictions toward trailing-average baseline when deviation is extreme.
-
-        Council recommendation ("circuit breaker"): if the ensemble prediction
-        deviates from a simple trailing-average baseline by more than a
-        configurable threshold, pull it back toward the baseline.  This catches
-        the kind of catastrophic +44% over-prediction seen in the 2025 backtest
-        before it reaches downstream consumers.
-
-        The baseline is a per-player trailing N-game mean of ``fantasy_points``
-        (shifted to exclude the current week).  When the model prediction
-        deviates by more than ``threshold_pct`` from that baseline, we blend::
-
-            adjusted = (1 - w) * model_pred + w * baseline
-
-        where ``w = blend_weight``.  Players with insufficient history are left
-        untouched — we cannot sanity-check without a reference point.
-        """
-        from config.settings import (
-            CALIBRATION_GATE_ENABLED,
-            CALIBRATION_GATE_THRESHOLD_PCT,
-            CALIBRATION_GATE_BLEND_WEIGHT,
-            CALIBRATION_GATE_BASELINE_WINDOW,
-            CALIBRATION_GATE_MIN_HISTORY,
-        )
-        if not CALIBRATION_GATE_ENABLED:
-            return results
-        if "predicted_points" not in results.columns:
-            return results
-
-        threshold = CALIBRATION_GATE_THRESHOLD_PCT / 100.0
-        blend_w = CALIBRATION_GATE_BLEND_WEIGHT
-        window = CALIBRATION_GATE_BASELINE_WINDOW
-        min_hist = CALIBRATION_GATE_MIN_HISTORY
-
-        # Compute per-player trailing-average baseline from historical data.
-        # player_data has the full feature rows; results has one row per player
-        # with the prediction attached.
-        baseline = pd.Series(np.nan, index=results.index)
-        if "fantasy_points" in player_data.columns and "player_id" in player_data.columns:
-            trailing = (
-                player_data.sort_values(["player_id", "season", "week"])
-                .groupby("player_id")["fantasy_points"]
-                .apply(lambda x: x.iloc[-window:].mean() if len(x) >= min_hist else np.nan)
-            )
-            if "player_id" in results.columns:
-                baseline = results["player_id"].map(trailing)
-
-        # Scale baseline for multi-week predictions
-        baseline_scaled = baseline * n_weeks
-
-        pred = results["predicted_points"].values.astype(float)
-        base = baseline_scaled.values.astype(float)
-
-        # Identify rows where we have both a prediction and a baseline
-        valid = np.isfinite(pred) & np.isfinite(base) & (base > 0)
-        if not valid.any():
-            return results
-
-        deviation = np.abs(pred - base) / base
-        exceeds = valid & (deviation > threshold)
-        n_adjusted = int(exceeds.sum())
-
-        if n_adjusted > 0:
-            # Blend: pull prediction toward baseline
-            adjusted = (1 - blend_w) * pred + blend_w * base
-            results.loc[exceeds, "predicted_points"] = adjusted[exceeds]
-
-            # Tag adjusted rows for transparency
-            results["calibration_gate_adjusted"] = exceeds.astype(int)
-            results["calibration_gate_baseline"] = baseline_scaled
-
-            import logging
-            logging.getLogger(__name__).info(
-                "Calibration gate: adjusted %d/%d predictions "
-                "(threshold=%.0f%%, blend=%.0f%%)",
-                n_adjusted, int(valid.sum()),
-                CALIBRATION_GATE_THRESHOLD_PCT, blend_w * 100,
-            )
 
         return results
 

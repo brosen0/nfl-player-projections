@@ -146,6 +146,6 @@ Three structural failures appeared independently across every advisor:
 
 Fix data integrity before building anything else. Audit train/test splits for temporal ordering and feature leakage. Re-run the backtester. If numbers hold, wire injury probability as a multiplier, replace simulated baselines with real FantasyPros/Vegas data, and add percentile outputs to the optimizer. Then pursue the Expansionist's product vision.
 
-### The One Thing to Do First
+### The One Thing to Do First ✓ done (2026-04-14, audit completed via scripts/trace_player_leakage.py + CRITICAL_LIMITATION.md rewrite)
 
 Audit every rolling average and lag feature computation in the training pipeline -- confirm they are calculated strictly on past data relative to each training example. Then re-run the backtester with verified time-ordered splits and compare to currently reported performance. If numbers are stable, everything is worth building on. If they drop, you've saved yourself from shipping a system that loses money for users.

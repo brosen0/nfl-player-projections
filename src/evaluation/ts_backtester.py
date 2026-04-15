@@ -787,13 +787,17 @@ def _serialize_metrics(m: Dict[str, Any]) -> Dict[str, Any]:
 # Default model factory using Ridge regression (fast, robust)
 # ---------------------------------------------------------------------------
 
-def default_model_factory(train_df: pd.DataFrame, position: str):
+def default_model_factory(train_df: pd.DataFrame, position: str, alpha: float = 1.0):
     """
     Default model factory: Ridge regression per position.
     Returns an unfitted model (fit is called by the backtester).
+
+    ``alpha`` is the Ridge regularization strength.  Bind it via
+    ``functools.partial`` when constructing a factory for the backtester,
+    which calls factories with only ``(train_df, position)``.
     """
     from sklearn.linear_model import Ridge
-    return Ridge(alpha=1.0)
+    return Ridge(alpha=alpha)
 
 
 def gradient_boosting_factory(train_df: pd.DataFrame, position: str):
@@ -885,6 +889,7 @@ def run_ts_backtest(
     model_type: str = "ridge",
     positions: List[str] = None,
     verbose: bool = True,
+    ridge_alpha: float = 1.0,
 ) -> Tuple[pd.DataFrame, Dict[str, Any]]:
     """
     End-to-end time-series backtest.
@@ -898,6 +903,9 @@ def run_ts_backtest(
         model_type: "ridge", "gbm", or "ensemble".
         positions: Positions to backtest.
         verbose: Print progress.
+        ridge_alpha: Ridge regularization strength (only used when
+            model_type="ridge").  Default 1.0.  Other model types ignore
+            this parameter.
     """
     from src.utils.database import DatabaseManager
     from src.utils.data_manager import DataManager
@@ -943,7 +951,8 @@ def run_ts_backtest(
     elif model_type == "gbm":
         factory = gradient_boosting_factory
     else:
-        factory = default_model_factory
+        from functools import partial
+        factory = partial(default_model_factory, alpha=ridge_alpha)
 
     # Run backtest
     bt = TimeSeriesBacktester(
