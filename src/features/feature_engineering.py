@@ -1630,18 +1630,49 @@ class FeatureEngineer:
                         df[col] = df[col].fillna(df[vegas_col])
                     df = df.drop(columns=[vegas_col])
 
-        except Exception:
-            pass
+        except Exception as e:
+            # Surface the silent-fallback failure so silently-degraded Vegas
+            # features can't masquerade as live model inputs.  Previously this
+            # was an unconditional `pass`, which let nfl_data_py outages
+            # silently collapse implied_team_total/spread to constants and
+            # train Ridge on dead inputs.  See docs/PHASE_1_VEGAS_FINDINGS.md.
+            import logging
+            logging.getLogger(__name__).warning(
+                "Vegas-line load from nfl_data_py failed (%s: %s); "
+                "implied_team_total/spread will fall back to constant defaults "
+                "(23.0 / 0.0) for any rows lacking pre-merged Vegas columns. "
+                "Run scripts/check_vegas_features.py to diagnose.",
+                type(e).__name__, e,
+            )
 
-        # Defaults for missing values — compute all new columns before assigning
+        # Defaults for missing values — compute all new columns before assigning.
+        # Track how many rows received a constant fill so the downstream test
+        # in tests/test_backtest_validation.py can flag silent degradation.
         default_cols: dict = {}
+        n_filled_with_default = 0
         for col, default in [("spread", 0.0), ("game_total", 46.0), ("implied_team_total", 23.0)]:
             if col not in df.columns:
                 default_cols[col] = default
+                n_filled_with_default += len(df)
             else:
+                missing_mask = df[col].isna()
+                missing_count = int(missing_mask.sum())
+                if missing_count:
+                    n_filled_with_default += missing_count
                 filled = df[col].fillna(default)
                 if filled is not df[col]:
                     default_cols[col] = filled
+        if n_filled_with_default and len(df) > 0:
+            frac = n_filled_with_default / (len(df) * 3)  # 3 columns counted
+            if frac > 0.5:
+                import logging
+                logging.getLogger(__name__).warning(
+                    "Vegas features defaulted on %.0f%% of rows (>50%% threshold). "
+                    "implied_team_total/spread are effectively dead inputs for this "
+                    "training set.  Verify nfl_data_py.import_schedules works in this "
+                    "environment.",
+                    frac * 100,
+                )
         if default_cols:
             df = df.assign(**default_cols)
 
