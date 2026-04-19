@@ -32,7 +32,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from config.settings import DATA_DIR, MODELS_DIR, POSITIONS
+from config.settings import DATA_DIR, DECISION_QUALITY, MODELS_DIR, POSITIONS
 from src.utils.leakage import filter_feature_columns
 
 warnings.filterwarnings("ignore", category=UserWarning)
@@ -207,6 +207,8 @@ class TimeSeriesBacktester:
         positions: List[str] = None,
         feature_pipeline: Optional[Callable] = None,
         verbose: bool = True,
+        payout_multiplier: Optional[float] = None,
+        report_decision_quality: bool = True,
     ):
         """
         Args:
@@ -239,6 +241,13 @@ class TimeSeriesBacktester:
         self.weekly_metrics: Dict[int, Dict[str, float]] = {}
         self.position_metrics: Dict[str, Dict[str, float]] = {}
         self._run_timestamp: Optional[str] = None
+
+        self.payout_multiplier = (
+            payout_multiplier
+            if payout_multiplier is not None
+            else float(DECISION_QUALITY.get("payout_multiplier", 1.8))
+        )
+        self.report_decision_quality = report_decision_quality
 
     # ------------------------------------------------------------------
     def run_backtest(self) -> pd.DataFrame:
@@ -661,6 +670,36 @@ class TimeSeriesBacktester:
         return baselines
 
     # ------------------------------------------------------------------
+    def _compute_decision_quality(self, pred_df: pd.DataFrame) -> Dict[str, Any]:
+        """Run cash-H2H lineup decision quality on walk-forward predictions.
+
+        Reuses ``ModelBacktester.backtest_lineup_decisions`` so the three
+        opponent tiers, binomial test, and ROI formula stay in one place.
+        Returns an empty dict when disabled or when the required columns
+        aren't present, so callers can splice the result in unconditionally.
+        """
+        if not self.report_decision_quality or pred_df is None or pred_df.empty:
+            return {}
+        required = {"predicted", "actual", "position", "week"}
+        if not required.issubset(pred_df.columns):
+            return {}
+        try:
+            from src.evaluation.backtester import ModelBacktester
+        except Exception:
+            return {}
+
+        df = pred_df.rename(
+            columns={"predicted": "predicted_points", "actual": "fantasy_points"}
+        )
+        return ModelBacktester().backtest_lineup_decisions(
+            df,
+            pred_col="predicted_points",
+            actual_col="fantasy_points",
+            position_col="position",
+            payout_multiplier=self.payout_multiplier,
+        )
+
+    # ------------------------------------------------------------------
     def get_results_dict(self) -> Dict[str, Any]:
         """Return results as a JSON-serializable dict."""
         pred_df = pd.DataFrame(self.predictions)
@@ -703,6 +742,7 @@ class TimeSeriesBacktester:
             } if scenarios else {},
             "friction_analysis": friction,
             "baselines": self.compute_baseline_comparison(),
+            "decision_quality": self._compute_decision_quality(valid),
             "diagnostics": {
                 "model_refit_per_week": True,
                 "expanding_window": True,
@@ -734,12 +774,26 @@ class TimeSeriesBacktester:
 
         # Metrics JSON
         metrics_path = output_dir / f"ts_backtest_{self.season}_{ts}.json"
+        results = self.get_results_dict()
         with open(metrics_path, "w") as f:
-            json.dump(self.get_results_dict(), f, indent=2, default=str)
+            json.dump(results, f, indent=2, default=str)
+
+        # Per-week lineup decision-quality CSV — the council's stated
+        # success signal for this workstream.  Skipped when decision quality
+        # is disabled or no complete weeks were produced.
+        lineup_weekly_path: Optional[Path] = None
+        weekly = (results.get("decision_quality") or {}).get("weekly_results")
+        if weekly:
+            lineup_weekly_path = (
+                output_dir / f"ts_backtest_{self.season}_{ts}_lineup_weekly.csv"
+            )
+            pd.DataFrame(weekly).to_csv(lineup_weekly_path, index=False)
 
         if self.verbose:
             print(f"\n  Predictions saved to: {pred_path.name}")
             print(f"  Metrics saved to: {metrics_path.name}")
+            if lineup_weekly_path is not None:
+                print(f"  Lineup weekly saved to: {lineup_weekly_path.name}")
 
         return pred_path, metrics_path
 
@@ -890,6 +944,8 @@ def run_ts_backtest(
     positions: List[str] = None,
     verbose: bool = True,
     ridge_alpha: float = 1.0,
+    payout_multiplier: Optional[float] = None,
+    report_decision_quality: bool = True,
 ) -> Tuple[pd.DataFrame, Dict[str, Any]]:
     """
     End-to-end time-series backtest.
@@ -961,6 +1017,8 @@ def run_ts_backtest(
         season_to_backtest=season,
         positions=positions,
         verbose=verbose,
+        payout_multiplier=payout_multiplier,
+        report_decision_quality=report_decision_quality,
     )
 
     pred_df = bt.run_backtest()

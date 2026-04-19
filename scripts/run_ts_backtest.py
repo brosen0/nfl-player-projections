@@ -55,6 +55,20 @@ def main():
         action="store_true",
         help="Suppress verbose output",
     )
+    parser.add_argument(
+        "--payout-multiplier",
+        type=float,
+        default=None,
+        help=(
+            "Cash-H2H payout multiplier for ROI calculation "
+            "(default: config.DECISION_QUALITY; 1.8 ≈ DFS cash H2H after ~20%% rake)."
+        ),
+    )
+    parser.add_argument(
+        "--no-decision-quality",
+        action="store_true",
+        help="Skip cash-H2H win-rate / ROI reporting (legacy MAE/RMSE/R² only).",
+    )
 
     args = parser.parse_args()
 
@@ -74,6 +88,8 @@ def main():
         positions=args.positions,
         verbose=not args.quiet,
         ridge_alpha=args.alpha,
+        payout_multiplier=args.payout_multiplier,
+        report_decision_quality=not args.no_decision_quality,
     )
 
     print(f"\nDone. {len(pred_df)} predictions generated.")
@@ -82,6 +98,54 @@ def main():
         print(f"  MAE:  {m.get('mae', 'N/A')}")
         print(f"  RMSE: {m.get('rmse', 'N/A')}")
         print(f"  R²:   {m.get('r2', 'N/A')}")
+
+    _print_decision_quality(results.get("decision_quality") or {})
+
+
+def _print_decision_quality(dq: dict) -> None:
+    """Pretty-print the cash-H2H decision-quality block.
+
+    Silently returns when the block is absent (disabled run or pre-wiring
+    results) or carries an error (e.g. insufficient complete weeks).
+    """
+    if not dq or dq.get("error"):
+        return
+
+    payout = dq.get("payout_multiplier", 1.8)
+    break_even = dq.get("break_even_win_rate")
+    n_weeks = dq.get("n_weeks", 0)
+
+    header = f"\nDecision Quality (payout = {payout}×"
+    if break_even is not None:
+        header += f", break-even = {break_even * 100:.1f}%"
+    header += f", n_weeks = {n_weeks})"
+    print(header)
+
+    tiers = [
+        ("Oracle",      dq.get("vs_oracle") or {}),
+        ("Hindsight",   dq.get("vs_hindsight") or {}),
+        ("Replacement", dq.get("vs_replacement") or {}),
+    ]
+    print(f"  {'':<14}{'Win rate':>10}{'Record':>12}{'Binomial p':>14}{'ROI':>10}{'Avg margin':>14}")
+    for name, t in tiers:
+        if not t:
+            continue
+        wr = t.get("win_rate", 0) * 100
+        record = f"{t.get('wins', 0)}-{t.get('losses', 0)}"
+        p_val = t.get("p_value", float("nan"))
+        roi = t.get("roi", 0) * 100
+        margin = t.get("avg_margin", 0)
+        print(
+            f"  {name:<14}{wr:>9.1f}%{record:>12}{p_val:>14.4f}{roi:>+9.1f}%{margin:>+14.2f}"
+        )
+
+    weekly = dq.get("weekly_results") or []
+    if weekly:
+        marks = "".join(
+            ("✓" if w.get("won_vs_hindsight") else "✗") for w in weekly
+        )
+        cum = weekly[-1].get("cumulative_win_rate_vs_hindsight", 0) * 100
+        print(f"  Weekly vs hindsight: {marks}  ({cum:.1f}% cumulative)")
 
 
 if __name__ == "__main__":

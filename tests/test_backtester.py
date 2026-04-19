@@ -233,6 +233,86 @@ def test_success_criteria_includes_lineup_win_rate():
     assert sc["lineup_vs_replacement"]["win_rate"] == 0.90
 
 
+def _build_lineup_fixture(weeks: int = 6, seed: int = 7) -> pd.DataFrame:
+    rng = np.random.default_rng(seed)
+    rows = []
+    for week in range(1, weeks + 1):
+        for pos, n in [("QB", 4), ("RB", 6), ("WR", 6), ("TE", 4)]:
+            for j in range(n):
+                actual = float(8 + j * 2.5 + rng.normal(0, 3))
+                predicted = actual + float(rng.normal(0, 2))
+                rows.append({
+                    "player_id": f"{pos}{j}",
+                    "position": pos,
+                    "week": week,
+                    "fantasy_points": actual,
+                    "predicted_points": predicted,
+                })
+    return pd.DataFrame(rows)
+
+
+def test_backtest_lineup_decisions_returns_roi():
+    """ROI must appear on every tier and satisfy roi = payout * win_rate - 1."""
+    backtester = ModelBacktester()
+    result = backtester.backtest_lineup_decisions(_build_lineup_fixture())
+    assert "error" not in result
+    assert result["payout_multiplier"] == 1.8
+    # break_even_win_rate is rounded to 4dp in the returned dict.
+    assert abs(result["break_even_win_rate"] - (1.0 / 1.8)) < 1e-3
+
+    # Each returned win_rate is rounded to 4dp, but roi is computed from the
+    # raw (un-rounded) ratio — allow one ULP of drift when recomputing.
+    for tier_key in ("vs_oracle", "vs_hindsight", "vs_replacement"):
+        tier = result[tier_key]
+        assert "roi" in tier, f"{tier_key} missing roi"
+        expected = round(1.8 * tier["win_rate"] - 1.0, 4)
+        assert abs(tier["roi"] - expected) < 2e-4, (
+            f"{tier_key} roi={tier['roi']} expected≈{expected}"
+        )
+
+
+def test_backtest_lineup_decisions_returns_weekly_series():
+    """weekly_results exposes per-week cumulative win rates, monotone in n."""
+    backtester = ModelBacktester()
+    result = backtester.backtest_lineup_decisions(_build_lineup_fixture(weeks=8))
+    weekly = result["weekly_results"]
+    assert len(weekly) == 8
+
+    for tier in ("oracle", "hindsight", "replacement"):
+        key = f"cumulative_win_rate_vs_{tier}"
+        values = [w[key] for w in weekly]
+        assert all(0.0 <= v <= 1.0 for v in values), f"{key} out of [0,1]: {values}"
+        # Final cumulative equals the aggregate tier win_rate.
+        assert abs(values[-1] - result[f"vs_{tier}"]["win_rate"]) < 1e-9
+
+    # Each step is bounded by ±1/n from the previous (one flip per week).
+    for tier in ("oracle", "hindsight", "replacement"):
+        key = f"cumulative_win_rate_vs_{tier}"
+        for i in range(1, len(weekly)):
+            delta = abs(weekly[i][key] - weekly[i - 1][key])
+            assert delta <= 1.0 / (i + 1) + 1e-9, (
+                f"{key} jumped {delta} at week index {i}"
+            )
+
+
+def test_backtest_lineup_decisions_payout_multiplier_configurable():
+    """Changing payout_multiplier shifts ROI but leaves win_rate / p_value alone."""
+    backtester = ModelBacktester()
+    df = _build_lineup_fixture()
+    base = backtester.backtest_lineup_decisions(df, payout_multiplier=1.8)
+    alt = backtester.backtest_lineup_decisions(df, payout_multiplier=2.0)
+
+    assert base["vs_hindsight"]["win_rate"] == alt["vs_hindsight"]["win_rate"]
+    assert base["vs_hindsight"]["p_value"] == alt["vs_hindsight"]["p_value"]
+    assert base["payout_multiplier"] == 1.8
+    assert alt["payout_multiplier"] == 2.0
+
+    for tier_key in ("vs_oracle", "vs_hindsight", "vs_replacement"):
+        wr = base[tier_key]["win_rate"]
+        assert abs(base[tier_key]["roi"] - round(1.8 * wr - 1.0, 4)) < 2e-4
+        assert abs(alt[tier_key]["roi"] - round(2.0 * wr - 1.0, 4)) < 2e-4
+
+
 def test_compare_to_expert_consensus_with_csv(tmp_path):
     backtester = ModelBacktester()
     preds = pd.DataFrame({

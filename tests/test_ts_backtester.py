@@ -253,6 +253,80 @@ class TestTimeSeriesBacktester:
         assert d["backtest_type"] == "expanding_window_weekly_refit"
         assert d["diagnostics"]["model_refit_per_week"] is True
 
+    def test_results_dict_reports_decision_quality(self, synthetic_data):
+        """Walk-forward results must include the cash-H2H decision quality block."""
+        bt = TimeSeriesBacktester(
+            data=synthetic_data,
+            model_factory=default_model_factory,
+            season_to_backtest=2024,
+            positions=["QB", "RB", "WR", "TE"],
+            feature_pipeline=_simple_passthrough_pipeline,
+            verbose=False,
+        )
+        bt.run_backtest()
+        d = bt.get_results_dict()
+
+        dq = d.get("decision_quality")
+        assert dq, "decision_quality block missing from results"
+        if dq.get("error"):
+            pytest.skip(f"Insufficient complete weeks for decision quality: {dq['error']}")
+
+        for tier_key in ("vs_oracle", "vs_hindsight", "vs_replacement"):
+            assert tier_key in dq
+            tier = dq[tier_key]
+            assert "win_rate" in tier
+            assert "roi" in tier
+            assert abs(tier["roi"] - round(1.8 * tier["win_rate"] - 1.0, 4)) < 2e-4
+
+        assert dq["payout_multiplier"] == 1.8
+        assert dq["weekly_results"], "weekly_results should be non-empty"
+        for w in dq["weekly_results"]:
+            assert "cumulative_win_rate_vs_hindsight" in w
+
+    def test_report_decision_quality_flag_disables_block(self, synthetic_data):
+        bt = TimeSeriesBacktester(
+            data=synthetic_data,
+            model_factory=default_model_factory,
+            season_to_backtest=2024,
+            positions=["QB"],
+            feature_pipeline=_simple_passthrough_pipeline,
+            verbose=False,
+            report_decision_quality=False,
+        )
+        bt.run_backtest()
+        d = bt.get_results_dict()
+        assert d["decision_quality"] == {}
+
+    def test_save_results_writes_lineup_weekly_csv(self, synthetic_data, tmp_path):
+        bt = TimeSeriesBacktester(
+            data=synthetic_data,
+            model_factory=default_model_factory,
+            season_to_backtest=2024,
+            positions=["QB", "RB", "WR", "TE"],
+            feature_pipeline=_simple_passthrough_pipeline,
+            verbose=False,
+        )
+        bt.run_backtest()
+        bt.save_results(output_dir=tmp_path)
+
+        lineup_csvs = list(tmp_path.glob("ts_backtest_2024_*_lineup_weekly.csv"))
+        if not lineup_csvs:
+            # decision_quality may have returned an error on a short synthetic
+            # fixture; in that case the file is intentionally omitted.
+            dq = bt.get_results_dict().get("decision_quality") or {}
+            assert dq.get("error") or not dq.get("weekly_results")
+            return
+
+        df = pd.read_csv(lineup_csvs[0])
+        for col in (
+            "week",
+            "model_actual",
+            "hindsight_actual",
+            "won_vs_hindsight",
+            "cumulative_win_rate_vs_hindsight",
+        ):
+            assert col in df.columns, f"missing {col} in lineup weekly CSV"
+
 
 # ---------------------------------------------------------------------------
 # Test: _calc_metrics

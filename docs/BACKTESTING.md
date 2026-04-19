@@ -47,3 +47,23 @@ Backtest results include:
 - **Config**: `train_seasons`, `test_season`, `backtest_date`, and (when saved) `model_source` so runs are auditable and reproducible.
 
 Results are saved under `data/backtest_results/` and, in app-compatible form, to `data/advanced_model_results.json` (per-position `backtest_results` for the UI).
+
+## Decision quality (cash H2H win rate / ROI)
+
+Projection accuracy (R² / MAE) is a proxy — it measures whether point estimates track actuals, not whether the lineups they imply would win a contest. The walk-forward runner (`scripts/run_ts_backtest.py`) therefore also reports **cash head-to-head decision quality** alongside the regression metrics. This was the "one thing to do first" from the 2026-03-31 council.
+
+For each historical week in the backtest, three synthetic opponents are constructed from the same prediction/actual frame:
+
+- **Oracle** (hardest): top-N per position by *actual* fantasy points — a perfect hindsight drafter.
+- **Hindsight** (realistic): top-N per position by the *prior* week's actual points — a competent drafter chasing recent form.
+- **Replacement** (easiest): median-ranked players per position — a casual drafter.
+
+The default roster (QB:1, RB:2, WR:2, TE:1) is built greedily from the model's predictions, then compared against each opponent for that week. A one-sided binomial test (H0: 50%) is reported per tier. **ROI** is computed as `payout_multiplier × win_rate − 1`, using `config.DECISION_QUALITY["payout_multiplier"]` (default 1.8, DraftKings/FanDuel cash H2H after ~20% rake; break-even ≈ 55.6%).
+
+Outputs:
+
+- The `decision_quality` block in `data/backtest_results/ts_backtest_*.json` holds per-tier stats plus `weekly_results` (one row per played week, with running cumulative win rate for each tier).
+- A companion `ts_backtest_*_lineup_weekly.csv` materializes the same weekly series for plotting.
+- The CLI prints a three-row table plus a per-week `W/✗` string for the hindsight tier.
+
+Flags: `--payout-multiplier FLOAT` overrides the ROI assumption for the run; `--no-decision-quality` skips the block entirely and reverts to the legacy MAE/RMSE/R² output.

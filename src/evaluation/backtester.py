@@ -1013,6 +1013,7 @@ class ModelBacktester:
         actual_col: str = "fantasy_points",
         position_col: str = "position",
         roster_slots: Optional[Dict[str, int]] = None,
+        payout_multiplier: float = 1.8,
     ) -> Dict:
         """Measure decision quality: did model-selected lineups win?
 
@@ -1149,6 +1150,18 @@ class ModelBacktester:
 
         n_weeks = len(weekly_results)
 
+        # Running win rate per tier — the council's stated success signal is
+        # "per-week win rate across the backtest period", so each weekly row
+        # carries the cumulative figure alongside the binary outcome.
+        cum_oracle = cum_hindsight = cum_replacement = 0
+        for i, w in enumerate(weekly_results, start=1):
+            cum_oracle += int(w["won_vs_oracle"])
+            cum_hindsight += int(w["won_vs_hindsight"])
+            cum_replacement += int(w["won_vs_replacement"])
+            w["cumulative_win_rate_vs_oracle"] = round(cum_oracle / i, 4)
+            w["cumulative_win_rate_vs_hindsight"] = round(cum_hindsight / i, 4)
+            w["cumulative_win_rate_vs_replacement"] = round(cum_replacement / i, 4)
+
         # One-sided binomial test: H0 = model wins 50% (coin flip),
         # H1 = model wins > 50%.  Uses scipy if available, otherwise
         # falls back to a normal approximation with continuity correction.
@@ -1174,8 +1187,9 @@ class ModelBacktester:
             wins = sum(1 for w in weekly_results if w[won_key])
             margins = [w[margin_key] for w in weekly_results]
             p_val = _binom_p_value(wins, n_weeks)
+            win_rate = wins / n_weeks
             return {
-                "win_rate": round(wins / n_weeks, 4),
+                "win_rate": round(win_rate, 4),
                 "wins": wins,
                 "losses": n_weeks - wins,
                 "p_value": round(p_val, 4),
@@ -1183,6 +1197,9 @@ class ModelBacktester:
                 "avg_margin": round(float(np.mean(margins)), 2),
                 "worst_loss": round(float(min(margins)), 2),
                 "best_win": round(float(max(margins)), 2),
+                # Cash-H2H ROI assuming a symmetric payout: winner receives
+                # payout_multiplier * entry, loser receives 0.
+                "roi": round(payout_multiplier * win_rate - 1.0, 4),
             }
 
         vs_oracle = _tier_stats("vs_oracle_margin", "won_vs_oracle")
@@ -1194,7 +1211,10 @@ class ModelBacktester:
         ]
 
         return {
-            # Primary metric: win rate vs hindsight opponent
+            # Legacy top-level aliases for vs_hindsight — kept for backward
+            # compatibility with SUCCESS_CRITERIA plumbing (see lineup_win_rate
+            # handling further down in this module).  New callers should read
+            # the per-tier dicts below.
             "win_rate": vs_hindsight["win_rate"],
             "wins": vs_hindsight["wins"],
             "losses": vs_hindsight["losses"],
@@ -1202,6 +1222,10 @@ class ModelBacktester:
             "significant_at_05": vs_hindsight["significant_at_05"],
             "n_weeks": n_weeks,
             "avg_margin": vs_hindsight["avg_margin"],
+            # Cash-H2H ROI assumptions — surfaced once at top level so any
+            # downstream reader can reproduce the per-tier roi figures.
+            "payout_multiplier": round(float(payout_multiplier), 4),
+            "break_even_win_rate": round(1.0 / payout_multiplier, 4),
             # All three opponent tiers
             "vs_oracle": vs_oracle,
             "vs_hindsight": vs_hindsight,

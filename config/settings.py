@@ -467,6 +467,16 @@ MAPE_TARGETS = {"1w": 25.0, "4w": 35.0, "18w": 45.0}
 # R² targets by horizon
 R2_TARGETS = {"1w": 0.50, "4w": 0.40, "18w": 0.30}
 
+# Cash head-to-head decision-quality defaults — consumed by the walk-forward
+# backtester (see src/evaluation/ts_backtester.py) and by the lineup-decision
+# reporting in src/evaluation/backtester.py::backtest_lineup_decisions.
+# 1.8× is the typical DraftKings/FanDuel cash H2H payout after ~20% rake;
+# break-even ≈ 55.6% win rate.
+DECISION_QUALITY = {
+    "payout_multiplier": 1.8,
+    "break_even_win_rate": 1.0 / 1.8,
+}
+
 # Success criteria thresholds (from requirements Section VII)
 SUCCESS_CRITERIA = {
     "spearman_rho_min": 0.65,        # Ranking accuracy target
