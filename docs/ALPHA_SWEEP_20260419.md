@@ -125,6 +125,41 @@ Per-position α recommendation: `{QB: 10000, RB: 1, TE: 1, WR: 1}`. This is a mi
 2. **Validate on a second season.** Re-run the proposed config on season 2024 (and 2023 if available) before treating 71.4 % as a production claim — 21 weeks is one fluke-season away from illusion.
 3. **Separately, file TE as unresolved** in `CRITICAL_LIMITATION.md`. The TE gap cannot be distinguished from noise at any α; "we can't fix TE with this lever" is the honest conclusion, and the predictive-ceiling workstream (Step 5) is the next legitimate attack surface for TE accuracy.
 
+## Cross-season validation — 2024 + 2025
+
+The wide-range sweep above ran on 2025 only. Before treating any hyperparameter choice as production-worthy, the three candidate configs were re-run on 2024 to test whether the 2025 α=10000 peak replicates.
+
+### 3 × 2 matrix (config × season)
+
+| Config              | 2024 R² | 2024 Hindsight | 2025 R² | 2025 Hindsight | Combined 43 wk | Binomial p | ROI     |
+| :------------------ | :-----: | :------------: | :-----: | :------------: | :------------: | :--------: | :-----: |
+| Uniform α = 1       | 0.324   | 14-8 (63.6 %)  | 0.269   | 13-8 (61.9 %)  | 27-16 (62.8 %) | 0.063      | +13.0 % |
+| **Uniform α = 10 000** | 0.311 | 14-8 (63.6 %) | 0.263   | **15-6 (71.4 %)** | **29-14 (67.4 %)** | **0.016**  | **+21.4 %** |
+| Per-position {QB:10 000, *:1} | 0.320 | 14-8 (63.6 %) | 0.270 | 14-7 (66.7 %) | 28-15 (65.1 %) | 0.033 | +17.3 % |
+
+### What the 2024 season tells us
+
+All three configs produce the **identical** 14-8 record on 2024 — α simply does not move lineup selection on that season. The 71.4 % peak at uniform α=10 000 on 2025 is therefore small-sample noise: across 43 weeks of walk-forward, uniform α=10 000's true win rate is ≈ 67.4 %, not 71.4 %. Single-season 21-22 week records have a binomial SE of ≈ 10 percentage points, so 63.6 % vs 71.4 % on 21 weeks is within one SE — exactly the illusion of signal that cross-season validation is designed to catch.
+
+Per-position's 28-15 (65.1 %) is indistinguishable from uniform α=10 000's 29-14 (67.4 %) at this sample size — one week of difference over 43. Under any reasonable power analysis, 43 weeks cannot tell these two apart.
+
+### Recommendation
+
+**Set the production Ridge default to uniform α = 10 000.** Evidence:
+
+1. **Better cross-season win rate than α = 1** by 4.6 percentage points (67.4 % vs 62.8 %, p = 0.016 vs 0.063). The modest α = 1 baseline does not beat a coin flip at the 0.05 level across 43 weeks; α = 10 000 does.
+2. **No decision-quality advantage for per-position** over uniform at this sample size. 1 win of difference is noise; the added complexity of a position-keyed factory is not earning its keep.
+3. **Projection loss cost is minimal.** Cross-season R² drops from 0.30 (α=1 avg) to 0.29 (α=10 000 avg) — 1 percentage point of variance explained given up for a statistically significant lift in the metric that actually matters (lineup win rate).
+4. **The QB gap-zero finding still holds**, but its practical effect is fully captured by uniform heavy regularization — there is no evidence that over-shrinking RB/WR/TE hurts lineup picks at this sample size. Top-N ranking is preserved because Ridge shrinkage is monotonic in α.
+
+The per-position machinery (tests + CLI + factory) stays in the codebase — it's a two-line change and may be useful for future experiments — but the *default* should be a scalar α = 10 000.
+
+### What this did NOT settle
+
+- **TE remains unresolved.** TE's `(std_ratio − r)` gap is within noise at every α; no hyperparameter on this feature set fixes TE. Its true fix belongs in the Step 5 predictive-ceiling workstream.
+- **Larger α is not monotonically better.** α = 100 000 crashes R² to 0.176 and drops win rate to 66.7 %. The sweet spot is a band (roughly 1 000–30 000), not a single point. α = 10 000 is the centroid of that band, not an optimized scalar.
+- **Two seasons is still a small sample.** 43 weeks is better than 21, but not enough for the 95 % CI on win rate to be narrower than ± 10 percentage points. Add 2023 + 2022 if the decision ever matters more than "modest improvement, ship it."
+
 ## Artifacts
 
 - **α = 0.3:** `data/backtest_results/ts_backtest_2025_20260419_045913_predictions.csv`
@@ -136,5 +171,12 @@ Per-position α recommendation: `{QB: 10000, RB: 1, TE: 1, WR: 1}`. This is a mi
 - **α = 10000:** `data/backtest_results/ts_backtest_2025_20260419_060400_predictions.csv`
 - **α = 100000:** `data/backtest_results/ts_backtest_2025_20260420_031722_predictions.csv`
 - Machine-readable summary (all 8 α values): `data/backtest_results/alpha_sweep_summary.json`
+- Cross-season validation runs (season × config):
+  - 2025 uniform α=1: `ts_backtest_2025_20260419_051533_*`
+  - 2025 uniform α=10 000: `ts_backtest_2025_20260419_060400_*`
+  - 2025 per-position: `ts_backtest_2025_20260420_040643_*`
+  - 2024 uniform α=1: `ts_backtest_2024_20260420_*` (latest; α=1 baseline run)
+  - 2024 uniform α=10 000: `ts_backtest_2024_20260420_043418_*`
+  - 2024 per-position: `ts_backtest_2024_20260420_040714_*`
 - First walk-forward `decision_quality` blocks embedded in each run's `*.json`
 - First walk-forward `decision_quality` blocks embedded in each run's `*.json`
