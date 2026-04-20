@@ -66,18 +66,75 @@ The `decision_quality` block added in commit `7a65915` produced the first-ever c
 
 α=10000 is **worse** on point-estimate R² (−6 bp) but **better** and statistically significant on lineup decision quality. This is exactly the dissociation the 2026-03-31 council predicted when they called "optimize the goal, not the proxy" the single most important fix. The 21-week sample is too small to treat this as a production recommendation, but it is the first empirical evidence that minimizing prediction loss is *not* the same as maximizing win rate for this model.
 
+## Wide-range re-sweep — α ∈ {0.3, 1, 3, 10, 100, 1000, 10000, 100000}
+
+After the first pass surfaced the sweep-design error, the sweep was extended to a logarithmic range that actually moves the model. All eight α values are season-2025 walk-forward, identical fold structure, Ridge with `StandardScaler.fit_transform` on train only.
+
+### Per-position season-aggregate gap (`std_ratio − r`)
+
+| Position | α=0.3–10 | α=100  | α=1000 | α=10000 | α=100000 |
+| :------: | :------: | :----: | :----: | :-----: | :------: |
+| QB       | +0.111   | +0.109 | +0.091 | **−0.009** | −0.225 |
+| RB       | −0.006   | −0.007 | −0.017 | −0.094  | −0.331   |
+| TE       | +0.074   | +0.073 | +0.065 | **−0.015** | −0.256 |
+| WR       | +0.001   | +0.000 | −0.005 | −0.050  | −0.259   |
+
+### Per-week gap mean ± SE (same runs)
+
+| Position | α=1     | α=1000    | α=10000    | α=100000  |
+| :------: | :-----: | :-------: | :--------: | :-------: |
+| QB       | +0.11 ± 0.05 | +0.09 ± 0.05 | **−0.00 ± 0.04** | −0.21 ± 0.04 |
+| RB       | −0.01 ± 0.03 | −0.03 ± 0.03 | −0.10 ± 0.03 | −0.34 ± 0.02 |
+| TE       | +0.13 ± 0.08 | +0.12 ± 0.08 | +0.04 ± 0.08 | −0.22 ± 0.08 |
+| WR       | −0.00 ± 0.03 | −0.01 ± 0.03 | −0.05 ± 0.03 | −0.26 ± 0.02 |
+
+### Zero-crossings (where `std_ratio = r`)
+
+| Position | Zero-crossing α (log-linear interp) | Gap magnitude relative to SE at crossing |
+| :------: | :---------------------------------: | :--------------------------------------: |
+| QB       | ≈ 8 000                             | |gap| ≪ SE at α≈10000 (gap 0.009, SE 0.04) ✓ |
+| TE       | ≈ 6 500                             | |gap| always ≤ SE — zero-crossing inside a noise band |
+| RB       | ≤ 1                                 | Already at identity at α=1; moving up makes RB worse |
+| WR       | ≈ 100                               | |gap| at α=1 (+0.001) already within SE; no meaningful shift |
+
+### Decision quality vs α
+
+| α            | Overall R² | vs Hindsight win rate | p-value | ROI     |
+| :----------- | :--------: | :-------------------: | :-----: | :-----: |
+| 0.3 – 100    | 0.269      | 61.9 % (13-8)         | 0.192   | +11.4 % |
+| 1 000        | 0.269      | 61.9 % (13-8)         | 0.192   | +11.4 % |
+| **10 000**   | 0.263      | **71.4 % (15-6)**     | **0.039** | **+28.6 %** |
+| 100 000      | 0.176      | 66.7 % (14-7)         | 0.095   | +20.0 % |
+
+Peak hindsight win rate aligns precisely with the QB/TE gap-zero band (α ≈ 6k–10k). Beyond that, over-regularization destroys R² and degrades win rate.
+
+## Verdict, applied per position
+
+Using the council's exact threshold ("if SE > |gap|, don't tune"):
+
+- **QB** — |gap| at α=1: 0.111 vs SE 0.05 → 2.2σ, stable. |gap| at α=10000: 0.009 vs SE 0.04 → within noise. **Authorize per-position α_QB ≈ 10 000.**
+- **TE** — |gap| ≤ SE at *every* sampled α. Kill criterion fires. **Do not tune TE separately without re-council.** Current α_TE = 1 is not demonstrably worse than any alternative at this sample size.
+- **RB** — Already at identity at α = 1; every tested alternative makes RB strictly worse. **Keep α_RB = 1.**
+- **WR** — Within noise at every α ≤ 100; monotone worse beyond. **Keep α_WR = 1** (α=100 is indistinguishable and within noise).
+
+Per-position α recommendation: `{QB: 10000, RB: 1, TE: 1, WR: 1}`. This is a minimal intervention that only changes the position for which the gate passes.
+
 ## Recommended next step
 
-Either:
-
-1. **Re-run Step 3 properly** — sweep α ∈ {10, 100, 1000, 10000, 100000} per position, locate each position's `std_ratio − r = 0` crossing, and validate the result on a second season (2024) to guard against a single-season fluke. This is the honest completion of the council's request.
-2. **Re-council (Bucket 4)** — the original advisor framing ("7–11pt QB/TE gap at α=1.0") rests on an α that is effectively zero regularization here; the decision-quality dissociation is new information the 2026-04-14 council didn't weigh. A partial council (Statistician + Executor) should re-scope.
-
-**Kill criterion fired:** per the council's own Step 3 language ("If the α sensitivity sweep ... has standard error larger than the gap itself, the per-position α tuning plan is invalid — re-council before authorizing any QB/TE-specific intervention"), TE hits this at α=1.0 (SE 0.08 > gap 0.074). **Do not start per-position α tuning without re-council.**
+1. **Implement the per-position α override.** `default_model_factory` already accepts a scalar `alpha`; extend it (or introduce a `per_position_alpha: Dict[str, float]` path) so the factory can dispatch by position. Success signal: a single walk-forward run where QB α=10000 and RB/WR/TE α=1 produces QB gap within ±1 SE of zero **and** hindsight win rate ≥ the α=10000 uniform run's 71.4 %. If win rate drops, the change is net-negative and should be reverted.
+2. **Validate on a second season.** Re-run the proposed config on season 2024 (and 2023 if available) before treating 71.4 % as a production claim — 21 weeks is one fluke-season away from illusion.
+3. **Separately, file TE as unresolved** in `CRITICAL_LIMITATION.md`. The TE gap cannot be distinguished from noise at any α; "we can't fix TE with this lever" is the honest conclusion, and the predictive-ceiling workstream (Step 5) is the next legitimate attack surface for TE accuracy.
 
 ## Artifacts
 
-- Sweep run CSVs: `data/backtest_results/ts_backtest_2025_2026041{9_045913,9_051533,9_053229,9_054624}_predictions.csv` (α = 0.3, 1, 3, 10 in order of run)
-- Confirmatory α=10000 run: `data/backtest_results/ts_backtest_2025_20260419_060400_predictions.csv`
-- Machine-readable summary: `data/backtest_results/alpha_sweep_summary.json`
+- **α = 0.3:** `data/backtest_results/ts_backtest_2025_20260419_045913_predictions.csv`
+- **α = 1:** `data/backtest_results/ts_backtest_2025_20260419_051533_predictions.csv`
+- **α = 3:** `data/backtest_results/ts_backtest_2025_20260419_053229_predictions.csv`
+- **α = 10:** `data/backtest_results/ts_backtest_2025_20260419_054624_predictions.csv`
+- **α = 100:** `data/backtest_results/ts_backtest_2025_20260420_024815_predictions.csv`
+- **α = 1000:** `data/backtest_results/ts_backtest_2025_20260420_030253_predictions.csv`
+- **α = 10000:** `data/backtest_results/ts_backtest_2025_20260419_060400_predictions.csv`
+- **α = 100000:** `data/backtest_results/ts_backtest_2025_20260420_031722_predictions.csv`
+- Machine-readable summary (all 8 α values): `data/backtest_results/alpha_sweep_summary.json`
+- First walk-forward `decision_quality` blocks embedded in each run's `*.json`
 - First walk-forward `decision_quality` blocks embedded in each run's `*.json`

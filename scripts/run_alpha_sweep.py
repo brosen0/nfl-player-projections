@@ -202,13 +202,19 @@ def main() -> int:
     print(_format_sweep_table(reports))
 
     # Write a machine-readable summary alongside the run.
+    def _rel(p: Path) -> str:
+        try:
+            return str(p.resolve().relative_to(PROJECT_ROOT))
+        except ValueError:
+            return str(p)
+
     summary = {
         "alphas": sorted(reports),
         "season": args.season,
         "positions": args.positions,
         "runs": {
             str(a): {
-                "predictions_csv": str(p.relative_to(PROJECT_ROOT)),
+                "predictions_csv": _rel(p),
                 "per_position": rep["per_position"],
             }
             for a, (p, rep) in reports.items()
