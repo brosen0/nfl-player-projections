@@ -332,6 +332,25 @@ class TestTimeSeriesBacktester:
 # Test: _calc_metrics
 # ---------------------------------------------------------------------------
 
+class TestPerPositionAlpha:
+    """default_model_factory must dispatch alpha per position when given a dict."""
+
+    def test_scalar_alpha_applies_uniformly(self):
+        for pos in ("QB", "RB", "WR", "TE"):
+            m = default_model_factory(pd.DataFrame(), pos, alpha=3.5)
+            assert m.alpha == 3.5
+
+    def test_dict_alpha_dispatches_by_position(self):
+        spec = {"QB": 10000.0, "RB": 1.0, "TE": 1.0, "WR": 1.0}
+        for pos, expected in spec.items():
+            m = default_model_factory(pd.DataFrame(), pos, alpha=spec)
+            assert m.alpha == expected, f"{pos}: got {m.alpha}, expected {expected}"
+
+    def test_dict_alpha_missing_position_falls_back_to_one(self):
+        m = default_model_factory(pd.DataFrame(), "K", alpha={"QB": 999.0})
+        assert m.alpha == 1.0
+
+
 class TestCalcMetrics:
     def test_perfect_prediction(self):
         y = pd.Series([10.0, 20.0, 30.0])

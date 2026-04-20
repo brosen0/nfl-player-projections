@@ -46,9 +46,15 @@ def main():
     )
     parser.add_argument(
         "--alpha", "-a",
-        type=float,
-        default=1.0,
-        help="Ridge regularization strength (default: 1.0). Ignored when --model is gbm or ensemble.",
+        nargs="+",
+        default=["1.0"],
+        help=(
+            "Ridge regularization strength. Pass a single float for uniform "
+            "regularization (e.g. '--alpha 1.0') or a list of POS=VALUE pairs "
+            "for per-position tuning (e.g. '--alpha QB=10000 RB=1 TE=1 WR=1'). "
+            "Unspecified positions fall back to 1.0. Ignored when --model is "
+            "gbm or ensemble."
+        ),
     )
     parser.add_argument(
         "--quiet", "-q",
@@ -72,13 +78,28 @@ def main():
 
     args = parser.parse_args()
 
+    # --alpha is either a single float or a list of POS=VALUE pairs.
+    alpha_tokens = args.alpha if isinstance(args.alpha, list) else [args.alpha]
+    if len(alpha_tokens) == 1 and "=" not in str(alpha_tokens[0]):
+        ridge_alpha = float(alpha_tokens[0])
+    else:
+        ridge_alpha = {}
+        for tok in alpha_tokens:
+            if "=" not in str(tok):
+                parser.error(
+                    f"--alpha token {tok!r} is not a POS=VALUE pair; mix of "
+                    f"scalar and per-position forms is not allowed."
+                )
+            pos, val = str(tok).split("=", 1)
+            ridge_alpha[pos.strip().upper()] = float(val)
+
     print("=" * 60)
     print("NFL Time-Series Backtester (Expanding Window)")
     print("=" * 60)
     print(f"  Season: {args.season or 'auto (latest)'}")
     print(f"  Model: {args.model}")
     if args.model == "ridge":
-        print(f"  Ridge alpha: {args.alpha}")
+        print(f"  Ridge alpha: {ridge_alpha}")
     print(f"  Positions: {args.positions or 'all'}")
     print()
 
@@ -87,7 +108,7 @@ def main():
         model_type=args.model,
         positions=args.positions,
         verbose=not args.quiet,
-        ridge_alpha=args.alpha,
+        ridge_alpha=ridge_alpha,
         payout_multiplier=args.payout_multiplier,
         report_decision_quality=not args.no_decision_quality,
     )

@@ -841,7 +841,7 @@ def _serialize_metrics(m: Dict[str, Any]) -> Dict[str, Any]:
 # Default model factory using Ridge regression (fast, robust)
 # ---------------------------------------------------------------------------
 
-def default_model_factory(train_df: pd.DataFrame, position: str, alpha: float = 1.0):
+def default_model_factory(train_df: pd.DataFrame, position: str, alpha=1.0):
     """
     Default model factory: Ridge regression per position.
     Returns an unfitted model (fit is called by the backtester).
@@ -849,9 +849,19 @@ def default_model_factory(train_df: pd.DataFrame, position: str, alpha: float = 
     ``alpha`` is the Ridge regularization strength.  Bind it via
     ``functools.partial`` when constructing a factory for the backtester,
     which calls factories with only ``(train_df, position)``.
+
+    ``alpha`` accepts either a scalar float (uniform regularization) or a
+    ``dict[str, float]`` keyed by position code for per-position tuning.
+    For the dict form, positions missing from the dict fall back to 1.0
+    (the scikit-learn default) — this keeps the dict form opt-in per
+    position and matches the long-standing default behavior.
     """
     from sklearn.linear_model import Ridge
-    return Ridge(alpha=alpha)
+    if isinstance(alpha, dict):
+        resolved = float(alpha.get(position, 1.0))
+    else:
+        resolved = float(alpha)
+    return Ridge(alpha=resolved)
 
 
 def gradient_boosting_factory(train_df: pd.DataFrame, position: str):
@@ -943,7 +953,7 @@ def run_ts_backtest(
     model_type: str = "ridge",
     positions: List[str] = None,
     verbose: bool = True,
-    ridge_alpha: float = 1.0,
+    ridge_alpha=1.0,
     payout_multiplier: Optional[float] = None,
     report_decision_quality: bool = True,
 ) -> Tuple[pd.DataFrame, Dict[str, Any]]:
@@ -960,8 +970,11 @@ def run_ts_backtest(
         positions: Positions to backtest.
         verbose: Print progress.
         ridge_alpha: Ridge regularization strength (only used when
-            model_type="ridge").  Default 1.0.  Other model types ignore
-            this parameter.
+            model_type="ridge").  Accepts either a scalar float for
+            uniform regularization, or a ``dict[str, float]`` keyed by
+            position for per-position tuning.  Positions missing from
+            the dict fall back to 1.0.  Default: 1.0.  Other model
+            types ignore this parameter.
     """
     from src.utils.database import DatabaseManager
     from src.utils.data_manager import DataManager
