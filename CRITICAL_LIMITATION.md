@@ -1,5 +1,17 @@
 # Critical Limitation: Predictive Ceiling From Weak Feature Signal
 
+> **Status update (2026-04-21):** Step 5 Phase 1 (Vegas implied total)
+> is complete. The April 10 R²=0.269 baseline and every downstream
+> number in the α sweep were computed with **Vegas features pinned at
+> constants** (`implied_team_total=23.0`, `spread=0.0`) — the
+> silent-fallback hypothesis in `docs/PHASE_1_VEGAS_FINDINGS.md` was
+> confirmed. Backfilling real Vegas lines from the local `schedule`
+> cache (2,227 games, 100 % coverage for 2018–2025) lifts overall R²
+> by +0.004, QB r by +0.031–0.034 on 2025 (clearing the +0.02 kill
+> criterion), and cross-season hindsight win rate at α=10 000 from
+> 67.4 % → **69.8 % (30-13, p=0.007, ROI +25.6 %)**. Full writeup:
+> `docs/PHASE_1_VEGAS_FINDINGS.md`.
+
 > **Status update (2026-04-20):** Step 3 of the 2026-04-14 council
 > (Ridge α sensitivity sweep) is closed. The `RIDGE_DEFAULT_ALPHA` for
 > the walk-forward backtester was raised from 1.0 to **10 000** in

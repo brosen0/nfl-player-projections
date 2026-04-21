@@ -1,8 +1,71 @@
-# Phase 1 (Vegas implied total) — Pre-implementation findings
+# Phase 1 (Vegas implied total) — Findings
 
-**Branch:** `claude/predictive-ceiling-phase-1-vegas`
+**Branch:** `claude/predictive-ceiling-phase-1-vegas` (investigation, PR #88 merged 2026-04-14)
+**Completion branch:** `claude/add-council-status-rfitZ` (Step C implementation, 2026-04-21)
 **Plan reference:** [`docs/PREDICTIVE_CEILING_PLAN.md`](./PREDICTIVE_CEILING_PLAN.md)
-**Status:** investigation; no new wiring landed.  Implementation is **blocked** on confirming whether the existing wiring is broken in the user's environment.
+**Status:** ✓ **complete.** Phase 1 kill criterion cleared on 2025 (QB r +0.031–0.034 at both α values); Vegas features retained. Cross-season matrix below.
+
+## Update — 2026-04-21 — Step C complete
+
+The silent-degradation hypothesis from the 2026-04-14 investigation was **confirmed**: the April 10 R²=0.269 baseline and every downstream number (including the 2026-04-19 α sweep) were computed with `implied_team_total` pinned at the constant fallback of 23.0 and `spread` at 0.0. Backfilling real Vegas lines into the local `schedule` cache produces a measurable lift across every metric tracked by the workstream.
+
+### What landed
+
+1. **`src/utils/database.py`** — `schedule` table now carries `spread_line REAL, total_line REAL`. Idempotent `ALTER TABLE` migration for pre-existing DBs. `insert_schedule` persists them.
+2. **`scripts/backfill_vegas_lines.py`** — one-time backfill fetched from the canonical `nflverse/nfldata` `games.csv` on GitHub (bypasses `habitatring.com`, which is blocked in this sandbox). Idempotent via the existing `UNIQUE(season, week, home_team, away_team)` constraint. **2,227 rows populated for 2018–2025, 100% spread_line/total_line coverage.**
+3. **`src/features/feature_engineering.py::_create_vegas_game_script_features`** — reads the local cache first, falls back to `nfl_data_py.import_schedules()` only on cache miss. Logs at INFO with row count and coverage percentage so every backtest log documents whether Vegas inputs were live.
+4. **Spec deviation — one intentional:** the plan called for a `total REAL` column (post-game combined score). Skipped. `total` is post-game and is a direct leakage vector; the feature code never reads it. Only `spread_line` + `total_line` (both pre-game Vegas lines) were cached.
+
+### Cross-season 2×2 matrix (season × α × Vegas)
+
+| Config                    | Overall R² | QB R²  | QB r   | Bias range (% per-pos) | Hindsight     | p-value | ROI     |
+| :------------------------ | :--------: | :----: | :----: | :--------------------: | :-----------: | :-----: | :-----: |
+| 2025 α=1 **pre**-Vegas    | 0.269      | 0.092  | 0.325  | [−5.3, +7.5]           | 13-8 (61.9 %) | 0.192   | +11.4 % |
+| 2025 α=1 **post**-Vegas   | **0.275**  | 0.116  | 0.359  | [−5.3, +7.6]           | **16-5 (76.2 %)** | **0.013** | **+37.1 %** |
+| 2025 α=10 000 pre-Vegas   | 0.263      | 0.099  | 0.325  | [−5.3, +7.5]           | 15-6 (71.4 %) | 0.039   | +28.6 % |
+| 2025 α=10 000 post-Vegas  | 0.268      | 0.119  | 0.356  | [−5.5, +9.2]           | **16-5 (76.2 %)** | 0.013   | +37.1 % |
+| 2024 α=1 pre-Vegas        | 0.324      | 0.264  | 0.514  | [−5.0, +7.0]           | 14-8 (63.6 %) | 0.143   | +14.5 % |
+| 2024 α=1 post-Vegas       | 0.327      | 0.267  | 0.518  | [−3.9, +3.5]           | 13-9 (59.1 %) | 0.262   | +6.4 %  |
+| 2024 α=10 000 pre-Vegas   | 0.311      | 0.236  | 0.506  | ≈ same as α=1          | 14-8 (63.6 %) | 0.143   | +14.5 % |
+| 2024 α=10 000 post-Vegas  | 0.314      | 0.241  | 0.511  | ≈ same as α=1          | 14-8 (63.6 %) | 0.143   | +14.5 % |
+
+### Combined 43-week (2024 + 2025) hindsight win rate
+
+| Config                    | W-L    | Win rate | Binomial p | ROI     |
+| :------------------------ | :----: | :------: | :--------: | :-----: |
+| α=1 pre-Vegas             | 27-16  | 62.8 %   | 0.063      | +13.0 % |
+| α=1 post-Vegas            | 29-14  | 67.4 %   | 0.016      | +21.4 % |
+| α=10 000 pre-Vegas        | 29-14  | 67.4 %   | 0.016      | +21.4 % |
+| **α=10 000 post-Vegas**   | **30-13** | **69.8 %** | **0.007** | **+25.6 %** |
+
+### Phase 1 kill criterion
+
+The plan's gate was **"QB r lift ≥ +0.02 with bias still passing ±10 %"**.
+
+- **2025 α=1:** QB r 0.325 → 0.359 (+0.034). ✓ cleared.
+- **2025 α=10 000:** QB r 0.325 → 0.356 (+0.031). ✓ cleared.
+- **2024 both α:** QB r 0.506–0.514 → 0.511–0.518 (+0.003–0.005). Below threshold, but 2024 QB r was already near its ceiling for this feature set.
+- **Bias:** every per-position bias stayed within ±10 % in every cell; worst movement was QB 2025 α=10 000 (+2.1 → +5.6 %).
+
+Kill criterion PASSES on the season the plan named. Vegas features retained.
+
+### Honest caveats
+
+- **The lift is strongly season-dependent.** 2025 saw +4.8–14.3pp on hindsight win rate; 2024 saw 0 to −4.5pp. That is consistent with 2025 being a higher-variance season in which Vegas-implied totals had more information about actual scoring than a trailing-3-week average did, and 2024 being a "chalkier" year. 43 weeks isn't enough to distinguish "Vegas is broadly a modest positive" from "2025 was a fluke."
+- **α=10 000 still edges α=1 on combined decision quality** (30-13 vs 29-14, one week of difference). The production default from 2026-04-20 holds — but the gap is now 2× smaller than pre-Vegas, and α=1 has +0.010 better R² on average. The "revisit α=1 as default" concern raised in the 2025-only commit does NOT survive the 2024 cell; α=10 000 is still the marginally better cross-season pick.
+- **The silent-fallback fix lands a structural improvement even if Vegas were net-neutral.** Training on constants for a declared feature is a silent-failure mode that invalidates every upstream calibration claim. Fixing it makes all future sweeps trustworthy; the R²/win-rate lift is a bonus.
+
+### What this means for downstream workstreams
+
+- **Every number in `docs/ALPHA_SWEEP_20260419.md` was computed with dead Vegas.** Conclusions about gap sign, zero-crossings, and the "α=10 000 is the best compromise" claim are still *directionally* valid (Vegas doesn't change the shrinkage math), but the specific win-rate numbers should be re-read as "pre-Vegas." The combined 43-week α=10 000 post-Vegas hindsight of 69.8 % (p=0.007) is the current best cross-season number for the walk-forward Ridge.
+- **`CRITICAL_LIMITATION.md` recommendation #1** ("run the production ensemble in walk-forward") is now the obvious next move — the ensemble was designed for a feature set where Vegas is live. Its walk-forward R² has not been measured at all, pre- or post-Vegas.
+- **Phase 2 (opponent defense rank vs. position) can proceed.** Phase 1's kill criterion cleared; the plan's sequencing (Phase 1 → 2 → 3 → 4) is intact.
+
+---
+
+## Original investigation (2026-04-14) — retained for provenance
+
+**Original status at 2026-04-14:** investigation; no new wiring landed.  Implementation was **blocked** on confirming whether the existing wiring is broken in the user's environment.
 
 ## TL;DR
 
