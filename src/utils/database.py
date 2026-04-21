@@ -228,10 +228,26 @@ class DatabaseManager:
                     venue TEXT,
                     home_score INTEGER,
                     away_score INTEGER,
+                    spread_line REAL,
+                    total_line REAL,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     UNIQUE(season, week, home_team, away_team)
                 )
             """)
+
+            # Idempotent migration for pre-existing schedule tables.  SQLite has
+            # no "IF NOT EXISTS" on ALTER TABLE, so catch the duplicate-column
+            # error rather than gate on schema introspection.  Landed 2026-04-21
+            # as part of Phase 1 Step C (Vegas cache); see
+            # docs/PHASE_1_VEGAS_FINDINGS.md.
+            for col_sql in (
+                "ALTER TABLE schedule ADD COLUMN spread_line REAL",
+                "ALTER TABLE schedule ADD COLUMN total_line REAL",
+            ):
+                try:
+                    cursor.execute(col_sql)
+                except Exception:
+                    pass
             
             # Team defense stats (for opponent analysis)
             cursor.execute("""
@@ -594,9 +610,10 @@ class DatabaseManager:
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
-                INSERT OR REPLACE INTO schedule 
-                (season, week, home_team, away_team, game_id, game_time, venue, home_score, away_score)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT OR REPLACE INTO schedule
+                (season, week, home_team, away_team, game_id, game_time, venue,
+                 home_score, away_score, spread_line, total_line)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 schedule_data.get("season"),
                 schedule_data.get("week"),
@@ -607,6 +624,8 @@ class DatabaseManager:
                 schedule_data.get("venue"),
                 schedule_data.get("home_score"),
                 schedule_data.get("away_score"),
+                schedule_data.get("spread_line"),
+                schedule_data.get("total_line"),
             ))
             conn.commit()
             return True

@@ -1585,11 +1585,51 @@ class FeatureEngineer:
 
         # Try to load from schedule data
         try:
-            import nfl_data_py as nfl
             seasons = sorted(df["season"].unique()) if "season" in df.columns else []
             if not seasons:
                 raise ValueError("No seasons")
-            schedules = nfl.import_schedules([int(s) for s in seasons])
+
+            schedules = None
+
+            # Prefer the local `schedule` table — populated by
+            # scripts/backfill_vegas_lines.py from the nflverse/nfldata
+            # games.csv.  This is host-agnostic (no live call to
+            # habitatring.com, which is blocked in some environments) and
+            # lets the backtest run deterministically offline.  Fall back
+            # to nfl_data_py only when the cache is empty or missing
+            # spread_line coverage for the requested seasons.
+            try:
+                from src.utils.database import DatabaseManager
+                db = DatabaseManager()
+                with db._get_connection() as conn:
+                    season_list = ",".join(str(int(s)) for s in seasons)
+                    cached = pd.read_sql_query(
+                        "SELECT season, week, home_team, away_team, "
+                        "spread_line, total_line "
+                        f"FROM schedule WHERE season IN ({season_list})",
+                        conn,
+                    )
+                if not cached.empty and cached["spread_line"].notna().any():
+                    schedules = cached.rename(columns={"total_line": "total_line"})
+                    import logging
+                    logging.getLogger(__name__).info(
+                        "Vegas features loaded from local schedule cache: "
+                        "%d rows across seasons %s (spread_line coverage: %.1f%%).",
+                        len(cached), seasons,
+                        cached["spread_line"].notna().mean() * 100,
+                    )
+            except Exception as cache_err:
+                import logging
+                logging.getLogger(__name__).debug(
+                    "Schedule cache unavailable (%s: %s); falling back to nfl_data_py.",
+                    type(cache_err).__name__, cache_err,
+                )
+                schedules = None
+
+            if schedules is None or schedules.empty:
+                import nfl_data_py as nfl
+                schedules = nfl.import_schedules([int(s) for s in seasons])
+
             if schedules.empty or "spread_line" not in schedules.columns:
                 raise ValueError("No spread data in schedules")
 
