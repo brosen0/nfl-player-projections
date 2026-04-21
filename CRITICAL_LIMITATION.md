@@ -1,5 +1,20 @@
 # Critical Limitation: Predictive Ceiling From Weak Feature Signal
 
+> **Status update (2026-04-21, part 2):** Step 5 Phase 2 (opponent
+> defense rank vs. position) is **closed as measured-and-rejected.**
+> A council-spec season-to-date expanding lag-1 feature
+> (`opp_fpts_allowed_s2d_lag1`) was added alongside the existing
+> single-week `opp_fpts_allowed`, measured across a 2 × 2 season × α
+> matrix, and reverted from `CAUSAL_FEATURES` per the plan's Fail
+> branch. Max RB r lift: **+0.0015** against the +0.02 kill threshold.
+> Root cause: `opp_fpts_allowed` already existed and was silently
+> carrying the signal; the s2d version is collinear. Bonus structural
+> fix retained: `player_weekly_stats.opponent` was 100 % empty for
+> 2025, so every pre-Phase-2 2025 backtest had the existing
+> opponent-defense feature silently dead for that season. Backfilled
+> via the schedule table; `team_defense_stats(2025)` populated (568
+> rows). Full writeup: `docs/PHASE_2_OPPONENT_DEFENSE_FINDINGS.md`.
+
 > **Status update (2026-04-21):** Step 5 Phase 1 (Vegas implied total)
 > is complete. The April 10 R²=0.269 baseline and every downstream
 > number in the α sweep were computed with **Vegas features pinned at
