@@ -183,6 +183,8 @@ The correct sequence for a single developer is:
 
 ILP is genuinely optional for a single-developer project at this scale. Do it last, after everything else is working, if the greedy solver is provably leaving wins on the table. The backtester will tell you.
 
-### The One Thing to Do First
+### The One Thing to Do First ✓ done (2026-04-19, commit `7a65915`; cross-season results in `docs/ALPHA_SWEEP_20260419.md`)
 
 Rewrite the backtester's evaluation function to measure, for each historical week, whether the lineup it would have selected beat a representative opponent score — and track win rate across the backtest period. Everything else waits until this exists. You cannot know what is broken without it, and you cannot know if your fixes work after it.
+
+**Implementation notes (2026-04-19):** `ModelBacktester.backtest_lineup_decisions` at `src/evaluation/backtester.py:1009` already built the three-opponent-tier scaffolding (oracle / hindsight / replacement) with per-week win flags and a one-sided binomial test; the council's "One Thing" was closed by (a) extending it with ROI and cumulative per-week win-rate fields, (b) wiring `_compute_decision_quality()` into `TimeSeriesBacktester.get_results_dict()` and a new `ts_backtest_*_lineup_weekly.csv` output, (c) surfacing a three-tier table + per-week marks in the CLI. First real walk-forward numbers: 2024+2025 uniform α=10 000 cash-H2H hindsight rate **67.4 % (29-14), p=0.016, ROI +21.4 %** over 43 weeks.
