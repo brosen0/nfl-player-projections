@@ -500,7 +500,7 @@ class FeatureEngineer:
         # Create position-specific opponent feature
         if "position" in df.columns:
             df["opp_fpts_allowed"] = np.nan
-            
+
             for pos in POSITIONS:
                 col = f"fantasy_points_allowed_{pos.lower()}"
                 if col in df.columns:
@@ -508,10 +508,136 @@ class FeatureEngineer:
                     # Convert values to float to avoid dtype incompatibility
                     values = pd.to_numeric(df.loc[mask, col], errors='coerce')
                     df.loc[mask, "opp_fpts_allowed"] = values.values
-        
+
+        # Season-to-date expanding lag-1 FP-allowed per opponent-position.
+        # This is Phase 2 of the predictive-ceiling workstream
+        # (docs/PREDICTIVE_CEILING_PLAN.md).  The existing opp_fpts_allowed
+        # above is single-week-prior (noisy); the s2d version is the mean
+        # of every prior week in the season, which the council spec'd as
+        # the smoother signal.  Both features coexist so Ridge can weight
+        # each independently.
+        df = self._add_opp_fpts_allowed_s2d_lag1(df)
+
         # Add comprehensive team-level features (TeamA = player's team, TeamB = opponent)
         df = self._add_team_matchup_features(df)
-        
+
+        return df
+
+    def _add_opp_fpts_allowed_s2d_lag1(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Add season-to-date (through week N-1) FP-allowed at player's position.
+
+        Queries the `team_defense_stats` table directly, computes
+        ``shift(1).expanding(min_periods=1).mean()`` per (team, season) on each
+        ``fantasy_points_allowed_{pos}`` column, then merges onto the player
+        frame via (opponent, season, week) and resolves per-player position.
+
+        On cache miss or insufficient coverage, the feature is filled with 0.0
+        and a WARNING is logged if >10 % of rows defaulted — the silent-
+        fallback trap documented in docs/PHASE_1_VEGAS_FINDINGS.md applies
+        here too, and we want any downstream backtest log to surface it.
+        """
+        required = {"opponent", "season", "week", "position"}
+        if not required.issubset(df.columns):
+            df["opp_fpts_allowed_s2d_lag1"] = 0.0
+            return df
+
+        import logging
+        logger = logging.getLogger(__name__)
+
+        try:
+            from src.utils.database import DatabaseManager
+            db = DatabaseManager()
+            seasons = sorted(pd.to_numeric(df["season"], errors="coerce").dropna().unique())
+            if not seasons:
+                raise ValueError("No seasons")
+            season_list = ",".join(str(int(s)) for s in seasons)
+            with db._get_connection() as conn:
+                tds = pd.read_sql_query(
+                    "SELECT team, season, week, "
+                    "fantasy_points_allowed_qb, fantasy_points_allowed_rb, "
+                    "fantasy_points_allowed_wr, fantasy_points_allowed_te "
+                    f"FROM team_defense_stats WHERE season IN ({season_list}) "
+                    "ORDER BY team, season, week",
+                    conn,
+                )
+        except Exception as e:
+            logger.warning(
+                "team_defense_stats load failed (%s: %s); "
+                "opp_fpts_allowed_s2d_lag1 will default to 0.0 for every row. "
+                "Run DatabaseManager.ensure_team_defense_stats() to populate.",
+                type(e).__name__, e,
+            )
+            df["opp_fpts_allowed_s2d_lag1"] = 0.0
+            return df
+
+        if tds.empty:
+            logger.warning(
+                "team_defense_stats returned zero rows for seasons %s; "
+                "opp_fpts_allowed_s2d_lag1 will default to 0.0.",
+                seasons,
+            )
+            df["opp_fpts_allowed_s2d_lag1"] = 0.0
+            return df
+
+        # Per-(team, season) expanding mean through week N-1.  Pattern lifted
+        # from the canonical `season_expanding_ppg` at line ~381 but scoped
+        # to (team, season) on the team_defense_stats frame rather than the
+        # player frame.
+        for pos in POSITIONS:
+            col = f"fantasy_points_allowed_{pos.lower()}"
+            if col not in tds.columns:
+                continue
+            tds[f"{col}_s2d_lag1"] = (
+                tds.groupby(["team", "season"])[col]
+                .transform(lambda x: x.shift(1).expanding(min_periods=1).mean())
+            )
+
+        # Merge onto player frame using (opponent, season, week).  Rename
+        # `team` -> `opponent` on the team_defense_stats side for the join.
+        s2d_cols = [f"fantasy_points_allowed_{p.lower()}_s2d_lag1" for p in POSITIONS]
+        s2d_cols = [c for c in s2d_cols if c in tds.columns]
+        merge_right = tds[["team", "season", "week"] + s2d_cols].rename(
+            columns={"team": "opponent"}
+        )
+
+        before_cols = set(df.columns)
+        df = df.merge(merge_right, on=["opponent", "season", "week"], how="left")
+
+        # Resolve per-player position: opp_fpts_allowed_s2d_lag1 is the
+        # merged value for the player's own position.
+        df["opp_fpts_allowed_s2d_lag1"] = np.nan
+        for pos in POSITIONS:
+            src_col = f"fantasy_points_allowed_{pos.lower()}_s2d_lag1"
+            if src_col not in df.columns:
+                continue
+            mask = df["position"] == pos
+            df.loc[mask, "opp_fpts_allowed_s2d_lag1"] = pd.to_numeric(
+                df.loc[mask, src_col], errors="coerce"
+            )
+
+        # Coverage check before the NaN fill — anything above 10 % default
+        # rate is almost certainly a missing-backfill bug (per Step 1 of
+        # Phase 2, the 2025 team_defense_stats needed a manual backfill).
+        n_total = len(df)
+        n_missing = int(df["opp_fpts_allowed_s2d_lag1"].isna().sum())
+        if n_total and n_missing / n_total > 0.10:
+            logger.warning(
+                "opp_fpts_allowed_s2d_lag1 defaulted on %.1f%% of rows (>10%% "
+                "threshold).  team_defense_stats may be missing weeks for the "
+                "seasons in scope (%s).  Run "
+                "DatabaseManager.ensure_team_defense_stats(season) for any "
+                "missing season.",
+                n_missing / n_total * 100, seasons,
+            )
+
+        df["opp_fpts_allowed_s2d_lag1"] = df["opp_fpts_allowed_s2d_lag1"].fillna(0.0)
+
+        # Drop intermediate per-position columns added by the merge so they
+        # don't leak into the feature set downstream.
+        drop_cols = [c for c in df.columns if c not in before_cols and c != "opp_fpts_allowed_s2d_lag1"]
+        if drop_cols:
+            df = df.drop(columns=drop_cols)
+
         return df
     
     def _add_team_matchup_features(self, df: pd.DataFrame) -> pd.DataFrame:
