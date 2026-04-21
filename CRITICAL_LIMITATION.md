@@ -1,5 +1,16 @@
 # Critical Limitation: Predictive Ceiling From Weak Feature Signal
 
+> **Status update (2026-04-20):** Step 3 of the 2026-04-14 council
+> (Ridge α sensitivity sweep) is closed. The `RIDGE_DEFAULT_ALPHA` for
+> the walk-forward backtester was raised from 1.0 to **10 000** in
+> `config/settings.py`. Cross-season evidence: 29-14 (67.4 %) hindsight
+> win rate at α=10 000 vs 27-16 (62.8 %) at α=1, p=0.016 over 43 weeks
+> (2024 + 2025). Per-position tuning was investigated and shelved —
+> indistinguishable from uniform α=10 000 at this sample size. Full
+> writeup: `docs/ALPHA_SWEEP_20260419.md`. Decision-quality reporting
+> (per-week win rate / ROI) is now wired into every walk-forward run
+> via `decision_quality` in the results JSON.
+
 > **Status update (2026-04-11):** This document was rewritten after the
 > April 10, 2026 walk-forward backtest. The previous "negative R², +44%
 > systematic bias" framing was based on the February 2026 results
@@ -107,11 +118,14 @@ specifically.
    baseline. The ensemble adds XGBoost + LightGBM + RF + Ridge stacking
    with Huber loss; whether it raises r above 0.52 is the single most
    important open question.
-2. **Reduce QB/TE small-sample shrinkage.** The 7–11 point gap between
-   `std_ratio` and `correlation` for QB and TE is the only piece of
-   variance compression that is actually fixable without new features.
-   Try lowering Ridge α from 1.0 to 0.1 for those positions, or use
-   `RidgeCV` with a per-position alpha grid.
+2. **~~Reduce QB/TE small-sample shrinkage.~~** ✓ resolved 2026-04-20.
+   The Step 3 α sweep (`docs/ALPHA_SWEEP_20260419.md`) showed the
+   opposite of what this item proposed: α=1 was *under*-regularized,
+   not over. Production default is now α=10 000 uniform, which closes
+   the QB `std_ratio − r` gap within noise and lifts cross-season
+   hindsight win rate from 62.8 % to 67.4 % (p=0.016, n=43). TE's
+   gap stays within noise at every α — it is a correlation-ceiling
+   problem, not a shrinkage problem, and falls under rec #3 below.
 3. **Add predictive features that lift correlation, not regularization
    tweaks that shrink it less.** Highest-leverage candidates from
    `LIMITATIONS.md`: injury status (HIGH), Vegas lines / implied team

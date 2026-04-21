@@ -477,6 +477,12 @@ DECISION_QUALITY = {
     "break_even_win_rate": 1.0 / 1.8,
 }
 
+# Default Ridge regularization for the walk-forward backtester.  Per the
+# 2026-04-20 alpha sweep (docs/ALPHA_SWEEP_20260419.md), uniform α=10_000
+# beats α=1 by 4.6 percentage points on cross-season hindsight win rate
+# (29-14 vs 27-16 over 43 weeks, p=0.016).  Raised from 1.0 on 2026-04-20.
+RIDGE_DEFAULT_ALPHA = 10_000
+
 # Success criteria thresholds (from requirements Section VII)
 SUCCESS_CRITERIA = {
     "spearman_rho_min": 0.65,        # Ranking accuracy target

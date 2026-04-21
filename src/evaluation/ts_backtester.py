@@ -32,7 +32,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from config.settings import DATA_DIR, DECISION_QUALITY, MODELS_DIR, POSITIONS
+from config.settings import DATA_DIR, DECISION_QUALITY, MODELS_DIR, POSITIONS, RIDGE_DEFAULT_ALPHA
 from src.utils.leakage import filter_feature_columns
 
 warnings.filterwarnings("ignore", category=UserWarning)
@@ -953,7 +953,7 @@ def run_ts_backtest(
     model_type: str = "ridge",
     positions: List[str] = None,
     verbose: bool = True,
-    ridge_alpha=1.0,
+    ridge_alpha=None,
     payout_multiplier: Optional[float] = None,
     report_decision_quality: bool = True,
 ) -> Tuple[pd.DataFrame, Dict[str, Any]]:
@@ -973,9 +973,12 @@ def run_ts_backtest(
             model_type="ridge").  Accepts either a scalar float for
             uniform regularization, or a ``dict[str, float]`` keyed by
             position for per-position tuning.  Positions missing from
-            the dict fall back to 1.0.  Default: 1.0.  Other model
-            types ignore this parameter.
+            the dict fall back to 1.0.  Default: ``RIDGE_DEFAULT_ALPHA``
+            from ``config.settings`` (10_000 as of 2026-04-20).  Other
+            model types ignore this parameter.
     """
+    if ridge_alpha is None:
+        ridge_alpha = RIDGE_DEFAULT_ALPHA
     from src.utils.database import DatabaseManager
     from src.utils.data_manager import DataManager
 

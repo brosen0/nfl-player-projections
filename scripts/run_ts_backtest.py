@@ -18,6 +18,7 @@ from pathlib import Path
 # Ensure project root is on path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from config.settings import RIDGE_DEFAULT_ALPHA
 from src.evaluation.ts_backtester import run_ts_backtest
 
 
@@ -47,13 +48,13 @@ def main():
     parser.add_argument(
         "--alpha", "-a",
         nargs="+",
-        default=["1.0"],
+        default=[str(RIDGE_DEFAULT_ALPHA)],
         help=(
             "Ridge regularization strength. Pass a single float for uniform "
-            "regularization (e.g. '--alpha 1.0') or a list of POS=VALUE pairs "
-            "for per-position tuning (e.g. '--alpha QB=10000 RB=1 TE=1 WR=1'). "
-            "Unspecified positions fall back to 1.0. Ignored when --model is "
-            "gbm or ensemble."
+            f"regularization (default: {RIDGE_DEFAULT_ALPHA}) or a list of "
+            "POS=VALUE pairs for per-position tuning (e.g. '--alpha QB=10000 "
+            "RB=1 TE=1 WR=1'). Unspecified positions fall back to 1.0. "
+            "Ignored when --model is gbm or ensemble."
         ),
     )
     parser.add_argument(
