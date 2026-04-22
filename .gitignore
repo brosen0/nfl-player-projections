@@ -91,3 +91,5 @@ htmlcov/
 
 # Config bytecode (if present)
 config/__pycache__/
+
+.claude/settings.local.json
