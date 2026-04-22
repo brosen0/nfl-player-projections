@@ -5,6 +5,18 @@
 **Plan reference:** [`docs/PREDICTIVE_CEILING_PLAN.md`](./PREDICTIVE_CEILING_PLAN.md)
 **Status:** ✓ **complete.** Phase 1 kill criterion cleared on 2025 (QB r +0.031–0.034 at both α values); Vegas features retained. Cross-season matrix below.
 
+> **Re-council re-label (2026-04-22):** the 2026-04-22 Bucket 4
+> re-council explicitly re-labeled Phase 1's "+0.004 R²" as a
+> **bug-fix**, not a feature addition. The Vegas inputs had been
+> declared in `CAUSAL_FEATURES` since before the workstream started;
+> the lift came from converting an `except Exception: pass` to working
+> code, not from adding new signal. This framing matters for anyone
+> reading the 69.8 % cross-season hindsight number: the R² lift is
+> real, but it measures how dead the pipeline was, not how much signal
+> Vegas carries above what the model already had access to. See
+> [`council-transcript-20260422-032550.md`](../council-transcript-20260422-032550.md)
+> and [`docs/SILENT_FALLBACK_AUDIT_20260422.md`](./SILENT_FALLBACK_AUDIT_20260422.md).
+
 ## Update — 2026-04-21 — Step C complete
 
 The silent-degradation hypothesis from the 2026-04-14 investigation was **confirmed**: the April 10 R²=0.269 baseline and every downstream number (including the 2026-04-19 α sweep) were computed with `implied_team_total` pinned at the constant fallback of 23.0 and `spread` at 0.0. Backfilling real Vegas lines into the local `schedule` cache produces a measurable lift across every metric tracked by the workstream.

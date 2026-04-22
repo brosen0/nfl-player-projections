@@ -1,5 +1,37 @@
 # Critical Limitation: Predictive Ceiling From Weak Feature Signal
 
+> **Status update (2026-04-22, Bucket 4 re-council closed):** the
+> 2026-04-22 partial council (`council-transcript-20260422-032550.md`)
+> returned Side A: honor the workstream kill criterion, freeze the
+> feature set, pivot to statistical validation + deployment
+> readiness. **Do not run Phase 4 ensemble on momentum.** Two
+> sequential steps closed today:
+>
+> 1. **Bootstrap** of the 43-week H2H record (`docs/BOOTSTRAP_H2H_20260422.md`).
+>    10 000 resamples: p5 = 58.14 % vs the -110 break-even 52.38 % —
+>    **kill criterion does not fire.** Sample is statistically
+>    distinguishable from a sub-break-even edge (99.19 % of resamples
+>    exceed breakeven). Caveat: at the 1.8× DFS cash break-even (55.56 %),
+>    p5 clears by only 2.6 pp.
+> 2. **Silent-fallback audit** (`docs/SILENT_FALLBACK_AUDIT_20260422.md`).
+>    Scoped to the causal feature path. One actionable fix landed
+>    (`is_divisional`/`is_primetime` schedule swallow in
+>    `_add_team_matchup_features` — now logs a structured warning
+>    instead of silently defaulting to 0). Four more instances of the
+>    same pattern exist in the legacy `ModelBacktester` path; flagged
+>    for a future sweep, not fixed this session.
+>
+> **Phase 1 re-labeling:** per the chairman's explicit instruction,
+> Phase 1's "+0.004 R²" is now documented as a **bug-fix, not a
+> feature addition**. Vegas had been declared in CAUSAL_FEATURES for
+> months; the lift came from converting `except Exception: pass` to
+> working code. Same story for Phase 3 injury. The workstream's
+> structural findings (three silent-dead features fixed) matter more
+> than its +0.004 R² bottom line.
+>
+> Next in the chairman's sequence: prospective replay against
+> lock-time-only opponent construction (Step 3).
+
 > **Status update (2026-04-22):** Step 5 Phase 3 (injury status at
 > lock time) is **closed**, and the **workstream-level kill criterion
 > has fired**. Per-phase bias gate passes (max \|bias\| = 9.1 % at WR

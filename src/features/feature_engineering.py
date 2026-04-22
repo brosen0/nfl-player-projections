@@ -927,8 +927,22 @@ class FeatureEngineer:
                                     else:
                                         df["is_primetime"] = df["is_primetime"].fillna(df["_is_primetime"]).fillna(0).astype(int)
                                     df = df.drop(columns=["_is_primetime"])
-            except Exception:
-                pass  # Schedule data is optional; fall through to defaults
+            except Exception as e:
+                # Surface the silent-fallback failure per the 2026-04-22
+                # re-council Step 2 audit.  Previously `except Exception:
+                # pass` — same trap as the Vegas silent fallback fixed in
+                # Phase 1 (docs/PHASE_1_VEGAS_FINDINGS.md).  These columns
+                # aren't in CAUSAL_FEATURES today, but any future addition
+                # would silently collapse to 0 without a warning here.
+                import logging
+                logging.getLogger(__name__).warning(
+                    "Schedule fetch for is_divisional / is_primetime failed "
+                    "(%s: %s); both columns default to 0 for every row that "
+                    "didn't have a pre-merged value.  Run "
+                    "scripts/backfill_vegas_lines.py (which uses the same "
+                    "nflverse games.csv) or verify nfl_data_py reachability.",
+                    type(e).__name__, e,
+                )
 
         if 'offensive_momentum_score' not in df.columns:
             df['offensive_momentum_score'] = 22.0
