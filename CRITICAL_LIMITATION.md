@@ -1,5 +1,20 @@
 # Critical Limitation: Predictive Ceiling From Weak Feature Signal
 
+> **Status update (2026-04-22):** Step 5 Phase 3 (injury status at
+> lock time) is **closed**, and the **workstream-level kill criterion
+> has fired**. Per-phase bias gate passes (max \|bias\| = 9.1 % at WR
+> α=10 000, well under the ±10 % threshold) and the feature stays
+> wired, but Phases 1 + 2 + 3 together delivered +0.004 cumulative R²
+> lift vs the plan's +0.02 workstream threshold. Two of three
+> "highest-confidence" features (Vegas, injuries) turned out to be
+> already-declared-but-silently-dead; fixing both added ~+0.004 R² and
+> +2.4 pp cross-season hindsight (α=10 000) that was real but small.
+> Opp defense was redundant with existing single-week wiring. The
+> "we need more predictive features" hypothesis lacks empirical
+> support at this sample size; a re-council before Phase 4 is the
+> plan's own instruction. Full writeup:
+> `docs/PHASE_3_INJURY_FINDINGS.md`.
+
 > **Status update (2026-04-21, part 2):** Step 5 Phase 2 (opponent
 > defense rank vs. position) is **closed as measured-and-rejected.**
 > A council-spec season-to-date expanding lag-1 feature
