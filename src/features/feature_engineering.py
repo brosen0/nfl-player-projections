@@ -174,6 +174,13 @@ class FeatureEngineer:
         # Vegas features (creates implied_team_total)
         df = self._create_vegas_game_script_features(df)
 
+        # Populate injury_score / is_injured from the local player_injuries
+        # cache BEFORE the default-to-healthy fallback below.  See
+        # docs/PHASE_3_INJURY_FINDINGS.md — without this call, the causal
+        # path silently pins injury_score to 1.0 for every row and the
+        # declared CAUSAL_FEATURES entry is dead weight.
+        df = self._merge_injury_data_from_cache(df)
+
         # Ensure injury_score exists (1.0 = healthy when injury data not merged)
         if "injury_score" not in df.columns:
             df["injury_score"] = 1.0
