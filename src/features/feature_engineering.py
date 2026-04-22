@@ -111,6 +111,12 @@ class FeatureEngineer:
         # trade deadline, and playoff context features.
         df = self._create_advanced_analytics_features(df)
 
+        # Populate injury_score / is_injured from the local player_injuries
+        # cache BEFORE the default-fallback in _ensure_injury_rookie_features
+        # runs.  Without this call, injury_score pins to 1.0 (healthy) for
+        # every row — see docs/PHASE_3_INJURY_FINDINGS.md.
+        df = self._merge_injury_data_from_cache(df)
+
         # Optional injury/rookie predictors for utilization (defaults when missing)
         df = self._ensure_injury_rookie_features(df)
         
@@ -1860,6 +1866,128 @@ class FeatureEngineer:
         from src.features.advanced_analytics import AdvancedAnalyticsEngine
         engine = AdvancedAnalyticsEngine()
         return engine.add_all_features(df)
+
+    def _merge_injury_data_from_cache(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Inject `injury_score` and `is_injured` from the local player_injuries
+        cache.  Runs BEFORE ``_ensure_injury_rookie_features``.
+
+        Without this, the only prior path that populated `injury_score` lived
+        in ``src/data/external_data.py::add_external_features`` and was wired
+        into the old ``ModelBacktester`` path only — the walk-forward
+        ``TimeSeriesBacktester`` never called it, so injury_score defaulted
+        to 1.0 (healthy) for every row and the declared feature was silently
+        dead.  Phase 3 fix: query the `player_injuries` table populated by
+        scripts/backfill_injuries.py and merge per (player_id, season, week).
+
+        Mapping: the existing ``InjuryDataLoader.INJURY_STATUS_SCORES`` is
+        re-used so the semantic matches the legacy ``add_external_features``
+        path (0.0 = Out / IR, 0.15 = Doubtful, 0.50 = Questionable, 0.85 =
+        Probable, 1.0 = no report / healthy).
+        """
+        required = {"player_id", "season", "week"}
+        if df.empty or not required.issubset(df.columns):
+            return df
+
+        import logging
+        logger = logging.getLogger(__name__)
+
+        # Lazy import to avoid pulling external_data (and its heavy deps) in
+        # contexts where the merge would no-op anyway.
+        try:
+            from src.data.external_data import InjuryDataLoader
+            status_map = InjuryDataLoader.INJURY_STATUS_SCORES
+        except Exception:
+            status_map = {
+                "Out": 0.0, "Doubtful": 0.15, "Questionable": 0.50,
+                "Probable": 0.85, "IR": 0.0, "IR-R": 0.0,
+            }
+
+        try:
+            from src.utils.database import DatabaseManager
+            db = DatabaseManager()
+            seasons = sorted(pd.to_numeric(df["season"], errors="coerce").dropna().unique())
+            if not seasons:
+                return df
+            season_list = ",".join(str(int(s)) for s in seasons)
+            with db._get_connection() as conn:
+                cached = pd.read_sql_query(
+                    "SELECT player_id, season, week, report_status "
+                    f"FROM player_injuries WHERE season IN ({season_list})",
+                    conn,
+                )
+        except Exception as e:
+            logger.warning(
+                "player_injuries cache load failed (%s: %s); injury_score "
+                "will default to 1.0 on every row.  Run "
+                "scripts/backfill_injuries.py to populate.",
+                type(e).__name__, e,
+            )
+            return df
+
+        if cached.empty:
+            logger.warning(
+                "player_injuries cache is empty for seasons %s; injury_score "
+                "will default to 1.0 on every row.  Run "
+                "scripts/backfill_injuries.py.",
+                seasons,
+            )
+            return df
+
+        # Map report_status -> score.  Unknown / empty -> 1.0 (healthy).
+        def _score(s):
+            if s is None or (isinstance(s, float) and pd.isna(s)) or s == "":
+                return 1.0
+            return float(status_map.get(s, 1.0))
+
+        cached["_injury_score"] = cached["report_status"].map(_score)
+        cached["_is_injured"] = (cached["_injury_score"] < 1.0).astype(int)
+
+        merged = df.merge(
+            cached[["player_id", "season", "week", "_injury_score", "_is_injured"]],
+            on=["player_id", "season", "week"],
+            how="left",
+        )
+
+        # Coverage report — how many rows found a matching injury row?
+        # (Matched with report_status = None -> 1.0 counts as a match; a null
+        # here means the player-week simply isn't in the injury report at
+        # all, which is the common case for starters.  Not a silent fallback.)
+        n_total = len(merged)
+        n_matched = int(merged["_injury_score"].notna().sum())
+        if n_total:
+            logger.info(
+                "Injury cache merged: %d/%d rows matched (%.1f%%); "
+                "unmatched rows treated as healthy.",
+                n_matched, n_total, n_matched / n_total * 100,
+            )
+
+        # Resolve: prefer cached when present, fall back to existing column
+        # (from src/data/external_data.py's older path if both fired), else
+        # 1.0 / 0.
+        existing_score = (
+            pd.to_numeric(df["injury_score"], errors="coerce")
+            if "injury_score" in df.columns else pd.Series(np.nan, index=df.index)
+        )
+        existing_injured = (
+            pd.to_numeric(df["is_injured"], errors="coerce")
+            if "is_injured" in df.columns else pd.Series(np.nan, index=df.index)
+        )
+
+        merged["injury_score"] = (
+            merged["_injury_score"]
+            .combine_first(existing_score.reindex(merged.index))
+            .fillna(1.0)
+            .clip(0.0, 1.0)
+        )
+        merged["is_injured"] = (
+            merged["_is_injured"]
+            .combine_first(existing_injured.reindex(merged.index))
+            .fillna(0)
+            .astype(int)
+            .clip(0, 1)
+        )
+
+        return merged.drop(columns=[c for c in ("_injury_score", "_is_injured") if c in merged.columns])
 
     def _ensure_injury_rookie_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """

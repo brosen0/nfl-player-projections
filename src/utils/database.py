@@ -248,7 +248,32 @@ class DatabaseManager:
                     cursor.execute(col_sql)
                 except Exception:
                     pass
-            
+
+            # Injury reports — point-in-time pre-game status per (player, week).
+            # Populated by scripts/backfill_injuries.py from nfl_data_py's
+            # import_injuries().  See docs/PHASE_3_INJURY_FINDINGS.md.
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS player_injuries (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    player_id TEXT NOT NULL,
+                    season INTEGER NOT NULL,
+                    week INTEGER NOT NULL,
+                    team TEXT,
+                    full_name TEXT,
+                    position TEXT,
+                    report_status TEXT,
+                    practice_status TEXT,
+                    report_primary_injury TEXT,
+                    date_modified TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(player_id, season, week)
+                )
+            """)
+            cursor.execute(
+                "CREATE INDEX IF NOT EXISTS idx_player_injuries_season_week "
+                "ON player_injuries(season, week)"
+            )
+
             # Team defense stats (for opponent analysis)
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS team_defense_stats (
