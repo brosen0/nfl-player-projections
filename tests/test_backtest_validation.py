@@ -279,6 +279,14 @@ class TestWalkForwardBiasRegression:
         missing = required - set(df.columns)
         if missing:
             pytest.skip(f"Walk-forward CSV missing required columns: {missing}")
+        # Drop phantom rows emitted by --emit-inactive-predictions: those have
+        # predicted values but actual is NaN (the player was on the
+        # cumulative-active roster but didn't play this week).  The bias
+        # regression test only makes sense on rows where the model's
+        # prediction can be compared to a real observed fantasy-point value.
+        df = df.dropna(subset=["actual"])
+        if "is_active" in df.columns:
+            df = df[df["is_active"].fillna(1).astype(int) == 1]
         return df
 
     def test_overall_bias_within_tolerance(self, predictions_df):
