@@ -274,6 +274,36 @@ class DatabaseManager:
                 "ON player_injuries(season, week)"
             )
 
+            # Forward paper-trade entries — one row per locked week.
+            # Populated by scripts/paper_trade_lock.py per the protocol
+            # in docs/PAPER_TRADE_PROTOCOL_20260422.md (re-council Step 5).
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS paper_trade_entries (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    season INTEGER NOT NULL,
+                    week INTEGER NOT NULL,
+                    lock_timestamp TEXT NOT NULL,
+                    lock_git_sha TEXT NOT NULL,
+                    model_config_json TEXT NOT NULL,
+                    model_lineup_json TEXT NOT NULL,
+                    opponent_lineup_json TEXT NOT NULL,
+                    opponent_method TEXT NOT NULL,
+                    notional_entry_usd REAL NOT NULL,
+                    notional_payout_multiplier REAL NOT NULL,
+                    model_actual REAL,
+                    opponent_actual REAL,
+                    won INTEGER,
+                    score_timestamp TEXT,
+                    notes TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(season, week)
+                )
+            """)
+            cursor.execute(
+                "CREATE INDEX IF NOT EXISTS idx_paper_trade_season_week "
+                "ON paper_trade_entries(season, week)"
+            )
+
             # Team defense stats (for opponent analysis)
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS team_defense_stats (
