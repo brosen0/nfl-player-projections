@@ -47,6 +47,14 @@ def _make_db(path: Path) -> sqlite3.Connection:
             player_id TEXT, season INTEGER, week INTEGER,
             team TEXT, fantasy_points REAL
         );
+        CREATE TABLE weekly_rosters (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            player_id TEXT NOT NULL, season INTEGER NOT NULL,
+            week INTEGER NOT NULL, team TEXT, position TEXT,
+            status TEXT, status_description_abbr TEXT,
+            full_name TEXT, game_type TEXT,
+            UNIQUE(player_id, season, week)
+        );
         """
     )
     conn.commit()
@@ -70,6 +78,18 @@ def _populate_fixture(conn: sqlite3.Connection, season: int = 2026) -> None:
             pts = (week * 3.0) + (hash(pid) % 15)
             pws_rows.append((pid, season, week, "TEAM", pts))
     conn.executemany("INSERT INTO player_weekly_stats VALUES (?,?,?,?,?)", pws_rows)
+    # Seed weekly_rosters for week 4 — all players ACT by default.  Individual
+    # tests can override to test the filter.
+    roster_rows = [
+        (pid, season, 4, "TEAM", pos, "ACT", "A01", name, "REG")
+        for pid, name, pos in players
+    ]
+    conn.executemany(
+        "INSERT INTO weekly_rosters (player_id, season, week, team, position, "
+        "status, status_description_abbr, full_name, game_type) "
+        "VALUES (?,?,?,?,?,?,?,?,?)",
+        roster_rows,
+    )
     conn.commit()
 
 
@@ -191,3 +211,103 @@ def test_score_refuses_unknown_week(tmp_path):
 
     with pytest.raises(SystemExit):
         pt.score_week(conn, season=2026, week=99)
+
+
+def test_active_filter_drops_inactive_players(tmp_path):
+    """build_model_lineup filters to status='ACT' when active_ids is passed."""
+    preds = [
+        {"player_id": "QB1", "name": "a", "position": "QB", "team": "A", "predicted": 30.0},
+        {"player_id": "QB2", "name": "b", "position": "QB", "team": "A", "predicted": 10.0},
+        {"player_id": "RB1", "name": "c", "position": "RB", "team": "A", "predicted": 25.0},
+        {"player_id": "RB2", "name": "d", "position": "RB", "team": "A", "predicted": 20.0},
+        {"player_id": "RB3", "name": "e", "position": "RB", "team": "A", "predicted": 18.0},
+        {"player_id": "WR1", "name": "f", "position": "WR", "team": "A", "predicted": 15.0},
+        {"player_id": "WR2", "name": "g", "position": "WR", "team": "A", "predicted": 14.0},
+        {"player_id": "TE1", "name": "h", "position": "TE", "team": "A", "predicted": 11.0},
+    ]
+    # QB1 and RB1 are top picks but marked inactive — the filter must drop
+    # them even though their predictions are highest.
+    active_ids = {"QB2", "RB2", "RB3", "WR1", "WR2", "TE1"}
+
+    picks = pt.build_model_lineup(preds, active_ids=active_ids)
+    picked_ids = {p["player_id"] for p in picks}
+
+    assert "QB1" not in picked_ids, "QB1 was inactive; filter should drop"
+    assert "RB1" not in picked_ids, "RB1 was inactive; filter should drop"
+    assert "QB2" in picked_ids, "QB2 is the only active QB — must be picked"
+    assert {"RB2", "RB3"}.issubset(picked_ids), "RB2/RB3 are the only active RBs"
+
+
+def test_load_active_roster_ids_returns_only_act_rows(tmp_path):
+    db_path = tmp_path / "test.db"
+    conn = _make_db(db_path)
+    conn.executemany(
+        "INSERT INTO weekly_rosters (player_id, season, week, status) "
+        "VALUES (?,?,?,?)",
+        [
+            ("A1", 2026, 1, "ACT"),
+            ("A2", 2026, 1, "ACT"),
+            ("I1", 2026, 1, "INA"),
+            ("R1", 2026, 1, "RES"),
+            ("C1", 2026, 1, "CUT"),
+            ("A3", 2026, 2, "ACT"),
+        ],
+    )
+    conn.commit()
+
+    week1 = pt.load_active_roster_ids(conn, 2026, 1)
+    assert week1 == {"A1", "A2"}
+
+    week2 = pt.load_active_roster_ids(conn, 2026, 2)
+    assert week2 == {"A3"}
+
+    week3 = pt.load_active_roster_ids(conn, 2026, 3)
+    assert week3 == set()  # empty set, not a crash
+
+
+def test_lock_refuses_without_roster_cache_when_filter_on(tmp_path):
+    """If --no-active-filter is NOT passed but weekly_rosters has no data,
+    lock_week must refuse rather than silently disabling the gate."""
+    db_path = tmp_path / "test.db"
+    conn = _make_db(db_path)
+    _populate_fixture(conn)
+    # Wipe the ACT rows to simulate a missing-cache scenario.
+    conn.execute("DELETE FROM weekly_rosters WHERE season=2026 AND week=4")
+    conn.commit()
+    preds_csv = tmp_path / "preds.csv"
+    _write_predictions_csv(preds_csv)
+
+    with pytest.raises(SystemExit):
+        pt.lock_week(conn, season=2026, week=4, predictions_csv=preds_csv)
+
+    # With --no-active-filter the lock should succeed even without cache.
+    row_id = pt.lock_week(
+        conn, season=2026, week=4, predictions_csv=preds_csv,
+        use_active_filter=False,
+    )
+    assert row_id >= 1
+
+
+def test_lock_with_filter_drops_inactive_from_lineup(tmp_path):
+    db_path = tmp_path / "test.db"
+    conn = _make_db(db_path)
+    _populate_fixture(conn)
+    # Mark QB1 (the top predicted QB per the fixture CSV) as inactive —
+    # the filter should promote QB2 to the model's lineup.
+    conn.execute(
+        "UPDATE weekly_rosters SET status='INA' WHERE player_id='QB1' AND season=2026 AND week=4"
+    )
+    conn.commit()
+    preds_csv = tmp_path / "preds.csv"
+    _write_predictions_csv(preds_csv)
+
+    row_id = pt.lock_week(conn, season=2026, week=4, predictions_csv=preds_csv)
+    row = conn.execute(
+        "SELECT model_lineup_json FROM paper_trade_entries WHERE id=?", (row_id,),
+    ).fetchone()
+    model_lineup = json.loads(row[0])
+    qb_pick = next(p for p in model_lineup if p["position"] == "QB")
+
+    assert qb_pick["player_id"] == "QB2", (
+        "active-roster filter should have promoted QB2 after QB1 was marked INA"
+    )

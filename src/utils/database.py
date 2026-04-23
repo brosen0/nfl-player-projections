@@ -274,6 +274,34 @@ class DatabaseManager:
                 "ON player_injuries(season, week)"
             )
 
+            # Weekly roster snapshots — point-in-time "was this player
+            # on the 53-man active roster for this (season, week)".
+            # Populated by scripts/backfill_weekly_rosters.py from the
+            # nflverse weekly_rosters parquet.  Used by the paper-trade
+            # harness and retrospective symmetric-replay measurement
+            # as the pre-lock active-roster filter described in
+            # docs/INACTIVE_PICK_GAP_DIAGNOSIS.md.
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS weekly_rosters (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    player_id TEXT NOT NULL,
+                    season INTEGER NOT NULL,
+                    week INTEGER NOT NULL,
+                    team TEXT,
+                    position TEXT,
+                    status TEXT,
+                    status_description_abbr TEXT,
+                    full_name TEXT,
+                    game_type TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(player_id, season, week)
+                )
+            """)
+            cursor.execute(
+                "CREATE INDEX IF NOT EXISTS idx_weekly_rosters_season_week "
+                "ON weekly_rosters(season, week)"
+            )
+
             # Forward paper-trade entries — one row per locked week.
             # Populated by scripts/paper_trade_lock.py per the protocol
             # in docs/PAPER_TRADE_PROTOCOL_20260422.md (re-council Step 5).

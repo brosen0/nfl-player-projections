@@ -162,19 +162,30 @@ def load_predictions(csv_path: Path, season: int, week: int) -> List[Dict]:
 def build_model_lineup(
     predictions: List[Dict],
     slots: Dict[str, int] = DEFAULT_ROSTER_SLOTS,
+    active_ids: Optional[set] = None,
 ) -> List[Dict]:
     """Top-N-by-predicted per position, matching the backtest's
     ``DEFAULT_ROSTER_SLOTS`` construction.
 
-    Production-deployment note: this is the same non-salary-capped
-    construction the walk-forward backtest uses via
-    ``backtest_lineup_decisions``.  A real DFS lock would route through
-    ``LineupOptimizer.optimize_lineup(strategy='cash')`` with a salary
-    column from a DFS feed.  Out of scope for this skeleton.
+    If ``active_ids`` is provided, the pool is filtered to players
+    whose (season, week, player_id) carries ``status='ACT'`` in the
+    ``weekly_rosters`` cache.  This is the pre-lock active-roster
+    filter from docs/INACTIVE_PICK_GAP_DIAGNOSIS.md / docs/
+    ACTIVE_ROSTER_FILTER.md — the harness's equivalent of
+    "drop players marked OUT / IR / CUT / SUS / INA before the
+    optimizer runs."
+
+    Production-deployment note: the pool construction is still
+    non-salary-capped; a real DFS lock would additionally route
+    through ``LineupOptimizer.optimize_lineup(strategy='cash')`` with
+    a salary column from a DFS feed.  Out of scope for this skeleton.
     """
+    pool_rows = predictions
+    if active_ids is not None:
+        pool_rows = [p for p in pool_rows if p["player_id"] in active_ids]
     picks: List[Dict] = []
     for pos, n in slots.items():
-        pool = [p for p in predictions if p["position"] == pos]
+        pool = [p for p in pool_rows if p["position"] == pos]
         pool.sort(key=lambda p: p["predicted"], reverse=True)
         for p in pool[:n]:
             picks.append({
@@ -188,14 +199,33 @@ def build_model_lineup(
     return picks
 
 
+def load_active_roster_ids(
+    conn: sqlite3.Connection, season: int, week: int
+) -> set:
+    """Returns set of player_ids with status='ACT' in weekly_rosters.
+    Empty set means the cache has no data — callers should refuse to
+    lock with the filter on (rather than silently drop everyone)."""
+    rows = conn.execute(
+        "SELECT DISTINCT player_id FROM weekly_rosters "
+        "WHERE season = ? AND week = ? AND status = 'ACT'",
+        (int(season), int(week)),
+    ).fetchall()
+    return {r[0] for r in rows}
+
+
 def build_prospective_opponent(
     conn: sqlite3.Connection,
     season: int,
     week: int,
     slots: Dict[str, int] = DEFAULT_ROSTER_SLOTS,
+    active_ids: Optional[set] = None,
 ) -> List[Dict]:
     """Construct the opponent using the prospective pool (players active
-    at least once through week N-1; rank by prior-week actual)."""
+    at least once through week N-1; rank by prior-week actual).
+
+    Applies the same active-roster filter as ``build_model_lineup`` when
+    ``active_ids`` is provided — both sides face the same gate so the
+    measurement stays symmetric."""
     cur = conn.cursor()
     rows = cur.execute(
         """
@@ -226,6 +256,8 @@ def build_prospective_opponent(
     for pid, pos, name, team in rows:
         if pid not in prior:
             continue
+        if active_ids is not None and pid not in active_ids:
+            continue
         pool_by_pos.setdefault(pos, []).append({
             "slot": pos,
             "player_id": pid,
@@ -254,6 +286,7 @@ def lock_week(
     payout_multiplier: float = DEFAULT_PAYOUT_MULTIPLIER,
     entry_usd: float = DEFAULT_ENTRY_USD,
     force_unfreeze: bool = False,
+    use_active_filter: bool = True,
     notes: str = "",
 ) -> int:
     base_sha = first_lock_sha(conn)
@@ -276,8 +309,20 @@ def lock_week(
             f"in {predictions_csv}"
         )
 
-    model_lineup = build_model_lineup(predictions)
-    opponent_lineup = build_prospective_opponent(conn, season, week)
+    active_ids: Optional[set] = None
+    if use_active_filter:
+        active_ids = load_active_roster_ids(conn, season, week)
+        if not active_ids:
+            raise SystemExit(
+                f"refusing to lock: active-roster filter is on but "
+                f"weekly_rosters has no ACT rows for (season={season}, "
+                f"week={week}). Run scripts/backfill_weekly_rosters.py, "
+                "or pass --no-active-filter to bypass (NOT recommended "
+                "for live locks — see docs/ACTIVE_ROSTER_FILTER.md)."
+            )
+
+    model_lineup = build_model_lineup(predictions, active_ids=active_ids)
+    opponent_lineup = build_prospective_opponent(conn, season, week, active_ids=active_ids)
     if len(model_lineup) != sum(DEFAULT_ROSTER_SLOTS.values()):
         raise SystemExit(
             f"refusing to lock: model lineup has {len(model_lineup)} picks, "
@@ -294,6 +339,7 @@ def lock_week(
         "feature_mode": "causal",
         "payout_multiplier": payout_multiplier,
         "entry_usd": entry_usd,
+        "active_roster_filter": bool(use_active_filter),
     }
 
     cur = conn.cursor()
@@ -388,6 +434,18 @@ def main() -> int:
         help="Permit a lock even if frozen-path files have changed. "
         "Resets the 8-12 week paper-trade clock per the protocol.",
     )
+    ap.add_argument(
+        "--no-active-filter",
+        action="store_true",
+        help=(
+            "Skip the pre-lock weekly_rosters status='ACT' filter. "
+            "NOT recommended for live locks — the filter is the fix "
+            "for the 7.4 pp model-vs-opponent inactive-pick gap "
+            "(docs/ACTIVE_ROSTER_FILTER.md). Provided for A/B testing "
+            "and retrospective replays where the filter is applied "
+            "externally."
+        ),
+    )
     ap.add_argument("--db", type=Path, default=DB_PATH)
     ap.add_argument("--notes", default="")
     args = ap.parse_args()
@@ -403,6 +461,7 @@ def main() -> int:
                 payout_multiplier=args.payout_multiplier,
                 entry_usd=args.entry_usd,
                 force_unfreeze=args.force_unfreeze,
+                use_active_filter=not args.no_active_filter,
                 notes=args.notes,
             )
             print(f"Locked (season={args.season}, week={args.week}); row_id={row_id}")

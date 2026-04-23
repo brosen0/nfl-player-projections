@@ -39,7 +39,7 @@ import math
 import sqlite3
 import sys
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DB_PATH = PROJECT_ROOT / "data" / "nfl_data.db"
@@ -106,11 +106,21 @@ def symmetric_model_actual(
     all_rows: List[Dict],
     week: int,
     slots: Dict[str, int] = DEFAULT_ROSTER_SLOTS,
+    active_ids: Optional[set] = None,
 ) -> Tuple[float, int]:
-    """Pick model lineup from ALL cumulative-active players this week
-    (active + phantom) ranked by this-week predicted.  Inactive picks
-    score 0."""
+    """Pick model lineup from the cumulative-active pool this week,
+    ranked by this-week predicted.  Inactive picks (those with no
+    observed actual) score 0.
+
+    If ``active_ids`` is provided, the model's pool is first filtered
+    to players whose (player_id, season, week) carries
+    ``status == 'ACT'`` in the weekly_rosters cache.  This simulates
+    the production harness's pre-lock active-roster gate described in
+    ``docs/INACTIVE_PICK_GAP_DIAGNOSIS.md``.
+    """
     week_rows = [r for r in all_rows if r["week"] == week and r["predicted"] is not None]
+    if active_ids is not None:
+        week_rows = [r for r in week_rows if r["player_id"] in active_ids]
     total = 0.0
     n_inactive = 0
     for pos, n_starters in slots.items():
@@ -127,6 +137,22 @@ def symmetric_model_actual(
             else:
                 n_inactive += 1
     return total, n_inactive
+
+
+def load_active_roster_ids(
+    conn: sqlite3.Connection, season: int, week: int
+) -> set:
+    """(player_id) set for players with status='ACT' in weekly_rosters.
+
+    Returns an empty set if the cache has no rows for (season, week) —
+    callers should treat that as "no filter, use the original pool"
+    (not "filter out everyone")."""
+    rows = conn.execute(
+        "SELECT DISTINCT player_id FROM weekly_rosters "
+        "WHERE season = ? AND week = ? AND status = 'ACT'",
+        (int(season), int(week)),
+    ).fetchall()
+    return {r[0] for r in rows}
 
 
 def build_prospective_opponent_pool(
@@ -172,7 +198,13 @@ def build_prospective_opponent_pool(
 def opponent_prospective_actual(
     pool: List[Tuple[str, str, float, float]],
     slots: Dict[str, int] = DEFAULT_ROSTER_SLOTS,
+    active_ids: Optional[set] = None,
 ) -> Tuple[float, int]:
+    """If ``active_ids`` is provided, pool is filtered to players with
+    status='ACT' in weekly_rosters before ranking — keeps the filter
+    symmetric (model + opp face the same gate)."""
+    if active_ids is not None:
+        pool = [r for r in pool if r[0] in active_ids]
     total = 0.0
     n_inactive = 0
     for pos, n_starters in slots.items():
@@ -194,6 +226,15 @@ def main() -> int:
     ap.add_argument("--breakeven", type=float, default=BREAKEVEN_WIN_RATE)
     ap.add_argument("--bootstrap-trials", type=int, default=10_000)
     ap.add_argument("--seed", type=int, default=42)
+    ap.add_argument(
+        "--apply-active-filter",
+        action="store_true",
+        help=(
+            "Apply the weekly_rosters status='ACT' filter to both sides "
+            "before ranking. Simulates the production harness's pre-lock "
+            "active-roster gate from docs/INACTIVE_PICK_GAP_DIAGNOSIS.md."
+        ),
+    )
     args = ap.parse_args()
 
     conn = sqlite3.connect(str(DB_PATH))
@@ -213,9 +254,21 @@ def main() -> int:
         # Iterate all weeks that have at least one prediction row (active or phantom).
         weeks = sorted({r["week"] for r in rows})
         for week in weeks:
-            model_sym, model_na = symmetric_model_actual(rows, week)
+            active_ids = None
+            if args.apply_active_filter:
+                active_ids = load_active_roster_ids(conn, season, week)
+                if not active_ids:
+                    # Cache miss — don't silently collapse to "drop
+                    # everyone."  Skip the week instead and flag.
+                    print(
+                        f"  ! skip season={season} week={week}: no "
+                        f"weekly_rosters rows (run backfill_weekly_rosters.py)",
+                        file=sys.stderr,
+                    )
+                    continue
+            model_sym, model_na = symmetric_model_actual(rows, week, active_ids=active_ids)
             opp_pool = build_prospective_opponent_pool(conn, season, week)
-            opp_sym, opp_na = opponent_prospective_actual(opp_pool)
+            opp_sym, opp_na = opponent_prospective_actual(opp_pool, active_ids=active_ids)
             if not opp_pool or model_sym == 0.0 and model_na == 0:
                 # e.g., week 1 has no prior-week history for anyone
                 continue
