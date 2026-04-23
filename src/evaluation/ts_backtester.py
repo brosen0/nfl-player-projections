@@ -316,6 +316,10 @@ class TimeSeriesBacktester:
             # and ``fantasy_points=NaN`` so feature engineering and
             # downstream scoring treat them as "didn't play."
             if self.emit_inactive_predictions:
+                # Explicit False on active rows so the concat doesn't
+                # fill NaN (which is truthy and would flip everything
+                # to phantom downstream).
+                test["_phantom"] = False
                 phantoms = self._build_phantom_test_rows(train, test, week)
                 if phantoms is not None and not phantoms.empty:
                     test = pd.concat([test, phantoms], ignore_index=True)
@@ -401,7 +405,12 @@ class TimeSeriesBacktester:
                     for i in range(len(pos_test)):
                         row = pos_test.iloc[i]
                         actual = row.get("fantasy_points", np.nan)
-                        is_phantom = bool(row.get("_phantom", False))
+                        # NaN-safe phantom check — bool(NaN) is True, so
+                        # guard explicitly against NaN and non-bool values.
+                        phantom_raw = row.get("_phantom", False)
+                        is_phantom = (phantom_raw is True) or (
+                            isinstance(phantom_raw, (bool, np.bool_)) and bool(phantom_raw)
+                        )
                         self.predictions.append({
                             "season": int(self.season),
                             "week": int(week),
