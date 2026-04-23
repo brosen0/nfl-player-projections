@@ -1,5 +1,21 @@
 # Critical Limitation: Predictive Ceiling From Weak Feature Signal
 
+> **Status update (2026-04-22, Phase 4 closed: KILL on runtime):**
+> The ensemble walk-forward was run per the pre-registered rule
+> (`docs/PHASE_4_PREREGISTRATION.md`, committed at `fc583e6` before
+> any ensemble code executed). Both `--model ensemble` runs died
+> mid-walk-forward after ~12.8 h wall clock (per-week runtime
+> ~650-700 s, roughly 13× Ridge); neither emitted a results JSON.
+> Pre-registered kill gate #3 ("walk-forward runtime > 4× Ridge")
+> fires mechanically. Full writeup:
+> `docs/PHASE_4_ENSEMBLE_FINDINGS.md`. Production default stays at
+> Ridge α=10 000 with Phase 1 Vegas + Phase 3 injury merges. Residual
+> bug flagged: `PositionModel`'s internal feature-engineering
+> pipeline bypasses the Phase 1 Vegas cache and hits
+> `habitatring.com` directly — same silent-fallback pattern
+> re-surfacing on a parallel code path. The predictive-ceiling
+> workstream is now fully discharged.
+
 > **Status update (2026-04-22, Bucket 4 re-council closed):** the
 > 2026-04-22 partial council (`council-transcript-20260422-032550.md`)
 > returned Side A: honor the workstream kill criterion, freeze the
