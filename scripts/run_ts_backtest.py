@@ -76,6 +76,17 @@ def main():
         action="store_true",
         help="Skip cash-H2H win-rate / ROI reporting (legacy MAE/RMSE/R² only).",
     )
+    parser.add_argument(
+        "--emit-inactive-predictions",
+        action="store_true",
+        help=(
+            "Also emit predictions for players in the season's cumulative-"
+            "active pool who didn't play this week (phantom test rows). "
+            "Enables the fully-symmetric prospective replay; see "
+            "docs/SYMMETRIC_PROSPECTIVE_REPLAY.md and "
+            "council-transcript-20260423-051434.md."
+        ),
+    )
 
     args = parser.parse_args()
 
@@ -112,6 +123,7 @@ def main():
         ridge_alpha=ridge_alpha,
         payout_multiplier=args.payout_multiplier,
         report_decision_quality=not args.no_decision_quality,
+        emit_inactive_predictions=args.emit_inactive_predictions,
     )
 
     print(f"\nDone. {len(pred_df)} predictions generated.")

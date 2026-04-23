@@ -248,6 +248,16 @@ class TimeSeriesBacktester:
             else float(DECISION_QUALITY.get("payout_multiplier", 1.8))
         )
         self.report_decision_quality = report_decision_quality
+        # Emit predictions for every cumulative-active-pool player each
+        # week, not just players who played.  When True, phantom test
+        # rows are injected for (player, season, week) tuples where the
+        # player had appeared earlier in the season but didn't play
+        # this week.  Their feature vectors use their last-known
+        # player-level values with this-week team/opponent/Vegas
+        # context.  Actuals are NaN on phantom rows.  Enables the
+        # fully-symmetric prospective replay per the 2026-04-23
+        # council (`council-transcript-20260423-051434.md` step 1).
+        self.emit_inactive_predictions = False
 
     # ------------------------------------------------------------------
     def run_backtest(self) -> pd.DataFrame:
@@ -297,6 +307,18 @@ class TimeSeriesBacktester:
             ].copy()
 
             test = week_data.copy()
+
+            # Optional: inject phantom test rows for inactive cumulative-
+            # active-pool players.  See docstring on
+            # ``emit_inactive_predictions``.  Each phantom row carries the
+            # player's last-known player-level feature values with this-
+            # week team + opponent (looked up from the schedule table)
+            # and ``fantasy_points=NaN`` so feature engineering and
+            # downstream scoring treat them as "didn't play."
+            if self.emit_inactive_predictions:
+                phantoms = self._build_phantom_test_rows(train, test, week)
+                if phantoms is not None and not phantoms.empty:
+                    test = pd.concat([test, phantoms], ignore_index=True)
 
             if len(train) < 100:
                 if self.verbose:
@@ -379,6 +401,7 @@ class TimeSeriesBacktester:
                     for i in range(len(pos_test)):
                         row = pos_test.iloc[i]
                         actual = row.get("fantasy_points", np.nan)
+                        is_phantom = bool(row.get("_phantom", False))
                         self.predictions.append({
                             "season": int(self.season),
                             "week": int(week),
@@ -388,6 +411,7 @@ class TimeSeriesBacktester:
                             "team": row.get("team", ""),
                             "predicted": float(preds[i]),
                             "actual": float(actual) if pd.notna(actual) else np.nan,
+                            "is_active": 0 if is_phantom else 1,
                             "prediction_timestamp": self._run_timestamp,
                         })
                         week_preds += 1
@@ -410,6 +434,85 @@ class TimeSeriesBacktester:
         pred_df = pd.DataFrame(self.predictions)
         self._compute_metrics(pred_df)
         return pred_df
+
+    # ------------------------------------------------------------------
+    def _build_phantom_test_rows(
+        self, train: pd.DataFrame, test: pd.DataFrame, week: int
+    ) -> Optional[pd.DataFrame]:
+        """Build phantom rows for players who were in the season's
+        cumulative-active pool through week N-1 but didn't play week N.
+
+        Each phantom carries the player's most recent pre-week-N row
+        from ``train`` (all player-level fields frozen at last-known)
+        with ``week`` updated to the target week, ``fantasy_points`` set
+        to NaN (sentinel for "didn't play"), and ``opponent`` filled in
+        from the ``schedule`` table for (team, season, week).  The rest
+        of the feature engineering cascades naturally — team-level
+        Vegas / opp-defense / injury fields get this-week values from
+        their respective merges; rolling player stats remain as of the
+        player's last appearance (which is the closest approximation to
+        what a production pipeline would see if the player sits
+        week N).
+        """
+        if train.empty:
+            return None
+        season_train = train[train["season"] == self.season]
+        if season_train.empty:
+            return None
+
+        cumulative_ids = set(season_train["player_id"].dropna().unique())
+        active_ids = set(test["player_id"].dropna().unique()) if not test.empty else set()
+        inactive_ids = cumulative_ids - active_ids
+        if not inactive_ids:
+            return None
+
+        season_train_sorted = season_train.sort_values(
+            ["player_id", "week"], kind="stable"
+        )
+        # Most recent pre-week-N row per inactive player.  Using
+        # groupby(...).tail(1) preserves dtype better than iloc[-1] in a
+        # loop.
+        last_rows = (
+            season_train_sorted[season_train_sorted["player_id"].isin(inactive_ids)]
+            .groupby("player_id", sort=False, as_index=False)
+            .tail(1)
+            .copy()
+        )
+        if last_rows.empty:
+            return None
+
+        # Look up (team, opponent) for the target week from the
+        # schedule table.  Fall back to last-known opponent if the
+        # schedule row isn't available.
+        schedule_map: Dict[Tuple[str, int, int], str] = {}
+        try:
+            from src.utils.database import DatabaseManager
+            db = DatabaseManager()
+            with db._get_connection() as conn:
+                for row in conn.execute(
+                    "SELECT home_team, away_team FROM schedule "
+                    "WHERE season = ? AND week = ?",
+                    (int(self.season), int(week)),
+                ):
+                    home, away = row[0], row[1]
+                    if home:
+                        schedule_map[(home, int(self.season), int(week))] = away or ""
+                    if away:
+                        schedule_map[(away, int(self.season), int(week))] = home or ""
+        except Exception:
+            pass
+
+        last_rows["week"] = int(week)
+        last_rows["fantasy_points"] = np.nan
+        if "opponent" in last_rows.columns and "team" in last_rows.columns:
+            last_rows["opponent"] = [
+                schedule_map.get((t, int(self.season), int(week)), opp if opp else "")
+                for t, opp in zip(last_rows["team"].astype(str), last_rows["opponent"].astype(str))
+            ]
+        # Stamp so downstream prediction storage can flag these.
+        last_rows["_phantom"] = True
+
+        return last_rows
 
     # ------------------------------------------------------------------
     def _compute_metrics(self, pred_df: pd.DataFrame) -> None:
@@ -956,6 +1059,7 @@ def run_ts_backtest(
     ridge_alpha=None,
     payout_multiplier: Optional[float] = None,
     report_decision_quality: bool = True,
+    emit_inactive_predictions: bool = False,
 ) -> Tuple[pd.DataFrame, Dict[str, Any]]:
     """
     End-to-end time-series backtest.
@@ -1036,6 +1140,7 @@ def run_ts_backtest(
         payout_multiplier=payout_multiplier,
         report_decision_quality=report_decision_quality,
     )
+    bt.emit_inactive_predictions = bool(emit_inactive_predictions)
 
     pred_df = bt.run_backtest()
     bt.save_results()
