@@ -1,5 +1,43 @@
 # Critical Limitation: Predictive Ceiling From Weak Feature Signal
 
+> **Status update (2026-04-24, draft kill criterion FIRED):**
+> The 2026-04-23 council's explicit kill criterion fired. Pre-draft
+> `--ranking week1` sim loses to ADP on both 2024 (−9.0 %) and 2025
+> (−15.2 %) after fixing a name-match bug that had been distorting
+> all prior draft-sim results (commit `242d85f`,
+> `docs/PHASE_4B_VORP_FINDINGS.md`). The walk-forward feature set
+> (prior-season stats, roster shares, opponent defense, +1 PPG
+> rookie priors from Phase 4C) is structurally inferior to ADP for
+> draft-time ranking — ADP bakes in offseason news, camp injuries,
+> depth-chart moves, beat-reporter signal that our pipeline does
+> not. Step 3's N ≥ 200 randomization was NOT run because it
+> cannot flip a 2-for-2 directional loss; the gap is information,
+> not noise. **The August 2026 draft product is shelved per the
+> council directive.** Start/sit (75.6 % H2H, p5=65.85 %) becomes
+> the sole user-facing claim. Phase 4A (conformal intervals) and
+> 4D (injury variance) remain in scope as in-season start/sit
+> improvements. Phase 4B (VORP, +11.7 % 2024 / −4.0 % 2025 vs
+> season_sum on hindsight projections) and 4C (rookie priors,
+> +0.011 R² each season) shipped as base layers; neither closed
+> the pre-draft information gap on its own.
+
+> **Status update (2026-04-24, CAUSAL_FEATURES audit closed):**
+> User-driven leakage + validation-metrics audit found the
+> walk-forward genuinely leakage-safe
+> (`docs/CAUSAL_FEATURES_AUDIT_20260424.md`) but caught a silent
+> feature dropout: 4 declared share features (`target_share_pct`,
+> `rush_share_pct`, `snap_share_pct`, `air_yards_share_pct`) were
+> never computed because `utilization_scores` is empty in this DB.
+> Fixed by computing shares from raw stats in `_create_base_features`
+> and adding `_roll3_mean` versions to `CAUSAL_FEATURES`. Per-position
+> R² lifted +0.06 to +0.20 across QB/RB/WR/TE on both seasons (commit
+> `08ddca6`). Symmetric walk-forward kill-gate moved 70.73 % →
+> **75.61 %** (bootstrap p5: 58.5 % → **65.85 %**), commit `4ee4709`.
+> `snap_share_pct` deliberately excluded — `snap_count` / `team_snaps`
+> are zero-filled across every season in this DB (data never
+> populated). The number to quote externally is 75.6 % / p5=65.9 %,
+> not the stale 70.73 %.
+
 > **Status update (2026-04-22, Phase 4 closed: KILL on runtime):**
 > The ensemble walk-forward was run per the pre-registered rule
 > (`docs/PHASE_4_PREREGISTRATION.md`, committed at `fc583e6` before
