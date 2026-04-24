@@ -237,6 +237,11 @@ class FeatureEngineer:
             "passing_attempts", "passing_tds",
             "yards_per_carry", "yards_per_target", "yards_per_attempt",
             "completion_pct",
+            # Position shares — computed in _create_base_features from
+            # raw totals; roll3 of a same-week share is the leakage-
+            # safe draftable signal (prior three games' average share).
+            "target_share_pct", "rush_share_pct",
+            "snap_share_pct", "air_yards_share_pct",
         ]
         for col in roll_cols:
             if col not in df.columns:
@@ -358,6 +363,44 @@ class FeatureEngineer:
         # Season progress
         new_cols["season_week_pct"] = df["week"] / 18
 
+        # -----------------------------------------------------------
+        # Per-game position shares.  ``utilization_scores`` is empty
+        # in this environment (see CAUSAL_FEATURES audit 2026-04-24),
+        # so the ``*_pct`` columns were silently dropped.  Compute
+        # them here from raw stats in player_weekly_stats: team
+        # totals are derived per (team, season, week) groupby, then
+        # each player's share = their count / team's count.
+        #
+        # These shares are THIS-WEEK values and therefore leakage-
+        # prone as direct inputs.  The leakage-safe consumer is the
+        # ``{col}_roll3_mean`` variant produced by
+        # ``_create_causal_rolling_features`` / ``_create_rolling_features``,
+        # which applies shift(1).rolling(3).mean().
+        # -----------------------------------------------------------
+        if all(c in df.columns for c in ["team", "season", "week"]):
+            team_grp = df.groupby(["team", "season", "week"], sort=False)
+            if "targets" in df.columns:
+                new_cols["target_share_pct"] = (
+                    safe_divide(df["targets"], team_grp["targets"].transform("sum"))
+                    * 100
+                )
+            if "rushing_attempts" in df.columns:
+                new_cols["rush_share_pct"] = (
+                    safe_divide(
+                        df["rushing_attempts"],
+                        team_grp["rushing_attempts"].transform("sum"),
+                    ) * 100
+                )
+            if "air_yards" in df.columns:
+                new_cols["air_yards_share_pct"] = (
+                    safe_divide(df["air_yards"], team_grp["air_yards"].transform("sum"))
+                    * 100
+                )
+        if "snap_count" in df.columns and "team_snaps" in df.columns:
+            new_cols["snap_share_pct"] = safe_divide(
+                df["snap_count"], df["team_snaps"]
+            ) * 100
+
         df = df.assign(**new_cols)
         return df
     
@@ -368,7 +411,12 @@ class FeatureEngineer:
             "receiving_yards", "receptions", "targets", "receiving_tds",
             "passing_yards", "passing_attempts", "passing_tds", "interceptions",
             "total_touches", "total_yards", "opportunities", "utilization_score",
-            "yards_per_carry", "yards_per_target", "catch_rate"
+            "yards_per_carry", "yards_per_target", "catch_rate",
+            # Position shares (see _create_base_features) — roll-ed
+            # variants are the leakage-safe consumers used by
+            # CAUSAL_FEATURES; the raw _pct columns are this-week.
+            "target_share_pct", "rush_share_pct",
+            "snap_share_pct", "air_yards_share_pct",
         ]
         
         # Filter to columns that exist

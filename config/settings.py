@@ -278,34 +278,39 @@ CAUSAL_ROLLING_WINDOW = 3  # Only rolling window used in causal mode
 
 # Per-position causal feature lists: opportunity shares, short-window volume,
 # one efficiency metric, opponent context, and Vegas implied total.
+# Note: snap_share_pct is excluded because snap_count / team_snaps are
+# zero-filled for every season in this DB (player_weekly_stats never
+# populated snap data).  Adding it back would reintroduce the silent-
+# fallback pattern the 2026-04-24 CAUSAL_FEATURES audit caught.  When
+# snap data lands, re-add snap_share_pct_roll3_mean to RB and TE.
 CAUSAL_FEATURES = {
     "RB": [
-        "snap_share_pct", "rush_share_pct", "target_share_pct",
+        "rush_share_pct_roll3_mean", "target_share_pct_roll3_mean",
         "rushing_attempts_roll3_mean", "targets_roll3_mean",
         "rushing_tds_roll3_mean", "yards_per_carry_roll3_mean",
         "opp_fpts_allowed", "implied_team_total", "spread",
-        "injury_score", "prev_season_ppg",
+        "injury_score",
     ],
     "WR": [
-        "target_share_pct", "air_yards_share_pct",
+        "target_share_pct_roll3_mean", "air_yards_share_pct_roll3_mean",
         "targets_roll3_mean", "receptions_roll3_mean",
         "receiving_tds_roll3_mean", "yards_per_target_roll3_mean",
         "opp_fpts_allowed", "implied_team_total", "spread",
-        "injury_score", "prev_season_ppg",
+        "injury_score",
     ],
     "TE": [
-        "snap_share_pct", "target_share_pct",
+        "target_share_pct_roll3_mean",
         "targets_roll3_mean", "receptions_roll3_mean",
         "receiving_tds_roll3_mean", "yards_per_target_roll3_mean",
         "opp_fpts_allowed", "implied_team_total", "spread",
-        "injury_score", "prev_season_ppg",
+        "injury_score",
     ],
     "QB": [
         "passing_attempts_roll3_mean", "passing_tds_roll3_mean",
         "rushing_attempts_roll3_mean", "rushing_yards_roll3_mean",
         "yards_per_attempt_roll3_mean",
         "opp_fpts_allowed", "implied_team_total", "spread",
-        "injury_score", "prev_season_ppg",
+        "injury_score",
     ],
 }
 
