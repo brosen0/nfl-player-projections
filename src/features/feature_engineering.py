@@ -211,7 +211,15 @@ class FeatureEngineer:
         in _create_rolling_features; this helper is the extracted
         standalone version so create_causal_features can use it
         without pulling in the rest of the full-pipeline rolling
-        feature zoo."""
+        feature zoo.
+
+        Rookie-prior fill: rows where prev_season_ppg is NaN AND the
+        row's season equals the player's earliest season in the
+        frame are rookies — they get the position + draft-round
+        prior from ``data/rookie_priors.json`` (Phase 4C).  Non-
+        rookie NaN cases (gaps, retirements, traded players without
+        prior rows) fall through to the default 0-fill in
+        ``_impute_missing``."""
         if "fantasy_points" not in df.columns or "season" not in df.columns:
             return df
         season_expanding_ppg = (
@@ -221,6 +229,102 @@ class FeatureEngineer:
         df["_tmp_season_ppg"] = season_expanding_ppg
         df["prev_season_ppg"] = df.groupby("player_id")["_tmp_season_ppg"].shift(1)
         df.drop(columns=["_tmp_season_ppg"], inplace=True, errors="ignore")
+        df = self._apply_rookie_prior(df)
+        return df
+
+    # Module-level caches for the rookie-prior fill.  Loaded on first
+    # use to avoid DB hits / JSON parses per fold.
+    _ROOKIE_PRIORS_CACHE: Optional[Dict[str, Dict[str, float]]] = None
+    _DRAFT_ROUND_CACHE: Optional[Dict[str, int]] = None
+
+    @classmethod
+    def _load_rookie_priors(cls) -> Optional[Dict[str, Dict[str, float]]]:
+        if cls._ROOKIE_PRIORS_CACHE is not None:
+            return cls._ROOKIE_PRIORS_CACHE
+        import json
+        from pathlib import Path
+        p = Path(__file__).resolve().parents[2] / "data" / "rookie_priors.json"
+        if not p.exists():
+            return None
+        raw = json.loads(p.read_text())
+        # Strip metadata, keep only the position→bucket→ppg dicts.
+        cls._ROOKIE_PRIORS_CACHE = {
+            k: v for k, v in raw.items() if not k.startswith("_")
+        }
+        return cls._ROOKIE_PRIORS_CACHE
+
+    @classmethod
+    def _load_draft_rounds(cls) -> Dict[str, int]:
+        if cls._DRAFT_ROUND_CACHE is not None:
+            return cls._DRAFT_ROUND_CACHE
+        import sqlite3
+        from pathlib import Path
+        db_path = Path(__file__).resolve().parents[2] / "data" / "nfl_data.db"
+        if not db_path.exists():
+            cls._DRAFT_ROUND_CACHE = {}
+            return cls._DRAFT_ROUND_CACHE
+        with sqlite3.connect(db_path) as conn:
+            rows = conn.execute(
+                "SELECT player_id, draft_round FROM draft_picks "
+                "WHERE player_id IS NOT NULL AND draft_round IS NOT NULL"
+            ).fetchall()
+        cls._DRAFT_ROUND_CACHE = {pid: int(r) for pid, r in rows}
+        return cls._DRAFT_ROUND_CACHE
+
+    @staticmethod
+    def _round_bucket_for(round_num: Optional[int]) -> str:
+        if round_num is None:
+            return "UDFA"
+        if round_num == 1:
+            return "rd1"
+        if round_num in (2, 3):
+            return "rd2_3"
+        if round_num in (4, 5, 6, 7):
+            return "rd4_7"
+        return "UDFA"
+
+    def _apply_rookie_prior(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Fill ``prev_season_ppg`` NaN rows for rookies with the
+        fitted position+draft-round prior.  Non-rookie NaN rows are
+        left alone (they get the default 0-fill later)."""
+        if "prev_season_ppg" not in df.columns:
+            return df
+        if "position" not in df.columns or "player_id" not in df.columns:
+            return df
+        priors = self._load_rookie_priors()
+        if priors is None:
+            return df  # priors artifact missing → skip (logged once via _impute_missing)
+
+        mask_nan = df["prev_season_ppg"].isna()
+        if not mask_nan.any():
+            return df
+        earliest_season = df.groupby("player_id")["season"].transform("min")
+        is_rookie = df["season"] == earliest_season
+        if not (mask_nan & is_rookie).any():
+            return df
+
+        round_lookup = self._load_draft_rounds()
+        # Compute per-row bucket once.
+        buckets = df["player_id"].map(
+            lambda pid: self._round_bucket_for(round_lookup.get(pid))
+        )
+
+        for pos in ("QB", "RB", "WR", "TE"):
+            pos_priors = priors.get(pos)
+            if not pos_priors:
+                continue
+            for bucket in ("rd1", "rd2_3", "rd4_7", "UDFA"):
+                val = pos_priors.get(bucket)
+                if val is None:
+                    continue
+                sel = (
+                    mask_nan
+                    & is_rookie
+                    & (df["position"] == pos)
+                    & (buckets == bucket)
+                )
+                if sel.any():
+                    df.loc[sel, "prev_season_ppg"] = val
         return df
 
     def _create_causal_rolling_features(self, df: pd.DataFrame) -> pd.DataFrame:
