@@ -164,9 +164,19 @@ Configs:
   trivial (one CLI call per season). The mode-sweep directional result
   from yesterday was on the pre-fix set; if we rerun we'd expect cleaner
   week-1 ranks.
-- **Symmetric walk-forward kill-gate.** Should be re-run if we want a
-  defensible "filtered win rate" number that reflects the current feature
-  set. ~45 min to re-measure.
+- **Symmetric walk-forward kill-gate — RE-RUN (post-commit).**
+  Pre-fix (commit `83daae9`): 29-12 = **70.73 %**, bootstrap p5 = **58.54 %**,
+  PASS by 6.2 pp (active-roster filter on).
+  Post-fix (this commit, wide CSVs `ts_backtest_2024_20260424_153723` +
+  `ts_backtest_2025_20260424_153712`, symmetric replay with
+  `--apply-active-filter`):
+  - Record: **31-10 = 75.61 %**
+  - Wilson 95 % CI: [60.66 %, 86.18 %]
+  - Bootstrap p5: **65.85 %**, PASS by 13.5 pp
+  - Inactive-pick rate: model **0.0 %** (4/246 opp). Model went from 0.4 %
+    pre-fix to 0 — the richer feature set doesn't change the active-roster
+    filter's output, but the kill-gate number itself moved +4.9 pp.
+  Chairman's kill-gate halt remains not-fired.
 
 ## Files touched
 
