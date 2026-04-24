@@ -332,6 +332,40 @@ class DatabaseManager:
                 "ON paper_trade_entries(season, week)"
             )
 
+            # Historical ADP (FantasyPros ECR via dynastyprocess/data mirror).
+            # Populated by scripts/backfill_adp.py. One row per
+            # (scrape_date, page_type, player) — we store multiple weekly
+            # snapshots per season so the draft simulator can pick the
+            # closest-to-draft-day scrape.
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS adp_history (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    season INTEGER NOT NULL,
+                    scrape_date TEXT NOT NULL,
+                    fp_player_id TEXT,
+                    player_name TEXT NOT NULL,
+                    mergename TEXT,
+                    position TEXT,
+                    team TEXT,
+                    ecr REAL NOT NULL,
+                    sd REAL,
+                    best REAL,
+                    worst REAL,
+                    ecr_type TEXT,
+                    page_type TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(season, scrape_date, page_type, fp_player_id, player_name)
+                )
+            """)
+            cursor.execute(
+                "CREATE INDEX IF NOT EXISTS idx_adp_season_date "
+                "ON adp_history(season, scrape_date)"
+            )
+            cursor.execute(
+                "CREATE INDEX IF NOT EXISTS idx_adp_mergename "
+                "ON adp_history(mergename)"
+            )
+
             # Team defense stats (for opponent analysis)
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS team_defense_stats (
