@@ -185,10 +185,42 @@ class FeatureEngineer:
         if "injury_score" not in df.columns:
             df["injury_score"] = 1.0
 
+        # Prior-season / season-to-date PPG proxy.  At week 1 of a
+        # new season this evaluates to the prior season's PPG — the
+        # canonical draft-time signal.  From week 2 onward it is a
+        # season-to-date partial mean.  See _add_prev_season_ppg for
+        # the exact semantics.
+        df = self._add_prev_season_ppg(df)
+
         # Impute NaN/inf
         df = self._impute_missing(df)
 
         self._update_feature_columns(df)
+        return df
+
+    def _add_prev_season_ppg(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Add a single ``prev_season_ppg`` column.
+
+        Within each (player_id, season), the per-game expanding mean
+        of ``fantasy_points`` (shift(1) to exclude the current week)
+        is the "season-to-date PPG before this game".  Shifting that
+        series by one row within each player maps week-1 of a new
+        season onto the LAST row of the prior season — which is the
+        full prior-season PPG.  From week 2 onward it degenerates to
+        a within-season partial-PPG proxy.  Defined exactly this way
+        in _create_rolling_features; this helper is the extracted
+        standalone version so create_causal_features can use it
+        without pulling in the rest of the full-pipeline rolling
+        feature zoo."""
+        if "fantasy_points" not in df.columns or "season" not in df.columns:
+            return df
+        season_expanding_ppg = (
+            df.groupby(["player_id", "season"])["fantasy_points"]
+              .transform(lambda x: x.shift(1).expanding(min_periods=1).mean())
+        )
+        df["_tmp_season_ppg"] = season_expanding_ppg
+        df["prev_season_ppg"] = df.groupby("player_id")["_tmp_season_ppg"].shift(1)
+        df.drop(columns=["_tmp_season_ppg"], inplace=True, errors="ignore")
         return df
 
     def _create_causal_rolling_features(self, df: pd.DataFrame) -> pd.DataFrame:
