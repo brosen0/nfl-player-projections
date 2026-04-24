@@ -28,6 +28,7 @@ def _player(name, pos, ecr=100.0, pred=0.0, actual=0.0, modelable=True):
         pred_total=float(pred),
         actual_total=float(actual),
         is_modelable=modelable,
+        model_rank_value=float(pred),
     )
 
 

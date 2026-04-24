@@ -126,10 +126,28 @@ def load_adp_board(season: int, before_date: str = None) -> pd.DataFrame:
     return board.assign(scrape_date=scrape_date)
 
 
-def load_model_projections(predictions_csv: Path) -> pd.DataFrame:
+def load_model_projections(
+    predictions_csv: Path, ranking: str = "season_sum", season: int = None
+) -> pd.DataFrame:
     """Aggregate a walk-forward predictions CSV to season totals per
     player.  Only ``is_active=1`` rows contribute, matching how the
-    paper trade locks are scored."""
+    paper trade locks are scored.
+
+    ``ranking`` controls what we expose as ``model_rank_value`` (the
+    score ModelBot ranks with):
+      - ``season_sum`` (default): sum of weekly predictions across the
+        season.  Causal per-week but embeds within-season learning.
+      - ``week1``: the model's week-1 prediction alone.  Week 1's
+        features only use pre-season info, so this is a genuine
+        pre-draft forecast.  We rank by a per-week *rate* rather
+        than a total — positions are ranked against their own pool so
+        QB vs RB scale differences don't matter.
+      - ``prior_season``: ignore this model entirely; rank by the
+        player's prior-season total actual fantasy points from
+        ``player_weekly_stats``.  Naive "last year's points" baseline.
+
+    ``pred_total`` and ``actual_total`` (used for post-draft scoring)
+    are always the season-sum versions regardless of ranking mode."""
     df = pd.read_csv(predictions_csv)
     if "is_active" in df.columns:
         df = df[df["is_active"] == 1]
@@ -140,6 +158,39 @@ def load_model_projections(predictions_csv: Path) -> pd.DataFrame:
                weeks=("week", "count"))
           .reset_index()
     )
+    if ranking == "season_sum":
+        agg["model_rank_value"] = agg["pred_total"]
+    elif ranking == "week1":
+        w1 = (
+            df[df["week"] == 1]
+              .groupby("player_id")["predicted"].first()
+              .rename("model_rank_value")
+              .reset_index()
+        )
+        agg = agg.merge(w1, on="player_id", how="left")
+        agg["model_rank_value"] = agg["model_rank_value"].fillna(0.0)
+    elif ranking == "prior_season":
+        if season is None:
+            raise ValueError("season required for ranking='prior_season'")
+        from src.utils.database import DatabaseManager
+        prior = season - 1
+        with DatabaseManager()._get_connection() as conn:
+            prior_df = pd.read_sql(
+                """
+                SELECT pws.player_id,
+                       SUM(pws.fantasy_points) AS prior_total
+                  FROM player_weekly_stats pws
+                 WHERE pws.season = ?
+                 GROUP BY pws.player_id
+                """,
+                conn,
+                params=(prior,),
+            )
+        agg = agg.merge(prior_df, on="player_id", how="left")
+        agg["model_rank_value"] = agg["prior_total"].fillna(0.0)
+        agg.drop(columns=["prior_total"], inplace=True)
+    else:
+        raise ValueError(f"unknown ranking={ranking!r}")
     return agg
 
 
@@ -156,6 +207,7 @@ class DraftPlayer:
     pred_total: float
     actual_total: float
     is_modelable: bool  # True if matched to projections
+    model_rank_value: float = 0.0  # ModelBot's sort key (mode-dependent)
 
 
 @dataclass
@@ -172,13 +224,13 @@ class Team:
         return self.pos_count(pos) < POSITION_CAPS.get(pos, 99)
 
     def rank_key_for(self, player: DraftPlayer) -> float:
-        # Lower is better for ECR; negate pred for the ModelBot so we
-        # can sort ascending universally.
+        # Lower is better for ECR; negate the model score for the
+        # ModelBot so we can sort ascending universally.
         if self.is_model_bot:
-            # Prefer higher predicted season points.  If unmodelable,
-            # fall back to ECR (worst-case still sane).
+            # Prefer higher model_rank_value.  If unmodelable, fall
+            # back to ECR (worst-case still sane).
             if player.is_modelable:
-                return -player.pred_total
+                return -player.model_rank_value
             return 1000.0 + player.ecr
         return player.ecr
 
@@ -202,6 +254,11 @@ def build_draft_board(
             pred_total=float(pred["pred_total"]) if pred else 0.0,
             actual_total=float(pred["actual_total"]) if pred else 0.0,
             is_modelable=pred is not None,
+            model_rank_value=(
+                float(pred["model_rank_value"])
+                if pred and "model_rank_value" in pred
+                else (float(pred["pred_total"]) if pred else 0.0)
+            ),
         ))
     board.sort(key=lambda p: p.ecr)
     return board
@@ -329,8 +386,34 @@ def summarize(teams: List[Team]) -> Dict:
     }
 
 
-def _print_report(summary: Dict, season: int, scrape_date: str) -> None:
-    print(f"=== Snake draft {season} (ADP: {scrape_date}) ===")
+CAVEATS = {
+    "season_sum": (
+        "CAVEAT: ModelBot ranks by the sum of per-week walk-forward "
+        "predictions across the season. Each weekly prediction is "
+        "causal (pre-week features only), but summing across the "
+        "season embeds within-season learning a real draft-time "
+        "forecast does not have. Structural check only."
+    ),
+    "week1": (
+        "NOTE: ModelBot ranks by its week-1 prediction alone. The "
+        "week-1 walk-forward model is trained on data up to end of "
+        "the prior season, so this IS a genuine pre-draft forecast. "
+        "n=1 draft is a directional signal, not a lift number."
+    ),
+    "prior_season": (
+        "NOTE: ModelBot ranks by the player's prior-season total "
+        "fantasy points (from player_weekly_stats). This is a naive "
+        "baseline that bypasses the model entirely — useful to "
+        "confirm whether a simple 'last year's points' strategy "
+        "beats ADP without any ML."
+    ),
+}
+
+
+def _print_report(summary: Dict, season: int, scrape_date: str,
+                  ranking: str = "season_sum") -> None:
+    print(f"=== Snake draft {season} (ADP: {scrape_date}, "
+          f"ranking={ranking}) ===")
     print(f"  {'slot':>4}  {'bot':>8}  {'pred':>7}  {'actual':>7}")
     print("  " + "-" * 36)
     for r in summary["ranked"]:
@@ -348,13 +431,7 @@ def _print_report(summary: Dict, season: int, scrape_date: str) -> None:
         f"ADP mean {summary['adp_mean_actual_total']:.1f}."
     )
     print()
-    print("CAVEAT: ModelBot ranks players by the sum of per-week "
-          "walk-forward predictions across the season. Each weekly "
-          "prediction is causal (pre-week features only), but summing "
-          "across the season embeds within-season learning that a "
-          "real draft-time forecast does not have. This simulator is "
-          "a structural check — use the Step 3 pre-draft backtest "
-          "(council-transcript-20260423-051434.md) for real ADP lift.")
+    print(CAVEATS.get(ranking, CAVEATS["season_sum"]))
 
 
 def main() -> int:
@@ -376,6 +453,16 @@ def main() -> int:
         default=None,
         help="Only use ADP scrapes on or before this YYYY-MM-DD. "
              "Default: {season}-09-10.",
+    )
+    ap.add_argument(
+        "--ranking",
+        choices=["season_sum", "week1", "prior_season"],
+        default="season_sum",
+        help="How ModelBot ranks players. 'season_sum' (default) uses "
+             "the hindsight walk-forward aggregate. 'week1' uses the "
+             "walk-forward week-1 prediction (genuinely pre-season). "
+             "'prior_season' ranks by prior-season actual FP (naive "
+             "baseline, ignores the model).",
     )
     ap.add_argument("--json", type=Path, default=None)
     args = ap.parse_args()
@@ -403,12 +490,15 @@ def main() -> int:
     print(f"ADP season:       {args.season}")
     print(f"Model preds file: {csv_path}")
     print(f"Model slot:       {args.model_slot}")
+    print(f"Ranking mode:     {args.ranking}")
 
     adp = load_adp_board(args.season, args.adp_before)
     scrape_date = adp["scrape_date"].iloc[0]
     print(f"ADP scrape date:  {scrape_date}  ({len(adp)} rows)")
 
-    projections = load_model_projections(csv_path)
+    projections = load_model_projections(
+        csv_path, ranking=args.ranking, season=args.season,
+    )
     board = build_draft_board(adp, projections)
     unmatched = sum(1 for p in board if not p.is_modelable)
     print(f"Draft board:      {len(board)} players; "
@@ -417,7 +507,7 @@ def main() -> int:
 
     teams = run_draft(board, model_slot=args.model_slot)
     summary = summarize(teams)
-    _print_report(summary, args.season, scrape_date)
+    _print_report(summary, args.season, scrape_date, args.ranking)
 
     if args.json:
         args.json.parent.mkdir(parents=True, exist_ok=True)
@@ -427,6 +517,7 @@ def main() -> int:
                 "scrape_date": scrape_date,
                 "predictions_csv": str(csv_path),
                 "model_slot": args.model_slot,
+                "ranking": args.ranking,
                 "summary": summary,
             },
             indent=2,
