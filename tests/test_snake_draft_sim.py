@@ -148,3 +148,46 @@ def test_build_draft_board_matches_last_name_and_position():
     assert by_name["T.Hill"].actual_total == 310.0
     assert not by_name["X.Ghost"].is_modelable
     assert by_name["X.Ghost"].pred_total == 0.0
+
+
+def test_vorp_subtracts_position_replacement_level():
+    """VORP for the top QB = QB1_proj - QB14_proj;
+       VORP for the top RB = RB1_proj - RB35_proj.
+       Cross-position ordering should favor RB scarcity."""
+    import pandas as pd
+    rows = []
+    # 20 QBs: 30, 29, 28, ..., 11 (QB14 = 30 - 13 = 17)
+    for i in range(20):
+        rows.append({"player_id": f"QB{i}", "name": f"QB{i}", "position": "QB",
+                     "team": "X", "pred_total": 30 - i,
+                     "actual_total": 0.0, "weeks": 17})
+    # 40 RBs: 25, 24.5, 24, ..., 5.5 (RB35 = 25 - 0.5*34 = 8)
+    for i in range(40):
+        rows.append({"player_id": f"RB{i}", "name": f"RB{i}", "position": "RB",
+                     "team": "X", "pred_total": 25 - 0.5 * i,
+                     "actual_total": 0.0, "weeks": 17})
+    agg = pd.DataFrame(rows)
+    vorp = sd._apply_vorp(agg, basis_col="pred_total")
+    # QB1 (proj 30) replacement QB14 (proj 17) -> VORP 13
+    assert abs(vorp.iloc[0] - 13.0) < 1e-6, f"QB1 VORP = {vorp.iloc[0]}"
+    # RB1 (proj 25) replacement RB35 (proj 8) -> VORP 17
+    rb1_idx = agg.index[agg["player_id"] == "RB0"][0]
+    assert abs(vorp.iloc[rb1_idx] - 17.0) < 1e-6, f"RB1 VORP = {vorp.iloc[rb1_idx]}"
+    # RB has higher VORP than QB despite lower raw projection.
+    assert vorp.iloc[rb1_idx] > vorp.iloc[0]
+
+
+def test_vorp_model_bot_prefers_scarce_position():
+    """When two players project the same raw points but one is at a
+    scarce position (RB) and the other at deep (QB), VORP should
+    push the scarce-position one to the top of ModelBot's queue."""
+    qb = _player("QB_rare", "QB", ecr=5, pred=25, modelable=True)
+    rb = _player("RB_rare", "RB", ecr=6, pred=25, modelable=True)
+    # In VORP mode, model_rank_value is set externally from pred_total
+    # minus replacement. Simulate: QB14 projects 17, RB35 projects 8.
+    # So QB_rare VORP = 8; RB_rare VORP = 17.
+    qb.model_rank_value = 25 - 17  # 8
+    rb.model_rank_value = 25 - 8   # 17
+    t = sd.Team(name="M", is_model_bot=True, slot=1)
+    pick = sd._select_pick(t, [qb, rb])
+    assert pick.name == "RB_rare"

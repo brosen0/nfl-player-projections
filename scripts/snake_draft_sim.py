@@ -59,6 +59,14 @@ POSITION_CAPS: Dict[str, int] = {"QB": 3, "RB": 8, "WR": 8, "TE": 3}
 TEAMS = 12
 ROUNDS = 15
 
+# Replacement-level player rank per position, used by ``--ranking vorp``.
+# For a 12-team PPR league with {QB:1, RB:2, WR:2, TE:1, FLEX:1}:
+#   QB: 12 starters + ~2 backups drafted → ~14th QB
+#   RB: 24 starters + ~6 flex slots + ~5 bench RBs → ~35th RB
+#   WR: 24 starters + ~5 flex slots + ~6 bench WRs → ~35th WR
+#   TE: 12 starters + ~2 backups → ~14th TE
+REPLACEMENT_RANKS: Dict[str, int] = {"QB": 14, "RB": 35, "WR": 35, "TE": 14}
+
 
 # --------------------------------------------------------------------
 # Name utilities (match scripts/start_sit_prototype.py)
@@ -75,12 +83,39 @@ def _last_token(name: str) -> str:
     return parts[-1] if parts else name
 
 
-def _build_pred_index(predictions: pd.DataFrame) -> Dict[Tuple[str, str], Dict]:
-    """Build (normalized_last, position) → record index for fast match."""
-    idx: Dict[Tuple[str, str], Dict] = {}
+def _first_initial(name: str) -> str:
+    """Return the first character of the name, normalized.  Handles
+    both 'C.Lamb' (first letter = 'c') and 'Christian McCaffrey'
+    (first letter = 'c')."""
+    n = (name or "").strip()
+    return n[0].lower() if n else ""
+
+
+def _build_pred_index(predictions: pd.DataFrame) -> Dict[Tuple[str, str, str], Dict]:
+    """Build (first_initial, normalized_last, position) → record index
+    for fast match.  First-initial + last-name disambiguates common
+    surnames (e.g. Bijan Robinson vs Keilan Robinson, both RB)."""
+    idx: Dict[Tuple[str, str, str], Dict] = {}
     for _, r in predictions.iterrows():
-        last_norm = _normalize(_last_token(r["name"]))
-        idx.setdefault((last_norm, r["position"]), r.to_dict())
+        key = (
+            _first_initial(r["name"]),
+            _normalize(_last_token(r["name"])),
+            r["position"],
+        )
+        # Keep the record with the most weeks (i.e. the more
+        # established player) when two players share (initial, last,
+        # position).  Breaks ties by higher pred_total.
+        existing = idx.get(key)
+        if existing is None:
+            idx[key] = r.to_dict()
+        else:
+            new_weeks = int(r.get("weeks", 0) or 0)
+            old_weeks = int(existing.get("weeks", 0) or 0)
+            if new_weeks > old_weeks or (
+                new_weeks == old_weeks
+                and float(r.get("pred_total", 0) or 0) > float(existing.get("pred_total", 0) or 0)
+            ):
+                idx[key] = r.to_dict()
     return idx
 
 
@@ -160,6 +195,8 @@ def load_model_projections(
     )
     if ranking == "season_sum":
         agg["model_rank_value"] = agg["pred_total"]
+    elif ranking == "vorp":
+        agg["model_rank_value"] = _apply_vorp(agg, basis_col="pred_total")
     elif ranking == "week1":
         w1 = (
             df[df["week"] == 1]
@@ -192,6 +229,28 @@ def load_model_projections(
     else:
         raise ValueError(f"unknown ranking={ranking!r}")
     return agg
+
+
+def _apply_vorp(agg: pd.DataFrame, basis_col: str = "pred_total") -> pd.Series:
+    """Compute Value Over Replacement Player per row.
+
+    Replacement level for a position = the value of the Nth-ranked
+    player at that position on ``basis_col``, where N is the
+    ``REPLACEMENT_RANKS`` threshold.  VORP = basis - replacement.
+
+    Players at positions not in REPLACEMENT_RANKS (K/DST/etc.) get
+    VORP = basis.  Missing positions get 0 replacement.
+    """
+    vorp = agg[basis_col].astype(float).copy()
+    for pos, rank in REPLACEMENT_RANKS.items():
+        pos_mask = agg["position"] == pos
+        if not pos_mask.any():
+            continue
+        pos_vals = agg.loc[pos_mask, basis_col].sort_values(ascending=False).reset_index(drop=True)
+        idx = min(rank, len(pos_vals)) - 1
+        replacement = float(pos_vals.iloc[idx]) if idx >= 0 and len(pos_vals) > 0 else 0.0
+        vorp.loc[pos_mask] = agg.loc[pos_mask, basis_col].astype(float) - replacement
+    return vorp
 
 
 # --------------------------------------------------------------------
@@ -238,13 +297,17 @@ class Team:
 def build_draft_board(
     adp: pd.DataFrame, projections: pd.DataFrame
 ) -> List[DraftPlayer]:
-    """Merge ADP rows with model projections on (normalized last name,
-    position).  Returns the draft board sorted by ADP (lowest first)."""
+    """Merge ADP rows with model projections on (first-initial,
+    normalized last name, position).  Returns the draft board sorted
+    by ADP (lowest first)."""
     pred_idx = _build_pred_index(projections)
     board: List[DraftPlayer] = []
     for _, r in adp.iterrows():
-        last = _normalize(_last_token(r["name"]))
-        key = (last, r["position"])
+        key = (
+            _first_initial(r["name"]),
+            _normalize(_last_token(r["name"])),
+            r["position"],
+        )
         pred = pred_idx.get(key)
         board.append(DraftPlayer(
             name=r["name"],
@@ -407,6 +470,14 @@ CAVEATS = {
         "confirm whether a simple 'last year's points' strategy "
         "beats ADP without any ML."
     ),
+    "vorp": (
+        "NOTE: ModelBot ranks by VORP — the season_sum projection "
+        "minus the position's replacement-level projection (QB/TE: "
+        "14th, RB/WR: 35th per 12-team PPR depth). Cross-position: "
+        "the best RB with VORP=12 outranks the best QB with VORP=6. "
+        "Same hindsight caveat as season_sum applies (uses summed "
+        "per-week walk-forward predictions)."
+    ),
 }
 
 
@@ -456,13 +527,15 @@ def main() -> int:
     )
     ap.add_argument(
         "--ranking",
-        choices=["season_sum", "week1", "prior_season"],
+        choices=["season_sum", "week1", "prior_season", "vorp"],
         default="season_sum",
         help="How ModelBot ranks players. 'season_sum' (default) uses "
              "the hindsight walk-forward aggregate. 'week1' uses the "
              "walk-forward week-1 prediction (genuinely pre-season). "
              "'prior_season' ranks by prior-season actual FP (naive "
-             "baseline, ignores the model).",
+             "baseline, ignores the model). 'vorp' applies Value Over "
+             "Replacement Player on the season_sum projection (see "
+             "REPLACEMENT_RANKS for thresholds).",
     )
     ap.add_argument("--json", type=Path, default=None)
     args = ap.parse_args()
