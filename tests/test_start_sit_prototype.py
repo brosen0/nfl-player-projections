@@ -72,6 +72,27 @@ def test_match_miss_returns_none():
     assert ss._match_roster_entry("J.Allen", "QB", preds) is None
 
 
+def test_best_starters_with_flex_picks_top_remaining_rbwrtb():
+    """With flex_slots=1, after the core 6 are filled, the highest
+    bench RB/WR/TE should fill the FLEX. K and DST are not eligible."""
+    matched = _preds([
+        {"name": "QB1", "position": "QB", "predicted": 20},
+        {"name": "RB1", "position": "RB", "predicted": 18},
+        {"name": "RB2", "position": "RB", "predicted": 16},
+        {"name": "RB3", "position": "RB", "predicted": 14},  # FLEX candidate
+        {"name": "WR1", "position": "WR", "predicted": 15},
+        {"name": "WR2", "position": "WR", "predicted": 14},
+        {"name": "WR3", "position": "WR", "predicted": 13},  # also FLEX candidate
+        {"name": "TE1", "position": "TE", "predicted": 11},
+        {"name": "TE2", "position": "TE", "predicted":  9},  # also FLEX candidate
+    ])
+    starters, bench = ss._best_starters(matched, flex_slots=1)
+    names = {p["name"] for p in starters}
+    # Core 6 + FLEX = 7. RB3 (14) is the best bench RB/WR/TE.
+    assert names == {"QB1", "RB1", "RB2", "WR1", "WR2", "TE1", "RB3"}
+    assert {p["name"] for p in bench} == {"WR3", "TE2"}
+
+
 def test_best_starters_picks_top_n_per_position():
     matched = _preds([
         {"name": "QB1", "position": "QB", "predicted": 20},

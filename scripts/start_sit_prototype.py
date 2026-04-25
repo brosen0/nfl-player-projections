@@ -54,6 +54,8 @@ from typing import Dict, List, Optional, Tuple
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 ROSTER_SLOTS: Dict[str, int] = {"QB": 1, "RB": 2, "WR": 2, "TE": 1}
+FLEX_ELIGIBLE = {"RB", "WR", "TE"}
+DEFAULT_FLEX_SLOTS = 0  # default v1: no FLEX (cleanest 6-slot comparison)
 
 
 # --------------------------------------------------------------------
@@ -165,21 +167,39 @@ def _match_roster_entry(
 # --------------------------------------------------------------------
 
 def _best_starters(
-    matched: List[Dict], slots: Dict[str, int] = ROSTER_SLOTS
+    matched: List[Dict],
+    slots: Dict[str, int] = ROSTER_SLOTS,
+    flex_slots: int = DEFAULT_FLEX_SLOTS,
 ) -> Tuple[List[Dict], List[Dict]]:
     """Return (starters, bench) selected by top-N per position by
-    predicted. Bench is sorted by predicted descending for easy
-    comparison."""
+    predicted. With ``flex_slots > 0``, additionally fill that many
+    FLEX slots with the best remaining RB/WR/TE not already starting.
+    Bench is sorted by predicted descending for easy comparison."""
     starters: List[Dict] = []
     bench: List[Dict] = []
+    used_ids: set = set()
     for pos, n in slots.items():
         pool = sorted(
             (m for m in matched if m["position"] == pos),
             key=lambda x: x["predicted"],
             reverse=True,
         )
-        starters.extend(pool[:n])
+        for p in pool[:n]:
+            starters.append(p)
+            used_ids.add(p["player_id"])
         bench.extend(pool[n:])
+    if flex_slots > 0:
+        # Pull best remaining flex-eligible from bench
+        flex_pool = sorted(
+            (p for p in bench if p["position"] in FLEX_ELIGIBLE),
+            key=lambda x: x["predicted"],
+            reverse=True,
+        )
+        for p in flex_pool[:flex_slots]:
+            starters.append(p)
+            used_ids.add(p["player_id"])
+        # Rebuild bench excluding the flex picks
+        bench = [b for b in bench if b["player_id"] not in used_ids]
     bench.sort(key=lambda x: x["predicted"], reverse=True)
     return starters, bench
 
@@ -237,13 +257,28 @@ def _render(
         act = f"{p.get('actual'):.1f}" if p.get("actual") is not None else "—"
         return (p["name"], f"{p['predicted']:.2f}", act)
 
-    # Pair by slot position
-    user_by_pos: Dict[str, List[Dict]] = {pos: [] for pos in ROSTER_SLOTS}
-    for p in user_starters:
-        user_by_pos.setdefault(p["position"], []).append(p)
-    model_by_pos: Dict[str, List[Dict]] = {pos: [] for pos in ROSTER_SLOTS}
-    for p in model_starters:
-        model_by_pos.setdefault(p["position"], []).append(p)
+    # Pair by slot position. After core slots (QB/RB/WR/TE) are
+    # filled, any remaining starter is a FLEX (or extra position
+    # depth not used in this league).
+    def split_core_and_flex(starters: List[Dict]) -> Tuple[Dict[str, List[Dict]], List[Dict]]:
+        by_pos: Dict[str, List[Dict]] = {pos: [] for pos in ROSTER_SLOTS}
+        flex: List[Dict] = []
+        # Sort each position by predicted desc so highest-pred fills
+        # the core slot, lowest goes to FLEX (matches how
+        # _best_starters allocates).
+        per_pos: Dict[str, List[Dict]] = {pos: [] for pos in ROSTER_SLOTS}
+        for p in starters:
+            per_pos.setdefault(p["position"], []).append(p)
+        for pos, plist in per_pos.items():
+            plist.sort(key=lambda x: x.get("predicted", 0), reverse=True)
+            n_core = ROSTER_SLOTS.get(pos, 0)
+            by_pos[pos] = plist[:n_core]
+            if pos in FLEX_ELIGIBLE:
+                flex.extend(plist[n_core:])
+        return by_pos, flex
+
+    model_by_pos, model_flex = split_core_and_flex(model_starters)
+    user_by_pos, user_flex = split_core_and_flex(user_starters)
 
     for pos, n in ROSTER_SLOTS.items():
         for i in range(n):
@@ -252,6 +287,16 @@ def _render(
             m_name, m_pred, m_act = fmt_pick(m)
             u_name, _, u_act = fmt_pick(u)
             lines.append(f"{pos:<6}  {m_name:<22}  {m_pred:>6}  {m_act:>7}  {u_name:<22}  {u_act:>7}")
+    # Render any FLEX picks (one row per FLEX slot used).
+    n_flex = max(len(model_flex), len(user_flex))
+    for i in range(n_flex):
+        m = model_flex[i] if i < len(model_flex) else None
+        u = user_flex[i] if i < len(user_flex) else None
+        m_name, m_pred, m_act = fmt_pick(m)
+        u_name, _, u_act = fmt_pick(u)
+        m_label = f"{m_name} ({m['position']})" if m else m_name
+        u_label = f"{u_name} ({u['position']})" if u else u_name
+        lines.append(f"{'FLEX':<6}  {m_label:<22}  {m_pred:>6}  {m_act:>7}  {u_label:<22}  {u_act:>7}")
     lines.append("")
 
     if bench:
@@ -293,6 +338,9 @@ def main() -> int:
     ap.add_argument("--week", type=int, required=True)
     ap.add_argument("--roster", type=Path, required=True, help="JSON roster spec (see docs/USER_INTERVIEW_PROTOCOL.md).")
     ap.add_argument("--predictions-csv", type=Path, help="Override prediction source.")
+    ap.add_argument("--flex", type=int, default=0,
+                    help="Number of FLEX (RB/WR/TE) starting slots in this league. "
+                         "Default 0 (matches v1's QB/RB/RB/WR/WR/TE only).")
     args = ap.parse_args()
 
     if not args.roster.exists():
@@ -332,7 +380,7 @@ def main() -> int:
         matched.append((entry, pred))
         all_roster_matched.append(pred)
 
-    model_starters, bench = _best_starters(all_roster_matched)
+    model_starters, bench = _best_starters(all_roster_matched, flex_slots=args.flex)
     comparison = _compare_actual(user_starters, model_starters)
 
     print(_render(args.season, args.week, csv_path, matched, unmatched,
