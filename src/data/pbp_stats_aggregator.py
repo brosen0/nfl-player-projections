@@ -563,9 +563,26 @@ class PBPStatsAggregator:
         Heuristic order: QB (passing attempts) > RB (rush-heavy) > TE vs WR
         (receiving yards threshold).  Returns empty string when position cannot
         be determined so callers can detect and handle unknown positions.
+
+        Lookup order (2026-04-25 fix): row['position'] → players table →
+        heuristic.  The players table is the post-load authoritative source
+        (kept in sync with nflverse weekly_rosters via the layer-1 UPDATE
+        and ongoing maintenance).  The heuristic is only used for genuinely
+        unknown players to avoid the WR-default that misclassified TEs like
+        Bowers, McBride, Pitts (productive TEs whose yds/target > 8 fell
+        through to the WR fallback).  See
+        docs/POSITION_CLASSIFICATION_AUDIT.md for the RCA.
         """
         if pd.notna(row.get('position')):
             return row['position']
+
+        # Players-table lookup.  This is a per-row query but cached at
+        # class-level after first lookup.
+        pid = row.get('player_id')
+        if pid:
+            cached = self._players_position_lookup().get(pid)
+            if cached:
+                return cached
 
         # If has passing attempts, likely QB
         if row.get('passing_attempts', 0) > 0:
@@ -584,6 +601,32 @@ class PBPStatsAggregator:
             return 'TE'
 
         return 'WR'
+
+    _PLAYERS_POSITION_CACHE = None
+
+    @classmethod
+    def _players_position_lookup(cls) -> dict:
+        """Cached {player_id: position} lookup from the players table.
+        Returns {} if DB or table is missing (preserves heuristic-only
+        behavior for first-ever loads)."""
+        if cls._PLAYERS_POSITION_CACHE is not None:
+            return cls._PLAYERS_POSITION_CACHE
+        cls._PLAYERS_POSITION_CACHE = {}
+        try:
+            import sqlite3
+            from pathlib import Path
+            db = Path(__file__).resolve().parents[2] / "data" / "nfl_data.db"
+            if not db.exists():
+                return cls._PLAYERS_POSITION_CACHE
+            with sqlite3.connect(str(db)) as conn:
+                rows = conn.execute(
+                    "SELECT player_id, position FROM players "
+                    "WHERE position IN ('QB','RB','WR','TE')"
+                ).fetchall()
+            cls._PLAYERS_POSITION_CACHE = {pid: pos for pid, pos in rows}
+        except Exception:
+            cls._PLAYERS_POSITION_CACHE = {}
+        return cls._PLAYERS_POSITION_CACHE
 
     def aggregate_team_stats(self, pbp: pd.DataFrame = None) -> pd.DataFrame:
         """Aggregate team-level neutral pass rate and drive metrics from PBP."""

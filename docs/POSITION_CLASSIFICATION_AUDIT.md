@@ -1,10 +1,135 @@
 # Position-classification audit (112 conflicts) — 2026-04-25
 
+**STATUS: FIXED 2026-04-25** (commit pending). Layer 1 (data) +
+Layer 2 (code) both applied. Conflicts dropped from 112 → 23
+(remaining 23 are legitimate position-changers, not bugs).
+
 **Provenance:** discovered while preparing the user-session smoke
 test. The test user's roster included H.Fannin Jr. (Cleveland TE,
 2025 round 3), but our `players` table classified him as WR. A
 broader audit found this is one of **112 player misclassifications**
 between the `players` and `draft_picks` tables.
+
+## Root cause
+
+Found in `src/data/pbp_stats_aggregator.py:_infer_position`. When
+the loader uses PBP fallback ingestion (current season / partial
+weeks / weekly stats unavailable), positions are inferred via:
+
+```python
+# Distinguish TE from WR: TEs typically have fewer receiving
+# yards per target than WRs.
+if targets > 0 and recv_yards / max(targets, 1) < 8:
+    return 'TE'
+return 'WR'   # default
+```
+
+**The bug:** productive TEs (Bowers 2024, McBride 2025, Pitts
+several seasons) average > 8 yds/target — they fail the heuristic,
+fall through to the WR default. nflverse's own weekly stats label
+them correctly as TE; our local PBP-aggregator inference overrides
+this when it runs.
+
+The bug is asymmetric: high-volume TEs misclassified as WR (63 of
+the 112). RB-misclassified-as-WR (22) follows similar logic when
+the rush-vs-target check tips the wrong way.
+
+## Fix applied (this commit)
+
+### Layer 1 — data UPDATE
+
+```sql
+UPDATE players SET position = (
+    SELECT wr.position FROM weekly_rosters wr
+    WHERE wr.player_id = players.player_id
+      AND wr.position IN ('QB','RB','WR','TE')
+    GROUP BY wr.position ORDER BY COUNT(*) DESC LIMIT 1
+)
+WHERE EXISTS (
+    SELECT 1 FROM weekly_rosters wr
+    WHERE wr.player_id = players.player_id
+      AND wr.position IN ('QB','RB','WR','TE')
+)
+AND players.position IN ('QB','RB','WR','TE');
+```
+
+Result: 1,545 rows updated. Conflicts vs `draft_picks` dropped
+from 112 → 23.
+
+The remaining 23 are legitimate position-changers and edge cases:
+- 7 TE → WR (drafted as WR, transitioned to TE — modal weekly
+  is now TE; draft_picks lags)
+- 5 RB → WR (drafted as WR, became RB)
+- 3 RB → TE (rare; verified one-off)
+- 3 TE → QB (Tebow, etc.)
+- 2 WR → QB (trick-play QBs)
+- 1 each: QB → WR, TE → RB, WR → RB
+
+These are NOT bugs — they reflect the player's actual playing
+position vs draft slot. Authoritative source = `weekly_rosters`,
+which is what the UPDATE used.
+
+Spot checks post-fix:
+- B.Bowers (00-0039338): TE ✓
+- T.McBride (00-0037744): TE ✓
+- K.Pitts (00-0036970): TE ✓
+- H.Fannin (00-0040663): TE ✓
+- C.Patterson (00-0030578): RB ✓ (correctly preserves his
+  RB-since-2021 transition)
+- C.McCaffrey (00-0033280): RB ✓ (unchanged, was already correct)
+
+### Layer 2 — code fix in `_infer_position`
+
+`src/data/pbp_stats_aggregator.py` — added a `players` table
+lookup AFTER `row['position']` and BEFORE the heuristic. Tries:
+
+1. nflverse-supplied `row['position']` (preferred)
+2. Local `players.position` (now correct after layer 1)
+3. Heuristic fallback (only for never-seen players)
+
+Cached at class-level via `_players_position_lookup()`. ~5,000 row
+dict; loaded lazily; no per-row DB hits.
+
+This means future PBP-fallback ingestions will use the
+authoritative position for any known player. The buggy heuristic
+is only used as a last resort for never-seen players.
+
+## Verification
+
+```bash
+# All unit tests pass post-fix
+python -m pytest tests/test_start_sit_prototype.py tests/test_rookie_priors.py \
+    tests/test_snake_draft_sim.py -q
+# 22 passed
+
+# Test user prototype runs cleanly with corrected Fannin
+python scripts/start_sit_prototype.py \
+    --roster data/user_sessions/test_user_2025_w15.json \
+    --season 2025 --week 15 --flex 1
+# H.Fannin TE matches; total 140.40 (model = user, no swap)
+```
+
+## What this does NOT change
+
+- The 8-season walk-forward CSVs were generated BEFORE this fix.
+  Per-position metrics in `STAT_SIG_AUDIT_8SEASON_20260425.md` are
+  still based on the old (buggy) classification. Re-running 8-
+  season wide+narrow walk-forward (~3.5 hrs wall on 4-parallel)
+  would refresh those numbers. Worth doing as a clean batch.
+- The headline 75.6 % / +19 pts/week claim is unaffected — uses
+  summed lineup scores, not per-position.
+- Phase 4C rookie priors were fit using `draft_picks` position
+  which is mostly correct; not affected.
+
+## Files changed (this commit)
+
+- `data/nfl_data.db` — UPDATE on `players.position` (1,545 rows
+  re-classified to weekly_rosters modal authority)
+- `src/data/pbp_stats_aggregator.py:_infer_position` —
+  players-table lookup added between row[position] and heuristic;
+  new `_players_position_lookup` classmethod with cache
+- `docs/POSITION_CLASSIFICATION_AUDIT.md` — this update with RCA
+  and fix-applied status
 
 ## TL;DR
 
