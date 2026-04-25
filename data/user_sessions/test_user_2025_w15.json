@@ -1,0 +1,21 @@
+{
+  "_comment": "Test user — 2025 Week 15 fantasy PLAYOFF FIRST ROUND game. User lost 161.7 to 169.82 (was favored at 80% win prob). 10-team PPR league with QB/RB/RB/WR/WR/TE/FLEX/D-ST/K. v1 prototype scores QB+RB+RB+WR+WR+TE+FLEX (7); D/ST and K not tracked. Bench unknown — needs capture during session.",
+  "league": {
+    "format": "PPR",
+    "size": 10,
+    "scoring_notes": "Standard PPR; D/ST + K used in actual roster but not v1 prototype.",
+    "starters_slots": {"QB": 1, "RB": 2, "WR": 2, "TE": 1, "FLEX": 1},
+    "roster_size": 15
+  },
+  "starters": [
+    {"name": "J.Burrow",     "position": "QB", "_actual_pts": 5.5},
+    {"name": "T.Etienne",    "position": "RB", "_actual_pts": 31.5},
+    {"name": "R.Harvey",     "position": "RB", "_actual_pts": 10.5},
+    {"name": "N.Collins",    "position": "WR", "_actual_pts": 23.5},
+    {"name": "A.St. Brown",  "position": "WR", "_actual_pts": 41.4},
+    {"name": "H.Fannin",     "position": "TE", "_actual_pts": 12.0},
+    {"name": "D.Metcalf",    "position": "WR", "_flex_slot": true, "_actual_pts_pending_at_screenshot": true}
+  ],
+  "_bench_TODO": "Fill in during session — user will know their full 15-player roster",
+  "bench": []
+}
