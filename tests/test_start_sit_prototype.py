@@ -43,6 +43,22 @@ def test_match_exact_name_and_position():
     assert hit["position"] == "WR" and hit["predicted"] == 18.0
 
 
+def test_match_disambiguates_same_last_name_by_first_initial():
+    """Bijan Robinson (B) and Keilan Robinson (K) at RB. The matcher
+    must use first-initial to disambiguate; the prior (last-name-only)
+    matcher silently returned whichever appeared first in the list."""
+    preds = _preds([
+        # Note: Keilan listed first, so a setdefault-by-last-name would
+        # incorrectly map "B.Robinson" → Keilan.
+        {"name": "Keilan Robinson", "position": "RB", "predicted": 1.0},
+        {"name": "Bijan Robinson", "position": "RB", "predicted": 18.0},
+    ])
+    hit = ss._match_roster_entry("B.Robinson", "RB", preds)
+    assert hit["predicted"] == 18.0, f"Expected Bijan, got {hit}"
+    hit = ss._match_roster_entry("K.Robinson", "RB", preds)
+    assert hit["predicted"] == 1.0, f"Expected Keilan, got {hit}"
+
+
 def test_match_falls_back_to_last_name():
     preds = _preds([
         {"name": "Christian McCaffrey", "position": "RB", "predicted": 20.0},

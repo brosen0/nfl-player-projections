@@ -121,6 +121,20 @@ def _normalize(name: str) -> str:
     return "".join(ch for ch in name.lower() if ch.isalnum())
 
 
+def _first_initial(name: str) -> str:
+    """First character of the name, lowercased.  Handles 'C.Lamb'
+    (→ 'c'), 'CeeDee Lamb' (→ 'c'), 'Christian McCaffrey' (→ 'c')."""
+    n = (name or "").strip()
+    return n[0].lower() if n else ""
+
+
+def _last_name(name: str) -> str:
+    """Extract the last token, dot-split or whitespace-split."""
+    if "." in name:
+        return name.split(".")[-1]
+    return name.split()[-1] if name.split() else name
+
+
 def _match_roster_entry(
     roster_name: str, roster_pos: str, predictions: List[Dict]
 ) -> Optional[Dict]:
@@ -128,18 +142,20 @@ def _match_roster_entry(
     (intentional — silent auto-matching is worse than a loud miss for a
     paper prototype; the user should see what didn't match)."""
     target_norm = _normalize(roster_name)
+    target_initial = _first_initial(roster_name)
+    target_last_norm = _normalize(_last_name(roster_name))
+
     # 1. Exact name + position
     for r in predictions:
         if r["position"] == roster_pos and _normalize(r["name"]) == target_norm:
             return r
-    # 2. Drop first-initial dot patterns and try last-name match
-    #    (walk-forward CSV uses "A.Cooper" format in some seasons).
+    # 2. (first_initial, last, position) — disambiguates same-last-name
+    #    collisions like B.Robinson / K.Robinson, J.Smith / A.Smith.
     for r in predictions:
         if r["position"] != roster_pos:
             continue
-        pred_last = r["name"].split(".")[-1] if "." in r["name"] else r["name"].split()[-1]
-        roster_last = roster_name.split(".")[-1] if "." in roster_name else roster_name.split()[-1]
-        if _normalize(pred_last) == _normalize(roster_last):
+        if (_first_initial(r["name"]) == target_initial
+                and _normalize(_last_name(r["name"])) == target_last_norm):
             return r
     return None
 
