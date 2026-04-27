@@ -107,6 +107,16 @@ python scripts/start_sit_prototype.py \
     --roster data/user_sessions/test_user_2025_w15.json \
     --season 2025 --week 15 --flex 1
 # H.Fannin TE matches; total 140.40 (model = user, no swap)
+#
+# NOTE (post-audit, 2026-04-25): test_user_2025_w15.json was
+# subsequently corrected to reflect the user's ACTUAL lineup —
+# the user started C.Loveland at TE, with H.Fannin on the bench
+# (this was also the pivotal regret decision in the playoff
+# SEMIFINALS, not the first round as originally labeled).
+# Re-running the command above will therefore produce different
+# numbers than the snapshot recorded here. The TE classification
+# itself is unaffected — both Loveland and Fannin classify as TE
+# correctly post-fix.
 ```
 
 ## What this does NOT change
