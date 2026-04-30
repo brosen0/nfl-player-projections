@@ -285,10 +285,40 @@ const METRICS = {metrics_json};
 const DATA = {data_json};
 
 let selectedSeason = SEASONS[SEASONS.length - 1];
-let selectedPosition = "ALL";
+let selPos = new Set(["QB","RB","WR","TE"]);
+const ALL_POS = ["QB","RB","WR","TE"];
 
+function isAllPos() {{ return selPos.size === 4; }}
+function matchPos(p) {{ return selPos.has(p); }}
 function fmt(v, d) {{ return v == null ? "—" : v.toFixed(d); }}
 function fmtN(v) {{ return v == null ? "—" : v.toLocaleString(); }}
+
+function togglePos(p) {{
+  if (p === "ALL") {{
+    if (isAllPos()) return;
+    ALL_POS.forEach(x => selPos.add(x));
+  }} else {{
+    if (selPos.has(p)) {{
+      if (selPos.size === 1) return;
+      selPos.delete(p);
+    }} else {{
+      selPos.add(p);
+    }}
+  }}
+  render();
+}}
+
+function computeMetrics(rows) {{
+  if (!rows.length) return {{ n: 0 }};
+  const n = rows.length;
+  const errs = rows.map(r => r.a - r.pr);
+  const mae = errs.reduce((s,e) => s + Math.abs(e), 0) / n;
+  const rmse = Math.sqrt(errs.reduce((s,e) => s + e*e, 0) / n);
+  const meanA = rows.reduce((s,r) => s + r.a, 0) / n;
+  const ssTot = rows.reduce((s,r) => s + (r.a - meanA)**2, 0) || 1;
+  const ssRes = errs.reduce((s,e) => s + e*e, 0);
+  return {{ mae, rmse, r2: 1 - ssRes/ssTot, n }};
+}}
 
 function renderTabs() {{
   const bar = document.getElementById("tabBar");
@@ -297,57 +327,39 @@ function renderTabs() {{
     const btn = document.createElement("button");
     btn.className = "tab" + (s === selectedSeason ? " active" : "");
     btn.textContent = s;
-    btn.onclick = () => {{ selectedSeason = s; selectedPosition = "ALL"; render(); }};
+    btn.onclick = () => {{ selectedSeason = s; selPos = new Set(ALL_POS); render(); }};
     bar.appendChild(btn);
   }});
 }}
 
 function getHeadline(season) {{
   if (season === "All") {{
-    const all = METRICS.headline;
-    if (!all.length) return null;
-    const n = all.reduce((s,m) => s + m.n, 0);
-    const mae = all.reduce((s,m) => s + m.mae * m.n, 0) / n;
-    const rmse = Math.sqrt(all.reduce((s,m) => s + m.rmse * m.rmse * m.n, 0) / n);
     const allRows = [];
     SEASONS.forEach(s => {{ if (DATA[s]) allRows.push(...DATA[s]); }});
-    const meanA = allRows.reduce((s,r) => s + r.a, 0) / allRows.length;
-    const ssRes = allRows.reduce((s,r) => s + (r.a - r.pr) ** 2, 0);
-    const ssTot = allRows.reduce((s,r) => s + (r.a - meanA) ** 2, 0) || 1;
-    return {{ n, mae, rmse, r2: 1 - ssRes / ssTot }};
+    const filtered = isAllPos() ? allRows : allRows.filter(r => matchPos(r.p));
+    return computeMetrics(filtered);
   }}
-  return METRICS.headline.find(h => h.season === season) || null;
+  const data = DATA[season] || [];
+  const filtered = isAllPos() ? data : data.filter(r => matchPos(r.p));
+  return computeMetrics(filtered);
 }}
 
 function getPosMeta(season) {{
-  if (season === "All") {{
-    const combined = {{}};
-    ["QB","RB","WR","TE"].forEach(pos => {{
-      let totalN = 0, totalAE = 0, totalSE = 0, actuals = [], preds = [];
-      SEASONS.forEach(s => {{
-        const pm = (METRICS.byPosition[s] || {{}})[pos];
-        if (pm && pm.n) {{
-          totalN += pm.n;
-          totalAE += pm.mae * pm.n;
-          totalSE += pm.rmse * pm.rmse * pm.n;
-        }}
-        if (DATA[s]) DATA[s].filter(r => r.p === pos).forEach(r => {{
-          actuals.push(r.a); preds.push(r.pr);
-        }});
-      }});
-      if (!totalN) return;
-      const meanA = actuals.reduce((s,v) => s+v,0) / actuals.length;
-      const ssRes = actuals.reduce((s,v,i) => s + (v - preds[i]) ** 2, 0);
-      const ssTot = actuals.reduce((s,v) => s + (v - meanA) ** 2, 0) || 1;
-      combined[pos] = {{ n: totalN, mae: totalAE/totalN, rmse: Math.sqrt(totalSE/totalN), r2: 1-ssRes/ssTot }};
-    }});
-    return combined;
-  }}
-  return METRICS.byPosition[season] || {{}};
+  const combined = {{}};
+  ALL_POS.forEach(pos => {{
+    let rows = [];
+    if (season === "All") {{
+      SEASONS.forEach(s => {{ if (DATA[s]) rows.push(...DATA[s].filter(r => r.p === pos)); }});
+    }} else {{
+      rows = (DATA[season] || []).filter(r => r.p === pos);
+    }}
+    if (rows.length) combined[pos] = computeMetrics(rows);
+  }});
+  return combined;
 }}
 
 function renderHeadlineCard(m) {{
-  if (!m) return '<div class="card empty">No predictions for this season.</div>';
+  if (!m || !m.n) return '<div class="card empty">No predictions for this selection.</div>';
   return `<div class="card"><div class="metrics-grid">
     <div><div class="metric-val">${{fmt(m.mae,2)}}</div><div class="metric-label">MAE</div></div>
     <div><div class="metric-val">${{fmt(m.rmse,2)}}</div><div class="metric-label">RMSE</div></div>
@@ -357,21 +369,23 @@ function renderHeadlineCard(m) {{
 }}
 
 function renderPills() {{
+  const allActive = isAllPos();
   return `<div class="pills">
-    ${{["ALL","QB","RB","WR","TE"].map(p =>
-      `<button class="pill${{selectedPosition===p?" active":""}}" onclick="selectedPosition='${{p}}';render()">${{p==="ALL"?"All":p}}</button>`
+    <button class="pill${{allActive?" active":""}}" onclick="togglePos('ALL')">All</button>
+    ${{ALL_POS.map(p =>
+      `<button class="pill${{selPos.has(p)?" active":""}}" onclick="togglePos('${{p}}')">${{p}}</button>`
     ).join("")}}
   </div>`;
 }}
 
 function renderPosTable(posMeta) {{
-  const positions = ["QB","RB","WR","TE"].filter(p => posMeta[p]);
+  const positions = ALL_POS.filter(p => posMeta[p]);
   if (!positions.length) return "";
   return `<div class="card"><table>
     <tr><th>Pos</th><th class="num">n</th><th class="num">MAE</th><th class="num">RMSE</th><th class="num">R&sup2;</th></tr>
     ${{positions.map(p => {{
       const m = posMeta[p];
-      const hl = selectedPosition === p ? ' style="background:#e3f2fd"' : '';
+      const hl = selPos.has(p) && !isAllPos() ? ' style="background:#e3f2fd"' : '';
       return `<tr${{hl}}><td><span class="pos-badge pos-${{p}}">${{p}}</span></td><td class="num">${{fmtN(m.n)}}</td><td class="num">${{fmt(m.mae,2)}}</td><td class="num">${{fmt(m.rmse,2)}}</td><td class="num">${{fmt(m.r2,3)}}</td></tr>`;
     }}).join("")}}
   </table></div>`;
@@ -386,37 +400,7 @@ function renderAllSeasonsTable() {{
   </table></div>`;
 }}
 
-function renderPlayerTable(rows, weekId) {{
-  const filtered = selectedPosition === "ALL" ? rows : rows.filter(r => r.p === selectedPosition);
-  const sorted = filtered.slice().sort((a,b) => b.pr - a.pr);
-  const limit = 25;
-  const hasMore = sorted.length > limit;
-  const display = hasMore ? sorted.slice(0, limit) : sorted;
-
-  function row(r) {{
-    const resid = r.a - r.pr;
-    const cls = resid >= 0 ? "resid-pos" : "resid-neg";
-    return `<tr><td>${{r.n}}</td><td><span class="pos-badge pos-${{r.p}}">${{r.p}}</span></td><td>${{r.t}}</td><td class="num">${{r.pr.toFixed(1)}}</td><td class="num">${{r.a.toFixed(1)}}</td><td class="num ${{cls}}">${{(resid>=0?"+":"") + resid.toFixed(1)}}</td></tr>`;
-  }}
-
-  let h = `<div class="table-wrap"><table>
-    <tr><th>Player</th><th>Pos</th><th>Team</th><th class="num">Pred</th><th class="num">Act</th><th class="num">Resid</th></tr>
-    ${{display.map(row).join("")}}`;
-
-  if (hasMore) {{
-    const rest = sorted.slice(limit);
-    h += rest.map(row).join("").replace(/^/, `<tr class="extra-rows-${{weekId}}" style="display:none"><td></td></tr>`.replace(/<td><\\/td>/, ""));
-    // Simpler: just hide the extras with a wrapper
-    h += `</table><button class="show-all-btn" onclick="this.style.display='none';document.querySelectorAll('.extra-${{weekId}}').forEach(r=>r.style.display='')">Show all ${{sorted.length}} players</button></div>`;
-    // Re-do with a cleaner approach
-    h = renderPlayerTableClean(sorted, weekId);
-  }} else {{
-    h += `</table></div>`;
-  }}
-  return h;
-}}
-
-function renderPlayerTableClean(sorted, weekId) {{
+function renderPlayerTable(sorted, weekId) {{
   const limit = 25;
   function row(r, extra) {{
     const resid = r.a - r.pr;
@@ -436,28 +420,13 @@ function renderPlayerTableClean(sorted, weekId) {{
 }}
 
 function renderWeeks(season) {{
-  const weekMeta = METRICS.byWeek[season] || {{}};
   const data = DATA[season] || [];
   const weeks = [...new Set(data.map(r => r.w))].sort((a,b) => a - b);
 
   return weeks.map(wk => {{
-    const wm = weekMeta[wk] || {{}};
     const weekRows = data.filter(r => r.w === wk);
-    const filtered = selectedPosition === "ALL" ? weekRows : weekRows.filter(r => r.p === selectedPosition);
-    // Recompute metrics for filtered view
-    let dispMeta = wm;
-    if (selectedPosition !== "ALL" && filtered.length) {{
-      const errs = filtered.map(r => r.a - r.pr);
-      const n = filtered.length;
-      const mae = errs.reduce((s,e) => s + Math.abs(e), 0) / n;
-      const rmse = Math.sqrt(errs.reduce((s,e) => s + e*e, 0) / n);
-      const meanA = filtered.reduce((s,r) => s + r.a, 0) / n;
-      const ssTot = filtered.reduce((s,r) => s + (r.a - meanA)**2, 0) || 1;
-      const ssRes = errs.reduce((s,e) => s + e*e, 0);
-      dispMeta = {{ mae, rmse, r2: 1 - ssRes/ssTot, n }};
-    }} else if (selectedPosition !== "ALL") {{
-      dispMeta = {{ n: 0 }};
-    }}
+    const filtered = isAllPos() ? weekRows : weekRows.filter(r => matchPos(r.p));
+    const dispMeta = computeMetrics(filtered);
 
     const metricsStr = dispMeta.n
       ? `n=${{dispMeta.n}} &middot; MAE ${{fmt(dispMeta.mae,2)}} &middot; R&sup2; ${{fmt(dispMeta.r2,3)}}`
@@ -466,7 +435,7 @@ function renderWeeks(season) {{
 
     return `<details>
       <summary>Week ${{wk}} <span class="week-metrics">${{metricsStr}}</span></summary>
-      ${{filtered.length ? renderPlayerTableClean(filtered.sort((a,b) => b.pr - a.pr), wid) : '<div class="empty">No predictions for this position.</div>'}}
+      ${{filtered.length ? renderPlayerTable(filtered.sort((a,b) => b.pr - a.pr), wid) : '<div class="empty">No predictions for this selection.</div>'}}
     </details>`;
   }}).join("");
 }}

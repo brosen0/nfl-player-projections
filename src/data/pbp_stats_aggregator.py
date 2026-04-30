@@ -576,9 +576,15 @@ class PBPStatsAggregator:
         if pd.notna(row.get('position')):
             return row['position']
 
+        # Manual overrides take highest priority (covers rookies missing
+        # from weekly_rosters whose DB position is wrong).
+        from config.settings import POSITION_OVERRIDES
+        pid = row.get('player_id')
+        if pid and pid in POSITION_OVERRIDES:
+            return POSITION_OVERRIDES[pid]
+
         # Players-table lookup.  This is a per-row query but cached at
         # class-level after first lookup.
-        pid = row.get('player_id')
         if pid:
             cached = self._players_position_lookup().get(pid)
             if cached:

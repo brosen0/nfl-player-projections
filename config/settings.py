@@ -71,6 +71,12 @@ TWO_MINUTE_SECONDS = 120
 # Fallback league neutral pass rate when insufficient data
 PROE_FALLBACK_LG_NEUTRAL_RATE = 0.56
 
+# Manual position overrides: {player_id: correct_position}
+# For players misclassified by nfl-data-py (e.g. rookies missing from weekly_rosters).
+POSITION_OVERRIDES = {
+    "00-0040126": "TE",  # Colston Loveland (CHI) — classified as WR by nfl-data-py
+}
+
 # Positions (offensive skill positions only)
 POSITIONS = ["QB", "RB", "WR", "TE"]
 # Offensive skill positions used by the utilization-based ML pipeline
