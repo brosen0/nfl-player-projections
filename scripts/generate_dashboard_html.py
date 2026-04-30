@@ -271,7 +271,7 @@ details[open] summary::before{{transform:rotate(90deg)}}
 <body>
 <div class="header">
   <h1>NFL Walk-Forward Validation</h1>
-  <div class="subtitle">Leakage-free expanding-window backtest</div>
+  <div class="subtitle">Model predictions vs actual results</div>
 </div>
 <div class="tab-bar" id="tabBar"></div>
 <div class="content" id="content"></div>
