@@ -1958,11 +1958,9 @@ def run_loyo_backtest(
 
     # Determine test seasons
     if test_seasons is None:
+        from src.utils.data_manager import DataManager
         dm = DataManager()
-        available = sorted(
-            dm.check_data_availability().get("available_seasons", [])
-            or dm.get_available_seasons_from_db()
-        )
+        available = sorted(dm.get_available_seasons_from_db())
         start = LOYO_CONFIG["default_test_seasons_start"]
         end = LOYO_CONFIG["default_test_seasons_end"]
         if end is None:

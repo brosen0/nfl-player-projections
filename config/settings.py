@@ -260,7 +260,7 @@ FAST_MODEL_CONFIG = {
 # LOYO (Leave-One-Year-Out) walk-forward backtest configuration.
 # Trains a fresh model per fold; tests on each season in the range.
 LOYO_CONFIG = {
-    "default_test_seasons_start": 2018,  # Earliest test season (need >=5 train seasons + purge)
+    "default_test_seasons_start": 2020,  # Earliest valid test season (need >=6 prior seasons: 2014-2019)
     "default_test_seasons_end": None,    # None = latest available - 1 (exclude current)
     "min_train_seasons": 5,              # Minimum training seasons per fold (matches 18w requirement)
     "purge_gap": 1,                      # Seasons to exclude before test fold
