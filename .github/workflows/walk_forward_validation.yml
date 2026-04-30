@@ -1,0 +1,37 @@
+name: Walk-forward Validation
+
+on:
+  push:
+    branches: [main, "claude/**"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: walk-forward-validation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Render walk-forward validation
+        run: python scripts/render_walk_forward_validation.py
+
+      - name: Upload full validation report
+        uses: actions/upload-artifact@v4
+        with:
+          name: walk-forward-validation
+          path: walk-forward-validation.md
+          retention-days: 30
