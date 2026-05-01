@@ -96,6 +96,91 @@ def compute_metrics(rows: List[Dict]) -> Dict:
 
 
 # ---------------------------------------------------------------------------
+# Close calls extraction
+# ---------------------------------------------------------------------------
+
+# How many starters a 12-team league typically needs per position
+_STARTER_DEPTH = {"QB": 14, "RB": 28, "WR": 30, "TE": 14}
+_MAX_PROJ_GAP = 1.5   # projected points — tighter = harder call
+_MIN_ACTUAL_GAP = 5.0  # actual points — bigger = more consequential
+_MIN_ACTUAL_PTS = 2.0   # filter out true duds / inactive
+
+
+def _build_close_calls(all_data: Dict[int, List]) -> Dict[str, List]:
+    """Find the tightest projected margins where the outcome was decisive.
+
+    Only keeps the single most impactful pair per player per week to avoid
+    redundant cards (e.g. Gibbs vs 4 different RBs in the same week).
+    """
+    calls_by_season: Dict[str, List] = {}
+
+    for season_key, rows in all_data.items():
+        season = str(season_key)
+        # Group by week+position
+        buckets: Dict[tuple, List] = defaultdict(list)
+        for r in rows:
+            buckets[(r["w"], r["p"])].append(r)
+
+        season_calls = []
+        for (week, pos), players in buckets.items():
+            # Rank by projection descending, keep starter-range only
+            ranked = sorted(players, key=lambda x: -x["pr"])
+            depth = _STARTER_DEPTH.get(pos, 20)
+            ranked = ranked[:depth]
+
+            # Only compare adjacent pairs in the ranking — the actual
+            # start/sit dilemma a manager faces
+            week_pairs = []
+            for i in range(len(ranked) - 1):
+                a, b = ranked[i], ranked[i + 1]
+                proj_gap = a["pr"] - b["pr"]
+                if proj_gap > _MAX_PROJ_GAP:
+                    continue
+                if a["a"] < _MIN_ACTUAL_PTS or b["a"] < _MIN_ACTUAL_PTS:
+                    continue
+                actual_gap = abs(a["a"] - b["a"])
+                if actual_gap < _MIN_ACTUAL_GAP:
+                    continue
+
+                model_right = a["a"] > b["a"]
+                week_pairs.append({
+                    "wk": week,
+                    "pos": pos,
+                    "favN": a["n"],
+                    "favT": a["t"],
+                    "favPr": a["pr"],
+                    "favA": a["a"],
+                    "dogN": b["n"],
+                    "dogT": b["t"],
+                    "dogPr": b["pr"],
+                    "dogA": b["a"],
+                    "right": model_right,
+                    "delta": round(actual_gap, 1),
+                    "projGap": round(proj_gap, 1),
+                })
+
+            # Deduplicate: keep only the highest-impact pair per player
+            seen_players: set = set()
+            week_pairs.sort(key=lambda c: -c["delta"])
+            for pair in week_pairs:
+                key_fav = (week, pair["favN"])
+                key_dog = (week, pair["dogN"])
+                if key_fav in seen_players or key_dog in seen_players:
+                    continue
+                seen_players.add(key_fav)
+                seen_players.add(key_dog)
+                season_calls.append(pair)
+
+        # Sort by impact (actual gap) descending — biggest swings first
+        season_calls.sort(key=lambda c: -c["delta"])
+        # Keep top 100 per season to limit payload size while ensuring
+        # enough for position filtering
+        calls_by_season[season] = season_calls[:100]
+
+    return calls_by_season
+
+
+# ---------------------------------------------------------------------------
 # Build JSON payloads
 # ---------------------------------------------------------------------------
 
@@ -156,14 +241,19 @@ def build_data() -> tuple:
         "byWeek": {str(k): {str(wk): m for wk, m in v.items()} for k, v in by_week.items()},
     }
     data_obj = {str(k): v for k, v in all_data.items()}
-    return metrics_obj, data_obj, seasons_with_data
+
+    # Build close calls from the same loaded data
+    close_calls_obj = _build_close_calls(all_data)
+
+    return metrics_obj, data_obj, close_calls_obj, seasons_with_data
 
 
 # ---------------------------------------------------------------------------
 # HTML template
 # ---------------------------------------------------------------------------
 
-def build_html(metrics_json: str, data_json: str, seasons: List[int], generated_at: str) -> str:
+def build_html(metrics_json: str, data_json: str, calls_json: str,
+               seasons: List[int], generated_at: str) -> str:
     seasons_json = json.dumps(seasons)
     return f'''<!DOCTYPE html>
 <html lang="en">
@@ -259,6 +349,47 @@ details[open] summary::before{{transform:rotate(90deg)}}
 .footer{{
   text-align:center;padding:24px 16px;color:#999;font-size:0.7rem;
 }}
+.call-card{{
+  background:#fff;border-radius:10px;padding:14px 16px;
+  margin-bottom:10px;box-shadow:0 1px 3px rgba(0,0,0,0.08);
+  border-left:4px solid #ccc;
+}}
+.call-card.right{{border-left-color:#43a047}}
+.call-card.wrong{{border-left-color:#c62828}}
+.call-header{{
+  display:flex;justify-content:space-between;align-items:center;
+  margin-bottom:8px;
+}}
+.call-week{{font-size:0.75rem;color:#888;font-weight:500}}
+.call-verdict{{
+  font-size:0.75rem;font-weight:700;padding:2px 8px;border-radius:4px;
+}}
+.call-verdict.right{{background:#e8f5e9;color:#2e7d32}}
+.call-verdict.wrong{{background:#ffebee;color:#c62828}}
+.call-matchup{{
+  display:grid;grid-template-columns:1fr auto 1fr;gap:8px;align-items:center;
+  font-size:0.85rem;
+}}
+.call-player{{text-align:center}}
+.call-player-name{{font-weight:600;font-size:0.9rem}}
+.call-player-team{{font-size:0.7rem;color:#888}}
+.call-player-proj{{font-size:0.75rem;color:#888;margin-top:2px}}
+.call-player-actual{{font-size:1.1rem;font-weight:700;margin-top:2px}}
+.call-player-actual.winner{{color:#2e7d32}}
+.call-player-actual.loser{{color:#c62828}}
+.call-vs{{font-size:0.75rem;color:#aaa;font-weight:700}}
+.call-summary{{
+  display:grid;grid-template-columns:repeat(3,1fr);gap:8px;
+  text-align:center;margin-bottom:16px;
+}}
+.call-summary .card{{padding:12px}}
+.call-stat-val{{font-size:1.6rem;font-weight:700}}
+.call-stat-val.good{{color:#2e7d32}}
+.call-stat-val.bad{{color:#c62828}}
+.call-stat-val.neutral{{color:#1a1a2e}}
+.call-stat-label{{font-size:0.7rem;color:#888;text-transform:uppercase;letter-spacing:0.5px}}
+.call-filter-row{{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;align-items:center}}
+.call-filter-label{{font-size:0.75rem;color:#888;margin-right:4px}}
 @media(min-width:600px){{
   .header h1{{font-size:1.3rem}}
   .content{{padding:16px 20px}}
@@ -271,7 +402,7 @@ details[open] summary::before{{transform:rotate(90deg)}}
 <body>
 <div class="header">
   <h1>NFL Walk-Forward Validation</h1>
-  <div class="subtitle">Model predictions vs actual results</div>
+  <div class="subtitle">Model predictions vs actual results &middot; 2018&ndash;2025</div>
 </div>
 <div class="tab-bar" id="tabBar"></div>
 <div class="content" id="content"></div>
@@ -283,10 +414,12 @@ details[open] summary::before{{transform:rotate(90deg)}}
 const SEASONS = {seasons_json};
 const METRICS = {metrics_json};
 const DATA = {data_json};
+const CALLS = {calls_json};
 
 let selectedSeason = SEASONS[SEASONS.length - 1];
 let selPos = new Set(["QB","RB","WR","TE"]);
 const ALL_POS = ["QB","RB","WR","TE"];
+let viewMode = "validation"; // "validation" or "calls"
 
 function isAllPos() {{ return selPos.size === 4; }}
 function matchPos(p) {{ return selPos.has(p); }}
@@ -323,7 +456,23 @@ function computeMetrics(rows) {{
 function renderTabs() {{
   const bar = document.getElementById("tabBar");
   bar.innerHTML = "";
-  SEASONS.concat(["All"]).forEach(s => {{
+  // View mode tabs
+  ["Validation","Hardest Calls"].forEach(label => {{
+    const mode = label === "Validation" ? "validation" : "calls";
+    const btn = document.createElement("button");
+    btn.className = "tab" + (viewMode === mode ? " active" : "");
+    btn.textContent = label;
+    btn.style.borderBottomColor = viewMode === mode ? "#ff9800" : "transparent";
+    btn.onclick = () => {{ viewMode = mode; render(); }};
+    bar.appendChild(btn);
+  }});
+  // Separator
+  const sep = document.createElement("span");
+  sep.style.cssText = "width:2px;background:rgba(255,255,255,0.15);margin:6px 4px;flex-shrink:0";
+  bar.appendChild(sep);
+  // Season tabs
+  const seasonList = viewMode === "validation" ? SEASONS.concat(["All"]) : SEASONS;
+  seasonList.forEach(s => {{
     const btn = document.createElement("button");
     btn.className = "tab" + (s === selectedSeason ? " active" : "");
     btn.textContent = s;
@@ -440,9 +589,82 @@ function renderWeeks(season) {{
   }}).join("");
 }}
 
+function getCallsForView() {{
+  let calls = [];
+  if (selectedSeason === "All") {{
+    SEASONS.forEach(s => {{ if (CALLS[s]) calls.push(...CALLS[s].map(c => ({{...c, season: s}}))); }});
+  }} else {{
+    calls = (CALLS[selectedSeason] || []).map(c => ({{...c, season: selectedSeason}}));
+  }}
+  if (!isAllPos()) calls = calls.filter(c => matchPos(c.pos));
+  calls.sort((a, b) => b.delta - a.delta);
+  return calls;
+}}
+
+function renderCallsSummary(calls) {{
+  const total = calls.length;
+  if (!total) return '<div class="card empty">No close calls for this selection.</div>';
+  const wins = calls.filter(c => c.right).length;
+  const losses = total - wins;
+  const pct = Math.round(100 * wins / total);
+  const pctClass = pct >= 55 ? "good" : pct <= 45 ? "bad" : "neutral";
+  return `<div class="call-summary">
+    <div class="card"><div class="call-stat-val ${{pctClass}}">${{pct}}%</div><div class="call-stat-label">Accuracy</div></div>
+    <div class="card"><div class="call-stat-val good">${{wins}}</div><div class="call-stat-label">Right</div></div>
+    <div class="card"><div class="call-stat-val bad">${{losses}}</div><div class="call-stat-label">Wrong</div></div>
+  </div>`;
+}}
+
+function renderCallCard(c) {{
+  const vClass = c.right ? "right" : "wrong";
+  const vLabel = c.right ? "RIGHT" : "WRONG";
+  const favWon = c.favA > c.dogA;
+  const seasonLabel = selectedSeason === "All" ? c.season + " " : "";
+  return `<div class="call-card ${{vClass}}">
+    <div class="call-header">
+      <span class="call-week">${{seasonLabel}}Week ${{c.wk}} &middot; <span class="pos-badge pos-${{c.pos}}">${{c.pos}}</span> &middot; proj gap ${{c.projGap}} pts</span>
+      <span class="call-verdict ${{vClass}}">${{vLabel}} &middot; ${{c.delta}} pts</span>
+    </div>
+    <div class="call-matchup">
+      <div class="call-player">
+        <div class="call-player-name">${{c.favN}}</div>
+        <div class="call-player-team">${{c.favT}} &middot; model pick</div>
+        <div class="call-player-proj">Proj ${{c.favPr.toFixed(1)}}</div>
+        <div class="call-player-actual ${{favWon?"winner":"loser"}}">${{c.favA.toFixed(1)}}</div>
+      </div>
+      <div class="call-vs">vs</div>
+      <div class="call-player">
+        <div class="call-player-name">${{c.dogN}}</div>
+        <div class="call-player-team">${{c.dogT}}</div>
+        <div class="call-player-proj">Proj ${{c.dogPr.toFixed(1)}}</div>
+        <div class="call-player-actual ${{favWon?"loser":"winner"}}">${{c.dogA.toFixed(1)}}</div>
+      </div>
+    </div>
+  </div>`;
+}}
+
+function renderCallsView() {{
+  const calls = getCallsForView();
+  let h = renderPills();
+  h += renderCallsSummary(calls);
+  const limit = 50;
+  const shown = calls.slice(0, limit);
+  h += shown.map(renderCallCard).join("");
+  if (calls.length > limit) {{
+    h += `<div class="card empty">${{calls.length - limit}} more close calls not shown.</div>`;
+  }}
+  return h;
+}}
+
 function render() {{
   renderTabs();
   const el = document.getElementById("content");
+
+  if (viewMode === "calls") {{
+    el.innerHTML = renderCallsView();
+    return;
+  }}
+
   const m = getHeadline(selectedSeason);
   const posMeta = getPosMeta(selectedSeason);
 
@@ -473,16 +695,17 @@ render();
 # ---------------------------------------------------------------------------
 
 def main() -> int:
-    metrics_obj, data_obj, seasons = build_data()
+    metrics_obj, data_obj, calls_obj, seasons = build_data()
     if not seasons:
         print("No backtest CSVs found in", RESULTS_DIR, file=sys.stderr)
         return 1
 
     metrics_json = json.dumps(metrics_obj, separators=(",", ":"))
     data_json = json.dumps(data_obj, separators=(",", ":"))
+    calls_json = json.dumps(calls_obj, separators=(",", ":"))
     generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
-    html_str = build_html(metrics_json, data_json, seasons, generated_at)
+    html_str = build_html(metrics_json, data_json, calls_json, seasons, generated_at)
 
     SITE_DIR.mkdir(exist_ok=True)
     out_path = SITE_DIR / "index.html"
