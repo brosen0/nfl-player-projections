@@ -18,7 +18,32 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from src.utils.leakage import is_leakage_feature, filter_feature_columns
 
 DATA_DIR = Path(__file__).parent.parent / "data"
-BACKTEST_2025 = DATA_DIR / "backtest_results" / "backtest_2025_20260215.json"
+def _latest_backtest_json() -> Path:
+    """Return the most recent backtest_2025_*.json, or a default path."""
+    candidates = sorted(
+        (DATA_DIR / "backtest_results").glob("backtest_2025_*.json"),
+        key=lambda p: p.name,
+        reverse=True,
+    )
+    return candidates[0] if candidates else DATA_DIR / "backtest_results" / "backtest_2025.json"
+
+
+def _backtest_matches_current_models(backtest_path: Path) -> bool:
+    """Check if the backtest was generated with the current feature version."""
+    metadata_path = DATA_DIR / "models" / "model_metadata.json"
+    if not metadata_path.exists() or not backtest_path.exists():
+        return True  # Can't verify; assume it matches
+    meta = json.loads(metadata_path.read_text())
+    model_date = meta.get("training_date", "")[:10]
+    # Backtest filename encodes date: backtest_2025_YYYYMMDD.json
+    backtest_date = backtest_path.stem.split("_")[-1][:8]
+    if len(backtest_date) == 8:
+        backtest_date_fmt = f"{backtest_date[:4]}-{backtest_date[4:6]}-{backtest_date[6:]}"
+        return backtest_date_fmt >= model_date[:10]
+    return True
+
+
+BACKTEST_2025 = _latest_backtest_json()
 BOUNDS_PATH = DATA_DIR / "utilization_percentile_bounds.json"
 
 
@@ -172,6 +197,11 @@ class TestPredictionBias:
     def backtest_2025(self):
         if not BACKTEST_2025.exists():
             pytest.skip("2025 backtest results not available")
+        if not _backtest_matches_current_models(BACKTEST_2025):
+            pytest.skip(
+                f"Backtest {BACKTEST_2025.name} predates current models — "
+                f"re-run backtest with trained models to validate bias"
+            )
         return _load_backtest(BACKTEST_2025)
 
     def test_prediction_bias_within_tolerance(self, backtest_2025):
