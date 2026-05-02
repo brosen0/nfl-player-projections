@@ -97,5 +97,6 @@ config/__pycache__/
 # Walk-forward validation artifact (generated, uploaded as workflow artifact)
 walk-forward-validation.md
 
-# Dashboard build output
-_site/
+# Dashboard build output (generated locally, committed for GitHub Pages)
+# _site/ is tracked because CI cannot rebuild it without nfl_data.db
+# Regenerate locally: python scripts/generate_dashboard_html.py

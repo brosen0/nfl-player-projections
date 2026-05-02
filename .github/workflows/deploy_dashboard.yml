@@ -4,8 +4,7 @@ on:
   push:
     branches: [main]
     paths:
-      - 'data/backtest_results/**'
-      - 'scripts/generate_dashboard_html.py'
+      - '_site/**'
       - '.github/workflows/deploy_dashboard.yml'
   workflow_dispatch:
 
@@ -25,14 +24,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Generate dashboard
-        run: python scripts/generate_dashboard_html.py
-
+      # _site/index.html is pre-generated locally because the database
+      # (nfl_data.db) is too large for git and the ADP/draft advisor
+      # data requires it.  Regenerate locally with:
+      #   python scripts/generate_dashboard_html.py
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
