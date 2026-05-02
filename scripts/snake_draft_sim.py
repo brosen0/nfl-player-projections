@@ -56,16 +56,16 @@ sys.path.insert(0, str(PROJECT_ROOT))
 ROSTER_SLOTS: Dict[str, int] = {"QB": 1, "RB": 2, "WR": 2, "TE": 1, "FLEX": 1}
 FLEX_ELIGIBLE = {"RB", "WR", "TE"}
 POSITION_CAPS: Dict[str, int] = {"QB": 3, "RB": 8, "WR": 8, "TE": 3}
-TEAMS = 12
+TEAMS = 10
 ROUNDS = 15
 
 # Replacement-level player rank per position, used by ``--ranking vorp``.
-# For a 12-team PPR league with {QB:1, RB:2, WR:2, TE:1, FLEX:1}:
-#   QB: 12 starters + ~2 backups drafted → ~14th QB
-#   RB: 24 starters + ~6 flex slots + ~5 bench RBs → ~35th RB
-#   WR: 24 starters + ~5 flex slots + ~6 bench WRs → ~35th WR
-#   TE: 12 starters + ~2 backups → ~14th TE
-REPLACEMENT_RANKS: Dict[str, int] = {"QB": 14, "RB": 35, "WR": 35, "TE": 14}
+# For a 10-team PPR league with {QB:1, RB:2, WR:2, TE:1, FLEX:1}:
+#   QB: 10 starters + ~2 backups drafted → ~12th QB
+#   RB: 20 starters + ~5 flex slots + ~5 bench RBs → ~30th RB
+#   WR: 20 starters + ~4 flex slots + ~6 bench WRs → ~30th WR
+#   TE: 10 starters + ~2 backups → ~12th TE
+REPLACEMENT_RANKS: Dict[str, int] = {"QB": 12, "RB": 30, "WR": 30, "TE": 12}
 
 
 # --------------------------------------------------------------------
@@ -340,20 +340,28 @@ def snake_pick_order(teams: int = TEAMS, rounds: int = ROUNDS) -> List[int]:
 
 
 def run_draft(
-    board: List[DraftPlayer], model_slot: int = 6
+    board: List[DraftPlayer], model_slot: int = 6,
+    model_pick_fn=None,
 ) -> List[Team]:
-    """Execute the draft. Returns the 12 Team rosters in slot order."""
+    """Execute the draft. Returns the 12 Team rosters in slot order.
+
+    If ``model_pick_fn`` is provided, it is called for the model bot's
+    picks instead of the default ECR/model-rank selector:
+        model_pick_fn(team, available, pick_number) -> DraftPlayer
+    """
     teams = [
         Team(name=f"Team{i}", is_model_bot=(i == model_slot), slot=i)
         for i in range(1, TEAMS + 1)
     ]
     available = list(board)
     order = snake_pick_order(TEAMS, ROUNDS)
-    for slot in order:
+    for pick_idx, slot in enumerate(order):
         t = teams[slot - 1]
-        pick = _select_pick(t, available)
+        if t.is_model_bot and model_pick_fn is not None:
+            pick = model_pick_fn(t, available, pick_idx + 1)
+        else:
+            pick = _select_pick(t, available)
         if pick is None:
-            # Board exhausted for every eligible position; skip.
             continue
         available.remove(pick)
         t.roster.append(pick)
