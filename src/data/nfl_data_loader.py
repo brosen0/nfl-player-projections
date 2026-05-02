@@ -60,6 +60,28 @@ from src.data.lineage import persist_dataframe_artifact, set_artifact_id
 
 
 # ---------------------------------------------------------------------------
+# PFR → GSIS player ID mapping (snap counts use PFR IDs; weekly stats use GSIS)
+# ---------------------------------------------------------------------------
+_PFR_TO_GSIS_CACHE = None
+
+
+def get_pfr_to_gsis_map() -> dict:
+    """Build PFR player ID → GSIS player ID mapping from nfl-data-py."""
+    global _PFR_TO_GSIS_CACHE
+    if _PFR_TO_GSIS_CACHE is not None:
+        return _PFR_TO_GSIS_CACHE
+    try:
+        ids_df = _get_nfl().import_ids()
+        valid = ids_df[ids_df['pfr_id'].notna() & ids_df['gsis_id'].notna()]
+        _PFR_TO_GSIS_CACHE = dict(zip(valid['pfr_id'], valid['gsis_id']))
+        print(f"  PFR→GSIS mapping: {len(_PFR_TO_GSIS_CACHE)} players")
+    except Exception as e:
+        print(f"  WARNING: Could not load PFR→GSIS mapping: {e}")
+        _PFR_TO_GSIS_CACHE = {}
+    return _PFR_TO_GSIS_CACHE
+
+
+# ---------------------------------------------------------------------------
 # Retry-wrapped nfl-data-py functions (Directive V7 Section 19)
 # ---------------------------------------------------------------------------
 @retry_with_backoff(max_retries=3, base_delay=2.0)

@@ -145,11 +145,22 @@ def _report_test_metrics(trainer, test_data: pd.DataFrame, train_data: pd.DataFr
         pos_test = test_data[test_data["position"] == position]
         if len(pos_test) < 10:
             continue
-        
-        model = multi_model.models.get(1) or list(multi_model.models.values())[0]
-        available = [c for c in model.feature_names if c in pos_test.columns]
-        if len(available) < len(model.feature_names) * 0.5:
-            continue
+
+        # Component mode: multi_model is None placeholder
+        if multi_model is None:
+            # Use component predictor feature names if available
+            comp = trainer.component_predictors.get(position)
+            if comp is None:
+                continue
+            feature_names = getattr(comp, "feature_names", [])
+            available = [c for c in feature_names if c in pos_test.columns]
+            if len(available) < max(len(feature_names) * 0.5, 1):
+                continue
+        else:
+            model = multi_model.models.get(1) or list(multi_model.models.values())[0]
+            available = [c for c in model.feature_names if c in pos_test.columns]
+            if len(available) < len(model.feature_names) * 0.5:
+                continue
         
         def _compute_metrics(pos, label, y_true, y_pred):
             rmse = float((mean_squared_error(y_true, y_pred)) ** 0.5)
@@ -171,6 +182,20 @@ def _report_test_metrics(trainer, test_data: pd.DataFrame, train_data: pd.DataFr
                 m["spearman_rho"] = float(rho)
             test_metrics.setdefault(pos, {})[label] = m
         
+        # Component mode: use component predictor directly for FP predictions
+        if multi_model is None:
+            comp = trainer.component_predictors.get(position)
+            if comp is None:
+                continue
+            if "target_1w" in pos_test.columns:
+                y_test = pos_test["target_1w"]
+                valid = ~y_test.isna()
+                if valid.sum() >= 5:
+                    pos_subset = pos_test.loc[valid]
+                    preds_fp = comp.predict(pos_subset)
+                    _compute_metrics(position, "FP (component)", y_test[valid], preds_fp)
+            continue
+
         # QB: report owner-facing FP metric (convert util->FP when needed).
         if position == "QB":
             if "target_1w" not in pos_test.columns and "target_util_1w" not in pos_test.columns:
@@ -193,7 +218,7 @@ def _report_test_metrics(trainer, test_data: pd.DataFrame, train_data: pd.DataFr
                         preds_out = preds
                 _compute_metrics(position, label, y_act[valid], preds_out)
             continue
-        
+
         # RB/WR/TE: primary utilization, optional FP
         util_col = "target_util_1w"
         if util_col in pos_test.columns:
@@ -280,13 +305,22 @@ def _run_backtest_after_training(trainer, test_data: pd.DataFrame,
         pos_test = test_data.loc[pos_mask]
         if len(pos_test) < 5:
             continue
-        model = multi_model.models.get(1) or list(multi_model.models.values())[0]
-        medians = getattr(model, "feature_medians", {})
-        for fn in getattr(model, "feature_names", []):
-            if fn not in pos_test.columns:
-                test_data.loc[pos_mask, fn] = medians.get(fn, 0)
-        pos_test = test_data.loc[pos_mask].copy()
-        preds = multi_model.predict(pos_test, n_weeks=1)
+
+        # Component mode: multi_model is None placeholder
+        if multi_model is None:
+            comp = trainer.component_predictors.get(position)
+            if comp is None:
+                continue
+            pos_test = test_data.loc[pos_mask].copy()
+            preds = comp.predict(pos_test)
+        else:
+            model = multi_model.models.get(1) or list(multi_model.models.values())[0]
+            medians = getattr(model, "feature_medians", {})
+            for fn in getattr(model, "feature_names", []):
+                if fn not in pos_test.columns:
+                    test_data.loc[pos_mask, fn] = medians.get(fn, 0)
+            pos_test = test_data.loc[pos_mask].copy()
+            preds = multi_model.predict(pos_test, n_weeks=1)
         _n_predicted += len(pos_test)
         test_data.loc[pos_mask, "predicted_utilization"] = preds
         # Default: set points equal to raw model output.
@@ -851,8 +885,6 @@ def train_models(positions: list = None,
         for failure in cache_result.report.get("failures", []):
             print(f"  ✗ {failure}")
         print("\nFix the data issues above and re-run. Use --skip-cache-check to bypass (not recommended).")
-        import json
-        import numpy as np
 
         class _NumpyEncoder(json.JSONEncoder):
             def default(self, obj):
@@ -1076,8 +1108,20 @@ def train_models(positions: list = None,
                 target_semantics[position]["18w"] = "base_model_missing"
                 continue
             multi = trainer.trained_models[position]
-            base = multi.models.get(1) or list(multi.models.values())[0]
-            feature_cols = getattr(base, "feature_names", [])
+            if multi is None:
+                # Component mode: use component predictor features for horizon models
+                comp = trainer.component_predictors.get(position)
+                feature_cols = getattr(comp, "feature_names", []) if comp else []
+                if not feature_cols:
+                    horizon_status[position]["hybrid_4w"] = "component_mode_no_features"
+                    horizon_status[position]["deep_18w"] = "component_mode_no_features"
+                    target_semantics[position]["1w"] = "component"
+                    target_semantics[position]["4w"] = "component"
+                    target_semantics[position]["18w"] = "component"
+                    continue
+            else:
+                base = multi.models.get(1) or list(multi.models.values())[0]
+                feature_cols = getattr(base, "feature_names", [])
             # Track semantically intended targets: QB may be fp/util; skill positions are utilization-first.
             target_semantics[position]["1w"] = "target_1w_or_target_util_1w_trainer_selected"
             target_semantics[position]["4w"] = "target_util_4w_preferred_over_target_4w"
@@ -1394,10 +1438,14 @@ def train_models(positions: list = None,
             "oof_metrics": oof_metrics,
             "test_metrics": held_out_test_metrics,
             "n_features_per_position": {
-                pos: len(getattr(
-                    (m.models.get(1) or list(m.models.values())[0]) if hasattr(m, "models") else m,
-                    "feature_names", []
-                ))
+                pos: (
+                    len(getattr(trainer.component_predictors.get(pos), "feature_names", []))
+                    if m is None
+                    else len(getattr(
+                        (m.models.get(1) or list(m.models.values())[0]) if hasattr(m, "models") else m,
+                        "feature_names", []
+                    ))
+                )
                 for pos, m in trainer.trained_models.items()
             },
             "previous_training_date": prev_metadata.get("training_date"),

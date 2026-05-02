@@ -34,6 +34,13 @@
       "fallback_value": 0.0,
       "warn_threshold": 0.05,
       "fail_threshold": 0.45
+    },
+    "ngs": {
+      "matchers": ["ngs_"],
+      "numeric_strategy": "value",
+      "fallback_value": 0.0,
+      "warn_threshold": 0.10,
+      "fail_threshold": 0.50
     }
   }
 }

@@ -17,7 +17,7 @@
   ],
   "RB|snap_share_pct": [
     0.0,
-    0.0
+    100.0
   ],
   "RB|rush_share_pct": [
     0.0,
@@ -49,15 +49,15 @@
   ],
   "WR|snap_share_pct": [
     0.0,
-    0.0
+    100.0
   ],
   "WR|redzone_targets_pct": [
     0.0,
-    0.0
+    100.0
   ],
   "WR|route_participation_pct": [
     0.0,
-    0.0
+    80.0
   ],
   "WR|high_value_touch_rate": [
     0.0,
@@ -69,22 +69,48 @@
   ],
   "TE|snap_share_pct": [
     0.0,
-    0.0
+    100.0
   ],
   "TE|redzone_targets_pct": [
     0.0,
-    0.0
+    100.0
   ],
   "TE|air_yards_share_pct": [
     0.0,
     100.0
   ],
   "TE|inline_rate_pct": [
-    100.0,
+    0.0,
     100.0
   ],
   "TE|high_value_touch_rate": [
     0.0,
     66.66666666666666
-  ]
+  ],
+  "__meta__": {
+    "train_seasons": [
+      2006,
+      2007,
+      2008,
+      2009,
+      2010,
+      2011,
+      2012,
+      2013,
+      2014,
+      2015,
+      2016,
+      2017,
+      2018,
+      2019,
+      2020,
+      2021,
+      2022,
+      2023,
+      2024
+    ],
+    "min_season": 2006,
+    "max_season": 2024,
+    "created_at": "2026-05-02T02:56:42.456664"
+  }
 }

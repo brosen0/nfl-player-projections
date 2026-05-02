@@ -40,6 +40,24 @@ except ImportError:
 
 
 # =============================================================================
+# Standalone draft capital helper (used by feature_engineering._merge_draft_capital)
+# =============================================================================
+
+_DRAFT_CAPITAL_CURVE = {
+    1: 1.0, 2: 0.98, 3: 0.96, 4: 0.94, 5: 0.92,
+    10: 0.85, 15: 0.78, 20: 0.72, 25: 0.67, 32: 0.60,
+    50: 0.50, 75: 0.40, 100: 0.32, 150: 0.22, 200: 0.15, 250: 0.10,
+}
+
+
+def draft_capital_value_from_pick(draft_pick: int) -> float:
+    """Draft capital value [0, 1] via linear interpolation on the pick curve."""
+    picks = sorted(_DRAFT_CAPITAL_CURVE.keys())
+    values = [_DRAFT_CAPITAL_CURVE[p] for p in picks]
+    return float(np.interp(draft_pick, picks, values))
+
+
+# =============================================================================
 # ADVANCED ROOKIE PREDICTION
 # =============================================================================
 

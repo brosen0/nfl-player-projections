@@ -1,6 +1,6 @@
 {
-  "training_date": "2026-02-15T15:32:26.922814",
-  "feature_version": "4",
+  "training_date": "2026-05-02T03:14:20.196516",
+  "feature_version": "9",
   "train_seasons": [
     2006,
     2007,
@@ -100,15 +100,50 @@
     }
   },
   "n_features_per_position": {
-    "QB": 50,
-    "RB": 50,
-    "WR": 50,
-    "TE": 50
+    "QB": 13,
+    "RB": 14,
+    "WR": 13,
+    "TE": 13
   },
   "previous_training_date": "2026-02-14T23:12:04.956347",
   "previous_feature_version": "4",
   "rollback_available": true,
   "n_rollback_versions": 1,
   "horizon_status_file": "/Users/benrosen/nfl-player-projections/data/models/horizon_model_status.json",
-  "bounded_scaler_file": "/Users/benrosen/nfl-player-projections/data/models/feature_scaler_bounded.joblib"
+  "bounded_scaler_file": "/Users/benrosen/nfl-player-projections/data/models/feature_scaler_bounded.joblib",
+  "training_mode": "component",
+  "test_metrics": {
+    "QB": {
+      "FP (component)": {
+        "rmse": 7.11,
+        "mae": 5.84,
+        "r2": 0.085,
+        "spearman_rho": 0.334
+      }
+    },
+    "RB": {
+      "FP (component)": {
+        "rmse": 6.97,
+        "mae": 5.31,
+        "r2": 0.224,
+        "spearman_rho": 0.488
+      }
+    },
+    "WR": {
+      "FP (component)": {
+        "rmse": 5.73,
+        "mae": 4.29,
+        "r2": 0.243,
+        "spearman_rho": 0.464
+      }
+    },
+    "TE": {
+      "FP (component)": {
+        "rmse": 5.56,
+        "mae": 4.05,
+        "r2": 0.118,
+        "spearman_rho": 0.405
+      }
+    }
+  }
 }

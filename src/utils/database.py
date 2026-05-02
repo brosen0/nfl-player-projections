@@ -893,6 +893,64 @@ class DatabaseManager:
             return pd.read_sql_query(query, conn, params=params)
 
     # ------------------------------------------------------------------
+    # NGS (Next Gen Stats)
+    # ------------------------------------------------------------------
+
+    def get_ngs_data(self, seasons: list = None) -> pd.DataFrame:
+        """Load NGS passing/rushing/receiving data, merged into one DataFrame.
+
+        Returns columns prefixed with ``ngs_`` keyed on
+        (player_id, season, week).  Only regular-season weekly rows
+        (week > 0) are returned.
+        """
+        frames = []
+        table_cols = {
+            "ngs_passing": [
+                "player_gsis_id", "season", "week",
+                "avg_time_to_throw", "completion_percentage_above_expectation",
+                "aggressiveness", "avg_air_yards_to_sticks",
+            ],
+            "ngs_rushing": [
+                "player_gsis_id", "season", "week",
+                "rush_yards_over_expected_per_att", "efficiency",
+                "percent_attempts_gte_eight_defenders",
+            ],
+            "ngs_receiving": [
+                "player_gsis_id", "season", "week",
+                "avg_separation", "avg_cushion",
+                "avg_intended_air_yards", "catch_percentage",
+                "avg_yac_above_expectation",
+            ],
+        }
+        with self._get_connection() as conn:
+            for table, cols in table_cols.items():
+                try:
+                    safe_cols = ", ".join(cols)
+                    where = "WHERE week > 0"
+                    params: list = []
+                    if seasons:
+                        placeholders = ", ".join("?" for _ in seasons)
+                        where += f" AND season IN ({placeholders})"
+                        params.extend(seasons)
+                    q = f"SELECT {safe_cols} FROM {table} {where}"
+                    tdf = pd.read_sql_query(q, conn, params=params)
+                    # Prefix non-key columns with ngs_
+                    rename = {c: f"ngs_{c}" for c in tdf.columns
+                              if c not in ("player_gsis_id", "season", "week")}
+                    tdf = tdf.rename(columns=rename)
+                    tdf = tdf.rename(columns={"player_gsis_id": "player_id"})
+                    frames.append(tdf)
+                except Exception as e:
+                    print(f"  WARNING: Could not load {table}: {e}")
+        if not frames:
+            return pd.DataFrame()
+        # Outer-merge so we keep passing-only, rushing-only, etc.
+        result = frames[0]
+        for f in frames[1:]:
+            result = result.merge(f, on=["player_id", "season", "week"], how="outer")
+        return result
+
+    # ------------------------------------------------------------------
     # Rosters
     # ------------------------------------------------------------------
 

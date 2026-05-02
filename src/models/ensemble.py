@@ -254,7 +254,7 @@ class EnsemblePredictor:
                     reasons.append("horizon_module_missing")
                 self.horizon_availability[position]["deep_18w"] = "disabled_or_unavailable:" + ",".join(reasons)
 
-        self.is_loaded = len(self.position_models) > 0 or len(self.single_week_models) > 0
+        self.is_loaded = len(self.position_models) > 0 or len(self.single_week_models) > 0 or len(self.component_predictors) > 0
 
         # Load adaptive ensemble weights if available
         self.adaptive_weights = self._load_adaptive_weights()

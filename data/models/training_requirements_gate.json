@@ -1,11 +1,11 @@
 {
-  "generated_at": "2026-02-24T16:40:12.074580",
+  "generated_at": "2026-05-02T03:09:58.228639",
   "strict_requirements": false,
   "training_seasons": 19,
   "min_training_seasons": {
     "1w": 3,
-    "4w": 5,
-    "18w": 8
+    "4w": 4,
+    "18w": 5
   },
   "seasons_gate": {
     "1w_pass": true,

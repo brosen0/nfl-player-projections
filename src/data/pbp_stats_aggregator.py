@@ -337,8 +337,8 @@ class PBPStatsAggregator:
     def merge_with_snaps(self, stats_df: pd.DataFrame) -> pd.DataFrame:
         """Merge stats with snap count data; set snap_count (offense_snaps) and team_snaps for utilization_score/DB.
 
-        Uses player_id as primary join key (reliable). Falls back to name+team
-        when player_id is unavailable in snap data.
+        Uses pfr_player_id → GSIS mapping as primary join key. Falls back to
+        name+team when the mapping is unavailable.
         """
         if self.snap_data is None:
             return stats_df
@@ -350,14 +350,23 @@ class PBPStatsAggregator:
             return stats_df
 
         keep_cols = ['season', 'week', 'player', 'team', 'offense_snaps']
+        if 'pfr_player_id' in self.snap_data.columns:
+            keep_cols.append('pfr_player_id')
         if 'position' in self.snap_data.columns:
             keep_cols.append('position')
         if 'offense_pct' in self.snap_data.columns:
             keep_cols.append('offense_pct')
         snap_pos = self.snap_data[keep_cols].copy()
-        snap_pos = resolver.build_keys(snap_pos, source="snap_counts", player_id_col="player", name_col="player", team_col="team", opponent_col=None).dataframe
-        snap_pos = snap_pos.rename(columns={'player': 'name'})
-        snap_pos['team'] = snap_pos['team_norm'].where(snap_pos['team_norm'] != '', snap_pos['team'])
+
+        # Map PFR player IDs to GSIS IDs (the format used in player_weekly_stats)
+        if 'pfr_player_id' in snap_pos.columns:
+            from src.data.nfl_data_loader import get_pfr_to_gsis_map
+            pfr_to_gsis = get_pfr_to_gsis_map()
+            snap_pos['player_id'] = snap_pos['pfr_player_id'].map(pfr_to_gsis)
+        else:
+            snap_pos['player_id'] = np.nan
+
+        snap_pos['name'] = snap_pos['player']
         snap_pos['snap_count'] = snap_pos['offense_snaps'].fillna(0).astype(int)
         team_snaps = (
             snap_pos.groupby(['season', 'week', 'team'], as_index=False)['offense_snaps']
@@ -373,11 +382,11 @@ class PBPStatsAggregator:
         if 'offense_pct' in snap_pos.columns:
             snap_merge_cols.append('offense_pct')
 
-        # Primary join: player_id + season + week (most reliable)
+        # Primary join: player_id (GSIS) + season + week
         has_player_id = 'player_id' in snap_pos.columns and 'player_id' in stats_df.columns
         if has_player_id and snap_pos['player_id'].notna().any():
             join_keys = ['player_id', 'season', 'week']
-            snap_for_merge = snap_pos[join_keys + snap_merge_cols].drop_duplicates(subset=join_keys)
+            snap_for_merge = snap_pos.dropna(subset=['player_id'])[join_keys + snap_merge_cols].drop_duplicates(subset=join_keys)
             merged = stats_df.merge(snap_for_merge, on=join_keys, how='left', suffixes=('', '_snap'))
         else:
             # Fallback: name + team + season + week
@@ -385,11 +394,11 @@ class PBPStatsAggregator:
             snap_for_merge = snap_pos[join_keys + snap_merge_cols].drop_duplicates(subset=join_keys)
             merged = stats_df.merge(snap_for_merge, on=join_keys, how='left', suffixes=('', '_snap'))
 
-        # Coalesce suffixed columns from merge
+        # Coalesce: prefer snap-side values (original may be 0-filled placeholder)
         for col in snap_merge_cols:
             snap_col = f'{col}_snap'
             if snap_col in merged.columns:
-                merged[col] = merged[col].fillna(merged[snap_col])
+                merged[col] = merged[snap_col].fillna(merged[col])
                 merged = merged.drop(columns=[snap_col])
 
         if 'snap_count' not in merged.columns:

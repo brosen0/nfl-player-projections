@@ -111,6 +111,13 @@ class FeatureEngineer:
         # trade deadline, and playoff context features.
         df = self._create_advanced_analytics_features(df)
 
+        # NGS stats (CPOE, separation, RYOE, time-to-throw)
+        df = self._merge_ngs_data(df)
+        df = self._create_ngs_features(df)
+
+        # Draft capital (decayed pick value)
+        df = self._merge_draft_capital(df)
+
         # Populate injury_score / is_injured from the local player_injuries
         # cache BEFORE the default-fallback in _ensure_injury_rookie_features
         # runs.  Without this call, injury_score pins to 1.0 (healthy) for
@@ -173,6 +180,14 @@ class FeatureEngineer:
 
         # Vegas features (creates implied_team_total)
         df = self._create_vegas_game_script_features(df)
+
+        # NGS stats (CPOE, separation, RYOE) — merged + rolled for causal features
+        df = self._merge_ngs_data(df)
+        df = self._create_ngs_features(df)
+
+        # Draft capital (decayed pick value) — available in full mode,
+        # not in CAUSAL_FEATURES yet pending ablation
+        df = self._merge_draft_capital(df)
 
         # Populate injury_score / is_injured from the local player_injuries
         # cache BEFORE the default-to-healthy fallback below.  See
@@ -2110,6 +2125,100 @@ class FeatureEngineer:
         if derived_cols:
             df = df.assign(**derived_cols)
 
+        return df
+
+    # ------------------------------------------------------------------
+    # NGS (Next Gen Stats) features
+    # ------------------------------------------------------------------
+
+    _ngs_cache: Optional[pd.DataFrame] = None
+
+    def _load_ngs_data(self) -> pd.DataFrame:
+        """Load NGS data from the database (cached per instance)."""
+        if self._ngs_cache is not None:
+            return self._ngs_cache
+        try:
+            from src.utils.database import DatabaseManager
+            db = DatabaseManager()
+            self._ngs_cache = db.get_ngs_data()
+            if self._ngs_cache is not None and not self._ngs_cache.empty:
+                print(f"  NGS data loaded: {len(self._ngs_cache)} rows")
+            else:
+                self._ngs_cache = pd.DataFrame()
+        except Exception as e:
+            print(f"  WARNING: Could not load NGS data: {e}")
+            self._ngs_cache = pd.DataFrame()
+        return self._ngs_cache
+
+    def _merge_ngs_data(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Left-join NGS stats onto training data by (player_id, season, week)."""
+        ngs = self._load_ngs_data()
+        if ngs.empty:
+            return df
+        join_keys = ["player_id", "season", "week"]
+        ngs_cols = [c for c in ngs.columns if c.startswith("ngs_")]
+        # Drop any existing ngs_ columns to avoid duplication on re-runs
+        existing = [c for c in ngs_cols if c in df.columns]
+        if existing:
+            df = df.drop(columns=existing)
+        merged = df.merge(ngs[join_keys + ngs_cols], on=join_keys, how="left")
+        for c in ngs_cols:
+            merged[c] = pd.to_numeric(merged[c], errors="coerce").fillna(0.0)
+        return merged
+
+    def _create_ngs_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Create rolling-3 averages of key NGS metrics per position.
+
+        Shift by 1 to prevent same-week leakage.
+        """
+        ngs_rolling_cols = [c for c in df.columns if c.startswith("ngs_")]
+        if not ngs_rolling_cols:
+            return df
+        for col in ngs_rolling_cols:
+            roll_col = f"{col}_roll3_mean"
+            df[roll_col] = (
+                df.groupby("player_id")[col]
+                .transform(lambda s: s.shift(1).rolling(3, min_periods=1).mean())
+            )
+            df[roll_col] = df[roll_col].fillna(0.0)
+        return df
+
+    # ------------------------------------------------------------------
+    # Draft capital features
+    # ------------------------------------------------------------------
+
+    def _merge_draft_capital(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Add draft_capital_value (decayed by years since draft) to the DataFrame."""
+        if "draft_capital_value" in df.columns:
+            return df
+        try:
+            from src.utils.database import DatabaseManager
+            from src.features.advanced_rookie_injury import draft_capital_value_from_pick
+            db = DatabaseManager()
+            with db._get_connection() as conn:
+                draft_df = pd.read_sql_query(
+                    "SELECT player_id, draft_season, draft_pick FROM draft_picks "
+                    "WHERE player_id IS NOT NULL AND draft_pick IS NOT NULL",
+                    conn,
+                )
+            if draft_df.empty:
+                df["draft_capital_value"] = 0.05
+                return df
+            draft_df["raw_capital"] = draft_df["draft_pick"].apply(draft_capital_value_from_pick)
+            draft_df = draft_df.drop_duplicates(subset=["player_id"], keep="first")
+            df = df.merge(
+                draft_df[["player_id", "draft_season", "raw_capital"]],
+                on="player_id", how="left",
+            )
+            # Decay: full value year 1, zero by year 6
+            years_since = df["season"] - df["draft_season"].fillna(df["season"])
+            df["draft_capital_value"] = (
+                df["raw_capital"].fillna(0.05) * (1.0 - 0.2 * years_since).clip(lower=0.0)
+            )
+            df = df.drop(columns=["draft_season", "raw_capital"], errors="ignore")
+        except Exception as e:
+            print(f"  WARNING: Could not merge draft capital: {e}")
+            df["draft_capital_value"] = 0.05
         return df
 
     def _create_advanced_analytics_features(self, df: pd.DataFrame) -> pd.DataFrame:

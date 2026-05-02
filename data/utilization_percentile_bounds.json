@@ -57,7 +57,7 @@
   ],
   "WR|route_participation_pct": [
     0.0,
-    100.0
+    80.0
   ],
   "WR|high_value_touch_rate": [
     0.0,
@@ -111,6 +111,6 @@
     ],
     "min_season": 2006,
     "max_season": 2024,
-    "created_at": "2026-04-28T22:48:14.947601"
+    "created_at": "2026-05-02T02:56:42.456664"
   }
 }

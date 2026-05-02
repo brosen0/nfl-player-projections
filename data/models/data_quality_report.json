@@ -1,44 +1,148 @@
 {
-  "generated_at": "2026-02-24T16:40:11.862629",
+  "generated_at": "2026-05-02T03:09:58.128569",
   "strict_requirements": false,
+  "distribution_shift": {
+    "adversarial_auc": 1.0,
+    "shift_detected": true,
+    "top_shifted_features": [
+      {
+        "feature": "fantasy_points_allowed_wr_zscore",
+        "ks_stat": 0.885,
+        "p_value": 0.0
+      },
+      {
+        "feature": "fantasy_points_allowed_qb_zscore",
+        "ks_stat": 0.881,
+        "p_value": 0.0
+      },
+      {
+        "feature": "fantasy_points_allowed_rb_zscore",
+        "ks_stat": 0.88,
+        "p_value": 0.0
+      },
+      {
+        "feature": "fantasy_points_allowed_rb",
+        "ks_stat": 0.876,
+        "p_value": 0.0
+      },
+      {
+        "feature": "fantasy_points_allowed_wr",
+        "ks_stat": 0.876,
+        "p_value": 0.0
+      },
+      {
+        "feature": "fantasy_points_allowed_qb",
+        "ks_stat": 0.86,
+        "p_value": 0.0
+      },
+      {
+        "feature": "fantasy_points_allowed_te_zscore",
+        "ks_stat": 0.81,
+        "p_value": 0.0
+      },
+      {
+        "feature": "fantasy_points_allowed_te",
+        "ks_stat": 0.807,
+        "p_value": 0.0
+      },
+      {
+        "feature": "expected_game_total",
+        "ks_stat": 0.726,
+        "p_value": 0.0
+      },
+      {
+        "feature": "first_season",
+        "ks_stat": 0.647,
+        "p_value": 0.0
+      }
+    ],
+    "top_discriminative_features": [
+      {
+        "feature": "team_b_pace_sec_per_play",
+        "importance": 0.7621
+      },
+      {
+        "feature": "fantasy_points_allowed_wr",
+        "importance": 0.1502
+      },
+      {
+        "feature": "opp_pts_allowed",
+        "importance": 0.0535
+      },
+      {
+        "feature": "team_snaps_y",
+        "importance": 0.0123
+      },
+      {
+        "feature": "team_a_points_scored",
+        "importance": 0.0105
+      },
+      {
+        "feature": "team_snaps",
+        "importance": 0.0058
+      },
+      {
+        "feature": "team_a_pass_attempts",
+        "importance": 0.0045
+      },
+      {
+        "feature": "route_part_norm",
+        "importance": 0.0011
+      },
+      {
+        "feature": "team_rush_attempts_x",
+        "importance": 0.0
+      },
+      {
+        "feature": "opp_fpts_allowed_s2d_lag1",
+        "importance": 0.0
+      }
+    ]
+  },
   "missingness_above_5pct": {
     "train": {
-      "util_redzone_share": 0.7348395766840249
+      "team_redzone_attempts": 1.0,
+      "team_a_redzone_scores": 1.0,
+      "team_b_redzone_scores": 1.0,
+      "util_redzone_share": 0.7348346456692914
     },
     "test": {
+      "team_redzone_attempts": 1.0,
+      "team_a_redzone_scores": 1.0,
+      "team_b_redzone_scores": 1.0,
       "util_redzone_share": 0.7889355486580245
     }
   },
   "train_outliers_3sigma": {
     "fantasy_points": {
       "n_outliers": 1028,
-      "n_samples": 95248,
+      "n_samples": 95250,
       "pct_outliers": 1.079
     },
     "target_1w": {
       "n_outliers": 1243,
-      "n_samples": 95248,
+      "n_samples": 95250,
       "pct_outliers": 1.305
     },
     "target_4w": {
       "n_outliers": 836,
-      "n_samples": 95248,
+      "n_samples": 95250,
       "pct_outliers": 0.878
     },
     "target_18w": {
-      "n_outliers": 3508,
-      "n_samples": 95248,
-      "pct_outliers": 3.683
+      "n_outliers": 3509,
+      "n_samples": 95250,
+      "pct_outliers": 3.684
     },
     "target_util_1w": {
       "n_outliers": 0,
-      "n_samples": 95248,
+      "n_samples": 95250,
       "pct_outliers": 0.0
     },
     "utilization_score": {
-      "n_outliers": 0,
-      "n_samples": 95248,
-      "pct_outliers": 0.0
+      "n_outliers": 4,
+      "n_samples": 95250,
+      "pct_outliers": 0.004
     }
   }
 }

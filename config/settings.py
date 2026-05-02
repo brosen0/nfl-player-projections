@@ -284,16 +284,15 @@ CAUSAL_ROLLING_WINDOW = 3  # Only rolling window used in causal mode
 
 # Per-position causal feature lists: opportunity shares, short-window volume,
 # one efficiency metric, opponent context, and Vegas implied total.
-# Note: snap_share_pct is excluded because snap_count / team_snaps are
-# zero-filled for every season in this DB (player_weekly_stats never
-# populated snap data).  Adding it back would reintroduce the silent-
-# fallback pattern the 2026-04-24 CAUSAL_FEATURES audit caught.  When
-# snap data lands, re-add snap_share_pct_roll3_mean to RB and TE.
+# v9: snap_share_pct restored (PFR→GSIS merge fix); NGS features added.
+# draft_capital_value available in full mode but not promoted to causal yet.
 CAUSAL_FEATURES = {
     "RB": [
+        "snap_share_pct_roll3_mean",
         "rush_share_pct_roll3_mean", "target_share_pct_roll3_mean",
         "rushing_attempts_roll3_mean", "targets_roll3_mean",
         "rushing_tds_roll3_mean", "yards_per_carry_roll3_mean",
+        "ngs_rush_yards_over_expected_per_att_roll3_mean",
         "opp_fpts_allowed", "implied_team_total", "spread",
         "injury_score", "prev_season_ppg", "preseason_ecr",
     ],
@@ -301,13 +300,16 @@ CAUSAL_FEATURES = {
         "target_share_pct_roll3_mean", "air_yards_share_pct_roll3_mean",
         "targets_roll3_mean", "receptions_roll3_mean",
         "receiving_tds_roll3_mean", "yards_per_target_roll3_mean",
+        "ngs_avg_separation_roll3_mean",
         "opp_fpts_allowed", "implied_team_total", "spread",
         "injury_score", "prev_season_ppg", "preseason_ecr",
     ],
     "TE": [
+        "snap_share_pct_roll3_mean",
         "target_share_pct_roll3_mean",
         "targets_roll3_mean", "receptions_roll3_mean",
         "receiving_tds_roll3_mean", "yards_per_target_roll3_mean",
+        "ngs_avg_separation_roll3_mean",
         "opp_fpts_allowed", "implied_team_total", "spread",
         "injury_score", "prev_season_ppg", "preseason_ecr",
     ],
@@ -317,6 +319,7 @@ CAUSAL_FEATURES = {
         "yards_per_attempt_roll3_mean",
         "completion_pct_roll3_mean",
         "pass_epa_per_play_roll3_mean", "pass_success_rate_roll3_mean",
+        "ngs_completion_percentage_above_expectation_roll3_mean",
         "opp_fpts_allowed", "implied_team_total", "spread",
         "injury_score", "prev_season_ppg", "preseason_ecr",
     ],
@@ -447,7 +450,7 @@ QB_TARGET_CHOICE_FILENAME = "qb_target_choice.json"
 
 # Feature set version: bump when feature_engineering adds/removes/renames model features.
 # Saved when training; checked when loading models. Mismatch triggers a retrain warning.
-FEATURE_VERSION = "8"  # v8: Advanced analytics (sentiment NLP, coaching change, suspension risk, trade deadline, playoff features)
+FEATURE_VERSION = "9"  # v9: Snap counts (PFR→GSIS fix), NGS stats (CPOE/RYOE/separation), draft capital (decayed)
 FEATURE_VERSION_FILENAME = "feature_version.txt"
 
 # =============================================================================

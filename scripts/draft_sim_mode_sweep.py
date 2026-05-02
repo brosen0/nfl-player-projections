@@ -34,8 +34,19 @@ sd = importlib.util.module_from_spec(spec)
 sys.modules[spec.name] = sd
 spec.loader.exec_module(sd)
 
+da_spec = importlib.util.spec_from_file_location(
+    "draft_advisor",
+    PROJECT_ROOT / "scripts" / "draft_advisor.py",
+)
+da = importlib.util.module_from_spec(da_spec)
+sys.modules[da_spec.name] = da
+da_spec.loader.exec_module(da)
 
-def run_slot_sweep(season: int, ranking: str, csv_path: Path) -> Dict:
+
+def run_slot_sweep(
+    season: int, ranking: str, csv_path: Path,
+    vona_picker=None,
+) -> Dict:
     adp = sd.load_adp_board(season)
     scrape_date = adp["scrape_date"].iloc[0]
     projections = sd.load_model_projections(
@@ -48,7 +59,9 @@ def run_slot_sweep(season: int, ranking: str, csv_path: Path) -> Dict:
     adp_totals: List[float] = []
     wins_vs_adp_mean = 0
     for slot in range(1, sd.TEAMS + 1):
-        teams = sd.run_draft(board, model_slot=slot)
+        teams = sd.run_draft(
+            board, model_slot=slot, model_pick_fn=vona_picker,
+        )
         summary = sd.summarize(teams)
         ranks.append(summary["model_rank_of_12"])
         model_totals.append(summary["model_actual_total"])
@@ -76,7 +89,8 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--seasons", nargs="+", type=int, default=[2024, 2025])
     ap.add_argument("--modes", nargs="+",
-                    default=["season_sum", "week1", "prior_season"])
+                    default=["season_sum", "week1", "prior_season",
+                             "vona_advisor", "vona_week1"])
     ap.add_argument("--json", type=Path, default=None)
     args = ap.parse_args()
 
@@ -93,7 +107,19 @@ def main() -> int:
             continue
         csv_path = matches[-1]
         for mode in args.modes:
-            r = run_slot_sweep(season, mode, csv_path)
+            picker = None
+            ranking = mode
+            if mode.startswith("vona_"):
+                # VONABot picks by dynamic VONA instead of raw ranking.
+                # vona_advisor = season_sum projections (hindsight)
+                # vona_week1   = week1 projections (honest pre-draft)
+                ranking = mode.replace("vona_", "").replace(
+                    "advisor", "season_sum")
+                adp = sd.load_adp_board(season)
+                picker = da.make_vona_picker(adp)
+            r = run_slot_sweep(season, ranking, csv_path,
+                               vona_picker=picker)
+            r["ranking"] = mode  # label as vona_*, not underlying ranking
             results.append(r)
             print(
                 f"  {season}  {mode:>12}  "
