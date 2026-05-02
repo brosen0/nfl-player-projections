@@ -245,7 +245,105 @@ def build_data() -> tuple:
     # Build close calls from the same loaded data
     close_calls_obj = _build_close_calls(all_data)
 
-    return metrics_obj, data_obj, close_calls_obj, seasons_with_data
+    # Build draft advisor data for seasons with ADP (2024, 2025)
+    draft_obj = _build_draft_advisor_data()
+
+    return metrics_obj, data_obj, close_calls_obj, draft_obj, seasons_with_data
+
+
+# ---------------------------------------------------------------------------
+# Draft Advisor data
+# ---------------------------------------------------------------------------
+
+def _build_draft_advisor_data() -> Dict:
+    """Generate spread + VONA data for seasons with ADP data."""
+    try:
+        sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
+        import snake_draft_sim as sd
+        import draft_advisor as da
+    except Exception as e:
+        print(f"Draft advisor import failed: {e}", file=sys.stderr)
+        return {}
+
+    result = {}
+    for season in [2024, 2025]:
+        try:
+            csv_path = latest_predictions_csv(season)
+            if not csv_path:
+                continue
+            adp_df = sd.load_adp_board(season)
+            projections = sd.load_model_projections(csv_path, ranking="week1", season=season)
+            board = sd.build_draft_board(adp_df, projections)
+            matched = sum(1 for p in board if p.is_modelable)
+            if matched < 50:
+                continue
+
+            # Spread data
+            spread_results = da.compute_spread(board)
+            spread_list = []
+            for r in spread_results[:80]:  # top 80 by absolute spread
+                spread_list.append({
+                    "n": r.name, "p": r.position, "t": r.team,
+                    "ecr": round(r.ecr, 1),
+                    "mr": r.model_rank, "sp": r.rank_spread,
+                    "mp": round(r.model_projection, 1),
+                    "ai": round(r.adp_implied, 1),
+                    "act": round(r.actual_total, 1),
+                    "w": r.model_wins,
+                })
+
+            # Validation at multiple thresholds
+            validations = {}
+            for thresh in [5, 10, 15, 20]:
+                v = da.validate_spread_direction(spread_results, min_spread=thresh)
+                if v["n"] > 0:
+                    validations[str(thresh)] = {
+                        "n": v["n"], "wins": v["model_wins"],
+                        "acc": round(v["accuracy"] * 100, 1),
+                    }
+
+            # VONA for all 12 slots
+            vona_by_slot = {}
+            for slot in range(1, 13):
+                try:
+                    vona = da.compute_vona(board, adp_df, slot)
+                    # Keep top 5 per round, first 5 rounds
+                    vona_compact = []
+                    seen_rounds = set()
+                    for v in vona:
+                        rd = v["round"]
+                        if rd > 5:
+                            continue
+                        key = (rd, v["name"])
+                        # Count per round
+                        rd_count = sum(1 for x in vona_compact if x["rd"] == rd)
+                        if rd_count >= 5:
+                            continue
+                        vona_compact.append({
+                            "rd": rd, "pk": v["pick"],
+                            "n": v["name"], "p": v["position"],
+                            "av": round(v["avail_pct"] * 100),
+                            "proj": round(v["model_proj"], 1),
+                            "vona": round(v["vona"], 1),
+                            "oc": round(v["opp_cost"], 1),
+                            "ocp": v["opp_cost_pos"],
+                            "net": round(v["net_value"], 1),
+                        })
+                    vona_by_slot[str(slot)] = vona_compact
+                except Exception:
+                    pass
+
+            result[str(season)] = {
+                "spread": spread_list,
+                "validation": validations,
+                "vona": vona_by_slot,
+                "matched": matched,
+                "total": len(board),
+            }
+        except Exception as e:
+            print(f"Draft advisor for {season} failed: {e}", file=sys.stderr)
+
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -253,7 +351,7 @@ def build_data() -> tuple:
 # ---------------------------------------------------------------------------
 
 def build_html(metrics_json: str, data_json: str, calls_json: str,
-               seasons: List[int], generated_at: str) -> str:
+               draft_json: str, seasons: List[int], generated_at: str) -> str:
     seasons_json = json.dumps(seasons)
     return f'''<!DOCTYPE html>
 <html lang="en">
@@ -415,11 +513,13 @@ const SEASONS = {seasons_json};
 const METRICS = {metrics_json};
 const DATA = {data_json};
 const CALLS = {calls_json};
+const DRAFT = {draft_json};
 
 let selectedSeason = SEASONS[SEASONS.length - 1];
 let selPos = new Set(["QB","RB","WR","TE"]);
 const ALL_POS = ["QB","RB","WR","TE"];
-let viewMode = "validation"; // "validation" or "calls"
+let viewMode = "validation"; // "validation", "calls", or "draft"
+let draftSlot = 6;
 
 function isAllPos() {{ return selPos.size === 4; }}
 function matchPos(p) {{ return selPos.has(p); }}
@@ -457,8 +557,8 @@ function renderTabs() {{
   const bar = document.getElementById("tabBar");
   bar.innerHTML = "";
   // View mode tabs
-  ["Validation","Hardest Calls"].forEach(label => {{
-    const mode = label === "Validation" ? "validation" : "calls";
+  ["Validation","Hardest Calls","Draft Advisor"].forEach(label => {{
+    const mode = label === "Validation" ? "validation" : label === "Hardest Calls" ? "calls" : "draft";
     const btn = document.createElement("button");
     btn.className = "tab" + (viewMode === mode ? " active" : "");
     btn.textContent = label;
@@ -471,7 +571,9 @@ function renderTabs() {{
   sep.style.cssText = "width:2px;background:rgba(255,255,255,0.15);margin:6px 4px;flex-shrink:0";
   bar.appendChild(sep);
   // Season tabs
-  const seasonList = viewMode === "validation" ? SEASONS.concat(["All"]) : SEASONS;
+  const draftSeasons = Object.keys(DRAFT).map(Number).sort();
+  const seasonList = viewMode === "validation" ? SEASONS.concat(["All"]) : viewMode === "draft" ? draftSeasons : SEASONS;
+  if (viewMode === "draft" && !draftSeasons.includes(selectedSeason)) selectedSeason = draftSeasons[draftSeasons.length-1] || 2025;
   seasonList.forEach(s => {{
     const btn = document.createElement("button");
     btn.className = "tab" + (s === selectedSeason ? " active" : "");
@@ -656,9 +758,91 @@ function renderCallsView() {{
   return h;
 }}
 
+function renderDraftView() {{
+  const d = DRAFT[selectedSeason];
+  if (!d) return '<div class="card empty">No ADP data for this season.</div>';
+  let h = '';
+
+  // Validation summary
+  const v10 = d.validation["10"];
+  if (v10) {{
+    h += `<div class="call-summary">
+      <div class="card"><div class="call-stat-val ${{v10.acc>=55?"good":v10.acc>=50?"neutral":"bad"}}">${{v10.acc}}%</div><div class="call-stat-label">Direction Accuracy</div></div>
+      <div class="card"><div class="call-stat-val good">${{v10.wins}}</div><div class="call-stat-label">Model Wins</div></div>
+      <div class="card"><div class="call-stat-val neutral">${{v10.n}}</div><div class="call-stat-label">Disagreements</div></div>
+    </div>`;
+    h += `<div class="card" style="text-align:center;font-size:0.8rem;color:#666;padding:8px">When model and ADP disagree by 10+ ranks, model is closer to actual outcome ${{v10.acc}}% of the time</div>`;
+  }}
+
+  // Spread tables
+  const spread = d.spread || [];
+  const filteredSpread = isAllPos() ? spread : spread.filter(s => matchPos(s.p));
+  const under = filteredSpread.filter(s => s.sp > 0).slice(0, 15);
+  const over = filteredSpread.filter(s => s.sp < 0).slice(0, 15);
+
+  h += renderPills();
+
+  if (under.length) {{
+    h += `<div class="card"><h3 style="margin:0 0 8px;font-size:0.9rem;color:#2e7d32">Undervalued by ADP (model ranks higher)</h3><table>
+      <tr><th>Player</th><th>Pos</th><th class="num">ADP</th><th class="num">Model</th><th class="num">Spread</th><th class="num">Proj</th><th class="num">Actual</th><th>Right?</th></tr>
+      ${{under.map(s => {{
+        const cls = s.w ? "resid-pos" : "resid-neg";
+        return `<tr><td>${{s.n}}</td><td><span class="pos-badge pos-${{s.p}}">${{s.p}}</span></td><td class="num">${{Math.round(s.ecr)}}</td><td class="num">${{s.mr}}</td><td class="num" style="color:#2e7d32;font-weight:600">+${{s.sp}}</td><td class="num">${{s.mp}}</td><td class="num">${{s.act}}</td><td class="${{cls}}">${{s.w?"✓":"✗"}}</td></tr>`;
+      }}).join("")}}
+    </table></div>`;
+  }}
+
+  if (over.length) {{
+    h += `<div class="card"><h3 style="margin:0 0 8px;font-size:0.9rem;color:#c62828">Overvalued by ADP (model ranks lower)</h3><table>
+      <tr><th>Player</th><th>Pos</th><th class="num">ADP</th><th class="num">Model</th><th class="num">Spread</th><th class="num">Proj</th><th class="num">Actual</th><th>Right?</th></tr>
+      ${{over.map(s => {{
+        const cls = s.w ? "resid-pos" : "resid-neg";
+        return `<tr><td>${{s.n}}</td><td><span class="pos-badge pos-${{s.p}}">${{s.p}}</span></td><td class="num">${{Math.round(s.ecr)}}</td><td class="num">${{s.mr}}</td><td class="num" style="color:#c62828;font-weight:600">${{s.sp}}</td><td class="num">${{s.mp}}</td><td class="num">${{s.act}}</td><td class="${{cls}}">${{s.w?"✓":"✗"}}</td></tr>`;
+      }}).join("")}}
+    </table></div>`;
+  }}
+
+  // VONA section with slot selector
+  const vonaData = d.vona || {{}};
+  const slots = Object.keys(vonaData).sort((a,b)=>a-b);
+  if (slots.length) {{
+    h += `<div class="card"><h3 style="margin:0 0 8px;font-size:0.9rem">VONA Recommendations by Draft Slot</h3>`;
+    h += `<div class="pills" style="margin-bottom:8px">`;
+    slots.forEach(s => {{
+      h += `<button class="pill${{parseInt(s)===draftSlot?" active":""}}" onclick="draftSlot=${{s}};render()">Slot ${{s}}</button>`;
+    }});
+    h += `</div>`;
+    const vona = vonaData[String(draftSlot)] || vonaData[slots[0]] || [];
+    if (vona.length) {{
+      const rounds = [...new Set(vona.map(v=>v.rd))].sort();
+      rounds.forEach(rd => {{
+        const picks = vona.filter(v=>v.rd===rd);
+        const pick = picks[0]?.pk || "?";
+        h += `<details${{rd<=2?" open":""}}>
+          <summary>Round ${{rd}} (Pick ${{pick}})</summary>
+          <div class="table-wrap"><table>
+            <tr><th>Player</th><th>Pos</th><th class="num">Avail</th><th class="num">Proj</th><th class="num">VONA</th><th class="num">Opp Cost</th><th class="num">Net</th></tr>
+            ${{picks.map((v,i) => `<tr${{i===0?' style="background:#e8f5e9"':""}}><td>${{v.n}}</td><td><span class="pos-badge pos-${{v.p}}">${{v.p}}</span></td><td class="num">${{v.av}}%</td><td class="num">${{v.proj}}</td><td class="num">${{v.vona>0?"+":""}}${{v.vona}}</td><td class="num">${{v.oc>0?"-"+v.oc+"\u2009("+v.ocp+")":"—"}}</td><td class="num" style="font-weight:600;color:${{v.net>0?"#2e7d32":"#c62828"}}">${{v.net>0?"+":""}}${{v.net}}</td></tr>`).join("")}}
+          </table></div>
+        </details>`;
+      }});
+    }} else {{
+      h += `<div class="empty">No VONA data for slot ${{draftSlot}}.</div>`;
+    }}
+    h += `</div>`;
+  }}
+
+  return h;
+}}
+
 function render() {{
   renderTabs();
   const el = document.getElementById("content");
+
+  if (viewMode === "draft") {{
+    el.innerHTML = renderDraftView();
+    return;
+  }}
 
   if (viewMode === "calls") {{
     el.innerHTML = renderCallsView();
@@ -695,7 +879,7 @@ render();
 # ---------------------------------------------------------------------------
 
 def main() -> int:
-    metrics_obj, data_obj, calls_obj, seasons = build_data()
+    metrics_obj, data_obj, calls_obj, draft_obj, seasons = build_data()
     if not seasons:
         print("No backtest CSVs found in", RESULTS_DIR, file=sys.stderr)
         return 1
@@ -703,9 +887,11 @@ def main() -> int:
     metrics_json = json.dumps(metrics_obj, separators=(",", ":"))
     data_json = json.dumps(data_obj, separators=(",", ":"))
     calls_json = json.dumps(calls_obj, separators=(",", ":"))
+    draft_json = json.dumps(draft_obj, separators=(",", ":"))
     generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
-    html_str = build_html(metrics_json, data_json, calls_json, seasons, generated_at)
+    html_str = build_html(metrics_json, data_json, calls_json, draft_json,
+                          seasons, generated_at)
 
     SITE_DIR.mkdir(exist_ok=True)
     out_path = SITE_DIR / "index.html"
