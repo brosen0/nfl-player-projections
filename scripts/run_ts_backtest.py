@@ -87,6 +87,27 @@ def main():
             "council-transcript-20260423-051434.md."
         ),
     )
+    parser.add_argument(
+        "--target-mode",
+        choices=["fp", "util", "component"],
+        default="fp",
+        help=(
+            "Target variable for training. 'fp' = predict fantasy points "
+            "directly (default), 'util' = predict utilization score then "
+            "convert to FP, 'component' = predict stat components "
+            "(passing_yards, rushing_tds, etc.) and assemble FP via PPR weights."
+        ),
+    )
+
+    parser.add_argument(
+        "--qb-model",
+        choices=["gbm", "ridge"],
+        default=None,
+        help=(
+            "Override model type for QB only. Use 'gbm' to run GBM for QB "
+            "while keeping the default model for other positions."
+        ),
+    )
 
     args = parser.parse_args()
 
@@ -113,6 +134,9 @@ def main():
     if args.model == "ridge":
         print(f"  Ridge alpha: {ridge_alpha}")
     print(f"  Positions: {args.positions or 'all'}")
+    print(f"  Target mode: {args.target_mode}")
+    if args.qb_model:
+        print(f"  QB model override: {args.qb_model}")
     print()
 
     pred_df, results = run_ts_backtest(
@@ -124,6 +148,8 @@ def main():
         payout_multiplier=args.payout_multiplier,
         report_decision_quality=not args.no_decision_quality,
         emit_inactive_predictions=args.emit_inactive_predictions,
+        target_mode=args.target_mode,
+        qb_model=args.qb_model,
     )
 
     print(f"\nDone. {len(pred_df)} predictions generated.")

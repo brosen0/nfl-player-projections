@@ -209,6 +209,7 @@ class TimeSeriesBacktester:
         verbose: bool = True,
         payout_multiplier: Optional[float] = None,
         report_decision_quality: bool = True,
+        target_mode: str = "fp",
     ):
         """
         Args:
@@ -223,6 +224,10 @@ class TimeSeriesBacktester:
                   for leakage-safe feature engineering.  Defaults to
                   `leakage_safe_features`.
             verbose: Print progress.
+            target_mode: Target variable for training.  "fp" = fantasy points
+                  (default), "util" = utilization score with in-fold conversion
+                  back to FP, "component" = predict stat components separately
+                  and assemble FP via PPR weights.
         """
         self.data = data.copy()
         # Ensure chronological sort
@@ -231,6 +236,9 @@ class TimeSeriesBacktester:
         else:
             self.data = self.data.sort_values(["season", "week"])
 
+        if target_mode not in ("fp", "util", "component"):
+            raise ValueError(f"target_mode must be 'fp', 'util', or 'component', got {target_mode!r}")
+        self.target_mode = target_mode
         self.model_factory = model_factory
         self.season = season_to_backtest
         self.positions = positions or POSITIONS
@@ -241,6 +249,7 @@ class TimeSeriesBacktester:
         self.weekly_metrics: Dict[int, Dict[str, float]] = {}
         self.position_metrics: Dict[str, Dict[str, float]] = {}
         self._run_timestamp: Optional[str] = None
+        self._position_model_factories: Dict[str, Callable] = {}
 
         self.payout_multiplier = (
             payout_multiplier
@@ -291,6 +300,7 @@ class TimeSeriesBacktester:
             print(f"{'='*60}")
             print(f"  Weeks to backtest: {weeks}")
             print(f"  Positions: {self.positions}")
+            print(f"  Target mode: {self.target_mode}")
             print(f"  Total historical rows: {len(self.data)}")
 
         for week in weeks:
@@ -355,7 +365,11 @@ class TimeSeriesBacktester:
 
                 try:
                     # Refit model (production behavior)
-                    model = self.model_factory(pos_train, position)
+                    # Use per-position model override if configured
+                    if position in self._position_model_factories:
+                        model = self._position_model_factories[position](pos_train, position)
+                    else:
+                        model = self.model_factory(pos_train, position)
 
                     # Get feature columns: causal mode uses predefined lists;
                     # full mode auto-detects numeric non-target columns.
@@ -389,7 +403,6 @@ class TimeSeriesBacktester:
                         feature_cols = [c for c in feature_cols if c in pos_test.columns]
 
                     X_train = pos_train[feature_cols].fillna(0)
-                    y_train = pos_train["fantasy_points"]
                     X_test = pos_test[feature_cols].fillna(0)
 
                     # Scale: fit on train only
@@ -397,9 +410,19 @@ class TimeSeriesBacktester:
                     X_train_s = scaler.fit_transform(X_train)
                     X_test_s = scaler.transform(X_test)
 
-                    # Fit and predict
-                    model.fit(X_train_s, y_train)
-                    preds = model.predict(X_test_s)
+                    # Fit and predict — branch on target mode
+                    if self.target_mode == "util":
+                        preds = self._fit_predict_util(
+                            model, pos_train, X_train_s, X_test_s, position
+                        )
+                    elif self.target_mode == "component":
+                        preds = self._fit_predict_component(
+                            pos_train, X_train_s, X_test_s, position
+                        )
+                    else:
+                        y_train = pos_train["fantasy_points"]
+                        model.fit(X_train_s, y_train)
+                        preds = model.predict(X_test_s)
 
                     # Store per-player predictions
                     for i in range(len(pos_test)):
@@ -812,6 +835,95 @@ class TimeSeriesBacktester:
         )
 
     # ------------------------------------------------------------------
+    # ------------------------------------------------------------------
+    # Target-mode helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _compute_proxy_utilization(df: pd.DataFrame, position: str) -> pd.Series:
+        """Compute a lightweight utilization proxy from raw stats.
+
+        Uses the same share-based logic as the full UtilizationScoreCalculator
+        but without requiring team-level aggregates or percentile bounds.
+        Returns a 0-100 score per row.
+        """
+        util = pd.Series(0.0, index=df.index)
+        if position == "QB":
+            for col, w in [("passing_attempts", 0.4), ("rushing_attempts", 0.3),
+                           ("passing_tds", 0.15), ("rushing_tds", 0.15)]:
+                if col in df.columns:
+                    s = df[col].fillna(0)
+                    if s.max() > 0:
+                        util += w * 100 * s / max(s.quantile(0.99), 1)
+        elif position == "RB":
+            for col, w in [("rushing_attempts", 0.35), ("targets", 0.25),
+                           ("rushing_yards", 0.2), ("receptions", 0.2)]:
+                if col in df.columns:
+                    s = df[col].fillna(0)
+                    if s.max() > 0:
+                        util += w * 100 * s / max(s.quantile(0.99), 1)
+        elif position in ("WR", "TE"):
+            for col, w in [("targets", 0.35), ("receptions", 0.25),
+                           ("receiving_yards", 0.25), ("receiving_tds", 0.15)]:
+                if col in df.columns:
+                    s = df[col].fillna(0)
+                    if s.max() > 0:
+                        util += w * 100 * s / max(s.quantile(0.99), 1)
+        return util.clip(0, 100)
+
+    def _fit_predict_util(self, model, pos_train, X_train_s, X_test_s, position):
+        """Train on utilization proxy, convert predictions back to FP."""
+        from sklearn.linear_model import Ridge as _Ridge
+
+        util_col = "utilization_score"
+        if util_col not in pos_train.columns or pos_train[util_col].notna().sum() < 30:
+            # Compute proxy utilization from raw stats
+            pos_train = pos_train.copy()
+            pos_train[util_col] = self._compute_proxy_utilization(pos_train, position)
+
+        if pos_train[util_col].std() < 1e-6:
+            # Fall back to FP if utilization is constant
+            y_train = pos_train["fantasy_points"]
+            model.fit(X_train_s, y_train)
+            return model.predict(X_test_s)
+
+        y_train = pos_train[util_col]
+        model.fit(X_train_s, y_train)
+        util_preds = model.predict(X_test_s)
+
+        # In-fold converter: simple Ridge from util → FP on training data
+        train_util = pos_train[[util_col]].fillna(0).values
+        train_fp = pos_train["fantasy_points"].fillna(0).values
+        converter = _Ridge(alpha=1000)
+        converter.fit(train_util, train_fp)
+        return converter.predict(util_preds.reshape(-1, 1))
+
+    def _fit_predict_component(self, pos_train, X_train_s, X_test_s, position):
+        """Train separate Ridge per stat component, assemble FP via PPR weights."""
+        from sklearn.linear_model import Ridge as _Ridge
+        from config.settings import COMPONENT_TARGETS, PPR_SCORING_WEIGHTS
+
+        components = COMPONENT_TARGETS.get(position, [])
+        preds = np.zeros(X_test_s.shape[0])
+
+        for comp in components:
+            if comp not in pos_train.columns:
+                continue
+            y_comp = pos_train[comp].fillna(0)
+            if y_comp.std() < 1e-6:
+                continue
+            comp_model = _Ridge(alpha=RIDGE_DEFAULT_ALPHA)
+            comp_model.fit(X_train_s, y_comp)
+            comp_preds = comp_model.predict(X_test_s)
+            # Stats can't be negative (except interceptions)
+            if comp != "interceptions":
+                comp_preds = np.maximum(comp_preds, 0)
+            weight = PPR_SCORING_WEIGHTS.get(comp, 0)
+            preds += comp_preds * weight
+
+        return preds
+
+    # ------------------------------------------------------------------
     def get_results_dict(self) -> Dict[str, Any]:
         """Return results as a JSON-serializable dict."""
         pred_df = pd.DataFrame(self.predictions)
@@ -834,6 +946,7 @@ class TimeSeriesBacktester:
 
         return {
             "season": self.season,
+            "target_mode": self.target_mode,
             "backtest_type": "expanding_window_weekly_refit",
             "backtest_date": self._run_timestamp,
             "n_predictions": len(valid),
@@ -1069,6 +1182,8 @@ def run_ts_backtest(
     payout_multiplier: Optional[float] = None,
     report_decision_quality: bool = True,
     emit_inactive_predictions: bool = False,
+    target_mode: str = "fp",
+    qb_model: Optional[str] = None,
 ) -> Tuple[pd.DataFrame, Dict[str, Any]]:
     """
     End-to-end time-series backtest.
@@ -1148,8 +1263,17 @@ def run_ts_backtest(
         verbose=verbose,
         payout_multiplier=payout_multiplier,
         report_decision_quality=report_decision_quality,
+        target_mode=target_mode,
     )
     bt.emit_inactive_predictions = bool(emit_inactive_predictions)
+
+    # Per-position model overrides
+    if qb_model:
+        if qb_model == "gbm":
+            bt._position_model_factories["QB"] = gradient_boosting_factory
+        elif qb_model == "ridge":
+            from functools import partial as _partial
+            bt._position_model_factories["QB"] = _partial(default_model_factory, alpha=ridge_alpha)
 
     pred_df = bt.run_backtest()
     bt.save_results()

@@ -192,6 +192,11 @@ class FeatureEngineer:
         # the exact semantics.
         df = self._add_prev_season_ppg(df)
 
+        # Pre-season ADP (ECR) — provides market-consensus signal
+        # especially valuable for early-season weeks when rolling
+        # averages have little data.
+        df = self._merge_preseason_ecr(df)
+
         # Impute NaN/inf
         df = self._impute_missing(df)
 
@@ -230,6 +235,40 @@ class FeatureEngineer:
         df["prev_season_ppg"] = df.groupby("player_id")["_tmp_season_ppg"].shift(1)
         df.drop(columns=["_tmp_season_ppg"], inplace=True, errors="ignore")
         df = self._apply_rookie_prior(df)
+        return df
+
+    # Module-level cache for pre-season ECR (ADP).
+    _ECR_CACHE: Optional[Dict[int, Dict[str, float]]] = None
+
+    def _merge_preseason_ecr(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Merge pre-season ECR (expert consensus rank / ADP proxy) by player+season.
+
+        Adds ``preseason_ecr`` column: lower = higher-drafted (better).
+        Players without ADP data get a default of 300 (undrafted-level).
+        """
+        if "player_id" not in df.columns or "season" not in df.columns:
+            return df
+        try:
+            from src.utils.adp_matcher import get_preseason_ecr
+        except ImportError:
+            return df
+
+        if FeatureEngineer._ECR_CACHE is None:
+            seasons = sorted(df["season"].unique())
+            FeatureEngineer._ECR_CACHE = {}
+            for s in seasons:
+                try:
+                    FeatureEngineer._ECR_CACHE[int(s)] = get_preseason_ecr(int(s))
+                except Exception:
+                    FeatureEngineer._ECR_CACHE[int(s)] = {}
+
+        def _lookup_ecr(row):
+            s = int(row["season"])
+            pid = row["player_id"]
+            season_ecr = FeatureEngineer._ECR_CACHE.get(s, {})
+            return season_ecr.get(pid, 300.0)
+
+        df["preseason_ecr"] = df.apply(_lookup_ecr, axis=1)
         return df
 
     # Module-level caches for the rookie-prior fill.  Loaded on first
@@ -521,6 +560,10 @@ class FeatureEngineer:
             # CAUSAL_FEATURES; the raw _pct columns are this-week.
             "target_share_pct", "rush_share_pct",
             "snap_share_pct", "air_yards_share_pct",
+            # PBP efficiency (computed in _create_base_features when
+            # pass_epa / rush_epa columns are populated)
+            "pass_epa_per_play", "rush_epa_per_play", "recv_epa_per_target",
+            "pass_success_rate", "completion_pct",
         ]
         
         # Filter to columns that exist
@@ -1973,22 +2016,25 @@ class FeatureEngineer:
             # Build lookup: home_team + away_team + season + week -> spread, total
             sched = schedules.copy()
             sched = sched.rename(columns={"gameday": "game_date"}, errors="ignore")
+            # Use total_line (Vegas over/under) not total (actual game score)
             if "total_line" in sched.columns:
-                sched = sched.rename(columns={"total_line": "total"})
-            elif "total" not in sched.columns:
-                sched["total"] = 46.0
+                sched["vegas_total"] = sched["total_line"]
+            elif "total" in sched.columns:
+                sched["vegas_total"] = sched["total"]
+            else:
+                sched["vegas_total"] = 46.0
 
             # Create home and away lookups
-            home_lookup = sched[["season", "week", "home_team", "spread_line", "total"]].copy()
+            home_lookup = sched[["season", "week", "home_team", "spread_line", "vegas_total"]].copy()
             home_lookup = home_lookup.rename(columns={"home_team": "team"})
             home_lookup["spread"] = -home_lookup["spread_line"]  # negative spread = home favored
-            home_lookup["game_total"] = home_lookup["total"]
+            home_lookup["game_total"] = home_lookup["vegas_total"]
             home_lookup["implied_team_total"] = (home_lookup["game_total"] - home_lookup["spread"]) / 2
 
-            away_lookup = sched[["season", "week", "away_team", "spread_line", "total"]].copy()
+            away_lookup = sched[["season", "week", "away_team", "spread_line", "vegas_total"]].copy()
             away_lookup = away_lookup.rename(columns={"away_team": "team"})
             away_lookup["spread"] = away_lookup["spread_line"]  # positive spread = away underdog
-            away_lookup["game_total"] = away_lookup["total"]
+            away_lookup["game_total"] = away_lookup["vegas_total"]
             away_lookup["implied_team_total"] = (away_lookup["game_total"] + away_lookup["spread"]) / 2
 
             vegas = pd.concat([home_lookup, away_lookup], ignore_index=True)
