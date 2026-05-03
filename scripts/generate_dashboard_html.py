@@ -377,7 +377,7 @@ def build_html(metrics_json: str, data_json: str, calls_json: str,
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>NFL Walk-Forward Validation</title>
+<title>NFL Fantasy Projections</title>
 <style>
 *,*::before,*::after{{box-sizing:border-box}}
 body{{
@@ -518,8 +518,8 @@ details[open] summary::before{{transform:rotate(90deg)}}
 </head>
 <body>
 <div class="header">
-  <h1>NFL Walk-Forward Validation</h1>
-  <div class="subtitle">Model predictions vs actual results &middot; 2018&ndash;2025</div>
+  <h1>NFL Fantasy Projections</h1>
+  <div class="subtitle">Model-powered weekly predictions &amp; draft rankings &middot; 2018&ndash;2026</div>
 </div>
 <div class="tab-bar" id="tabBar"></div>
 <div class="content" id="content"></div>
@@ -632,7 +632,13 @@ function getPosMeta(season) {{
 
 function renderHeadlineCard(m) {{
   if (!m || !m.n) return '<div class="card empty">No predictions for this selection.</div>';
-  return `<div class="card"><div class="metrics-grid">
+  // Plain-language summary
+  const maeDesc = m.mae < 5 ? "strong" : m.mae < 7 ? "solid" : "moderate";
+  const r2Pct = Math.round(m.r2 * 100);
+  const summary = `Predictions average ${{fmt(m.mae,1)}} points off (${{maeDesc}}), explaining ${{r2Pct}}% of scoring variance across ${{fmtN(m.n)}} player-weeks`;
+  return `<div class="card">
+    <div style="text-align:center;font-size:0.85rem;color:#555;margin-bottom:10px">${{summary}}</div>
+    <div class="metrics-grid">
     <div><div class="metric-val">${{fmt(m.mae,2)}}</div><div class="metric-label">MAE</div></div>
     <div><div class="metric-val">${{fmt(m.rmse,2)}}</div><div class="metric-label">RMSE</div></div>
     <div><div class="metric-val">${{fmt(m.r2,3)}}</div><div class="metric-label">R&sup2;</div></div>
@@ -918,16 +924,18 @@ function render() {{
     h += renderAllSeasonsTable();
   }}
 
+  h += `<div style="font-size:0.75rem;color:#888;text-transform:uppercase;letter-spacing:0.5px;margin:14px 0 6px">By Position</div>`;
   h += renderPosTable(posMeta);
 
   if (selectedSeason !== "All") {{
+    h += `<div style="font-size:0.75rem;color:#888;text-transform:uppercase;letter-spacing:0.5px;margin:14px 0 6px">By Week</div>`;
     h += renderWeeks(selectedSeason);
   }}
 
   // Close calls section
   const calls = getCallsForView();
   if (calls.length) {{
-    h += `<h3 style="margin:16px 0 8px;font-size:0.95rem;color:#555">Close Calls</h3>`;
+    h += `<div style="font-size:0.75rem;color:#888;text-transform:uppercase;letter-spacing:0.5px;margin:14px 0 6px">Close Calls</div>`;
     h += renderCallsSummary(calls);
     const shown = calls.slice(0, 30);
     h += shown.map(renderCallCard).join("");
