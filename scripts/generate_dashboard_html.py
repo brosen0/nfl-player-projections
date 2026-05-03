@@ -576,8 +576,8 @@ function renderTabs() {{
   const bar = document.getElementById("tabBar");
   bar.innerHTML = "";
   // View mode tabs
-  ["Predictions","Draft Advisor"].forEach(label => {{
-    const mode = label === "Predictions" ? "predictions" : "draft";
+  ["Weekly Predictions","Pre-Draft Rankings"].forEach(label => {{
+    const mode = label === "Weekly Predictions" ? "predictions" : "draft";
     const btn = document.createElement("button");
     btn.className = "tab" + (viewMode === mode ? " active" : "");
     btn.textContent = label;
