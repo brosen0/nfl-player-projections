@@ -307,15 +307,18 @@ def _build_draft_advisor_data() -> Dict:
                     "w": r.model_wins,
                 })
 
-            # Validation at multiple thresholds
+            # Validation at multiple thresholds — filtered to top-150 ECR
+            top150 = [r for r in spread_results if r.ecr <= 150]
             validations = {}
             for thresh in [5, 10, 15, 20]:
-                v = da.validate_spread_direction(spread_results, min_spread=thresh)
+                v = da.validate_spread_direction(top150, min_spread=thresh)
                 if v["n"] > 0:
                     validations[str(thresh)] = {
                         "n": v["n"], "wins": v["model_wins"],
                         "acc": round(v["accuracy"] * 100, 1),
                     }
+            # Also store whether this is a preseason (no actuals) season
+            has_actuals = csv_path is not None
 
             # VONA for all 12 slots
             vona_by_slot = {}
@@ -354,6 +357,7 @@ def _build_draft_advisor_data() -> Dict:
                 "vona": vona_by_slot,
                 "matched": matched,
                 "total": len(board),
+                "hasActuals": has_actuals,
             }
         except Exception as e:
             print(f"Draft advisor for {season} failed: {e}", file=sys.stderr)
@@ -533,7 +537,7 @@ const DRAFT = {draft_json};
 let selectedSeason = SEASONS[SEASONS.length - 1];
 let selPos = new Set(["QB","RB","WR","TE"]);
 const ALL_POS = ["QB","RB","WR","TE"];
-let viewMode = "validation"; // "validation", "calls", or "draft"
+let viewMode = "predictions"; // "predictions" or "draft"
 let draftSlot = 6;
 
 function isAllPos() {{ return selPos.size === 4; }}
@@ -572,8 +576,8 @@ function renderTabs() {{
   const bar = document.getElementById("tabBar");
   bar.innerHTML = "";
   // View mode tabs
-  ["Validation","Hardest Calls","Draft Advisor"].forEach(label => {{
-    const mode = label === "Validation" ? "validation" : label === "Hardest Calls" ? "calls" : "draft";
+  ["Predictions","Draft Advisor"].forEach(label => {{
+    const mode = label === "Predictions" ? "predictions" : "draft";
     const btn = document.createElement("button");
     btn.className = "tab" + (viewMode === mode ? " active" : "");
     btn.textContent = label;
@@ -587,7 +591,7 @@ function renderTabs() {{
   bar.appendChild(sep);
   // Season tabs
   const draftSeasons = Object.keys(DRAFT).map(Number).sort();
-  const seasonList = viewMode === "validation" ? SEASONS.concat(["All"]) : viewMode === "draft" ? draftSeasons : SEASONS;
+  const seasonList = viewMode === "predictions" ? SEASONS.concat(["All"]) : draftSeasons;
   if (viewMode === "draft" && !draftSeasons.includes(selectedSeason)) selectedSeason = draftSeasons[draftSeasons.length-1] || 2025;
   seasonList.forEach(s => {{
     const btn = document.createElement("button");
@@ -776,52 +780,24 @@ function renderCallsView() {{
 function renderDraftView() {{
   const d = DRAFT[selectedSeason];
   if (!d) return '<div class="card empty">No ADP data for this season.</div>';
+  const hasActuals = d.hasActuals !== false;
   let h = '';
 
-  // Validation summary
+  // Compact validation banner (skip for preseason)
   const v10 = d.validation["10"];
-  if (v10) {{
-    h += `<div class="call-summary">
-      <div class="card"><div class="call-stat-val ${{v10.acc>=55?"good":v10.acc>=50?"neutral":"bad"}}">${{v10.acc}}%</div><div class="call-stat-label">Direction Accuracy</div></div>
-      <div class="card"><div class="call-stat-val good">${{v10.wins}}</div><div class="call-stat-label">Model Wins</div></div>
-      <div class="card"><div class="call-stat-val neutral">${{v10.n}}</div><div class="call-stat-label">Disagreements</div></div>
+  if (v10 && hasActuals) {{
+    const cls = v10.acc >= 60 ? "good" : v10.acc >= 50 ? "neutral" : "bad";
+    h += `<div class="card" style="text-align:center;padding:12px">
+      <span class="call-stat-val ${{cls}}" style="font-size:1.2rem">${{v10.acc}}%</span>
+      <span style="font-size:0.85rem;color:#666"> accurate among top-150 ADP players where model disagrees by 10+ ranks (${{v10.wins}}/${{v10.n}})</span>
     </div>`;
-    h += `<div class="card" style="text-align:center;font-size:0.8rem;color:#666;padding:8px">When model and ADP disagree by 10+ ranks, model is closer to actual outcome ${{v10.acc}}% of the time</div>`;
   }}
 
-  // Spread tables
-  const spread = d.spread || [];
-  const filteredSpread = isAllPos() ? spread : spread.filter(s => matchPos(s.p));
-  const under = filteredSpread.filter(s => s.sp > 0).slice(0, 15);
-  const over = filteredSpread.filter(s => s.sp < 0).slice(0, 15);
-
-  h += renderPills();
-
-  if (under.length) {{
-    h += `<div class="card"><h3 style="margin:0 0 8px;font-size:0.9rem;color:#2e7d32">Undervalued by ADP (model ranks higher)</h3><table>
-      <tr><th>Player</th><th>Pos</th><th class="num">ADP</th><th class="num">Model</th><th class="num">Spread</th><th class="num">Proj</th><th class="num">Actual</th><th>Right?</th></tr>
-      ${{under.map(s => {{
-        const cls = s.w ? "resid-pos" : "resid-neg";
-        return `<tr><td>${{s.n}}</td><td><span class="pos-badge pos-${{s.p}}">${{s.p}}</span></td><td class="num">${{Math.round(s.ecr)}}</td><td class="num">${{s.mr}}</td><td class="num" style="color:#2e7d32;font-weight:600">+${{s.sp}}</td><td class="num">${{s.mp}}</td><td class="num">${{s.act}}</td><td class="${{cls}}">${{s.w?"✓":"✗"}}</td></tr>`;
-      }}).join("")}}
-    </table></div>`;
-  }}
-
-  if (over.length) {{
-    h += `<div class="card"><h3 style="margin:0 0 8px;font-size:0.9rem;color:#c62828">Overvalued by ADP (model ranks lower)</h3><table>
-      <tr><th>Player</th><th>Pos</th><th class="num">ADP</th><th class="num">Model</th><th class="num">Spread</th><th class="num">Proj</th><th class="num">Actual</th><th>Right?</th></tr>
-      ${{over.map(s => {{
-        const cls = s.w ? "resid-pos" : "resid-neg";
-        return `<tr><td>${{s.n}}</td><td><span class="pos-badge pos-${{s.p}}">${{s.p}}</span></td><td class="num">${{Math.round(s.ecr)}}</td><td class="num">${{s.mr}}</td><td class="num" style="color:#c62828;font-weight:600">${{s.sp}}</td><td class="num">${{s.mp}}</td><td class="num">${{s.act}}</td><td class="${{cls}}">${{s.w?"✓":"✗"}}</td></tr>`;
-      }}).join("")}}
-    </table></div>`;
-  }}
-
-  // VONA section with slot selector
+  // VONA section (the actionable tool) — first
   const vonaData = d.vona || {{}};
   const slots = Object.keys(vonaData).sort((a,b)=>a-b);
   if (slots.length) {{
-    h += `<div class="card"><h3 style="margin:0 0 8px;font-size:0.9rem">VONA Recommendations by Draft Slot</h3>`;
+    h += `<div class="card"><h3 style="margin:0 0 8px;font-size:0.9rem">Pick Recommendations by Draft Slot</h3>`;
     h += `<div class="pills" style="margin-bottom:8px">`;
     slots.forEach(s => {{
       h += `<button class="pill${{parseInt(s)===draftSlot?" active":""}}" onclick="draftSlot=${{s}};render()">Slot ${{s}}</button>`;
@@ -847,6 +823,39 @@ function renderDraftView() {{
     h += `</div>`;
   }}
 
+  // Spread tables — filtered to ECR ≤ 150 (draftable players)
+  const spread = (d.spread || []).filter(s => s.ecr <= 150);
+  const filteredSpread = isAllPos() ? spread : spread.filter(s => matchPos(s.p));
+  const under = filteredSpread.filter(s => s.sp > 0).sort((a,b) => b.sp - a.sp).slice(0, 20);
+  const over = filteredSpread.filter(s => s.sp < 0).sort((a,b) => a.sp - b.sp).slice(0, 20);
+
+  h += renderPills();
+
+  const actCols = hasActuals ? '<th class="num">Actual</th><th>Right?</th>' : '';
+  function spreadRow(s, color) {{
+    const spStr = s.sp > 0 ? "+" + s.sp : String(s.sp);
+    let actCells = '';
+    if (hasActuals) {{
+      const cls = s.w ? "resid-pos" : "resid-neg";
+      actCells = `<td class="num">${{s.act}}</td><td class="${{cls}}">${{s.w?"✓":"✗"}}</td>`;
+    }}
+    return `<tr><td>${{s.n}}</td><td><span class="pos-badge pos-${{s.p}}">${{s.p}}</span></td><td class="num">${{Math.round(s.ecr)}}</td><td class="num">${{s.mr}}</td><td class="num" style="color:${{color}};font-weight:600">${{spStr}}</td><td class="num">${{s.mp}}</td>${{actCells}}</tr>`;
+  }}
+
+  if (under.length) {{
+    h += `<div class="card"><h3 style="margin:0 0 8px;font-size:0.9rem;color:#2e7d32">Model Says Higher Than ADP</h3><table>
+      <tr><th>Player</th><th>Pos</th><th class="num">ADP</th><th class="num">Model</th><th class="num">Spread</th><th class="num">Proj</th>${{actCols}}</tr>
+      ${{under.map(s => spreadRow(s, "#2e7d32")).join("")}}
+    </table></div>`;
+  }}
+
+  if (over.length) {{
+    h += `<div class="card"><h3 style="margin:0 0 8px;font-size:0.9rem;color:#c62828">Model Says Lower Than ADP</h3><table>
+      <tr><th>Player</th><th>Pos</th><th class="num">ADP</th><th class="num">Model</th><th class="num">Spread</th><th class="num">Proj</th>${{actCols}}</tr>
+      ${{over.map(s => spreadRow(s, "#c62828")).join("")}}
+    </table></div>`;
+  }}
+
   return h;
 }}
 
@@ -859,11 +868,7 @@ function render() {{
     return;
   }}
 
-  if (viewMode === "calls") {{
-    el.innerHTML = renderCallsView();
-    return;
-  }}
-
+  // Predictions view (metrics + weeks + close calls)
   const m = getHeadline(selectedSeason);
   const posMeta = getPosMeta(selectedSeason);
 
@@ -878,6 +883,18 @@ function render() {{
 
   if (selectedSeason !== "All") {{
     h += renderWeeks(selectedSeason);
+  }}
+
+  // Close calls section
+  const calls = getCallsForView();
+  if (calls.length) {{
+    h += `<h3 style="margin:16px 0 8px;font-size:0.95rem;color:#555">Close Calls</h3>`;
+    h += renderCallsSummary(calls);
+    const shown = calls.slice(0, 30);
+    h += shown.map(renderCallCard).join("");
+    if (calls.length > 30) {{
+      h += `<div class="card empty">${{calls.length - 30}} more close calls not shown.</div>`;
+    }}
   }}
 
   el.innerHTML = h;
