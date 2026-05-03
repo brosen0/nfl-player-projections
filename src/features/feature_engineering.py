@@ -2197,8 +2197,8 @@ class FeatureEngineer:
             db = DatabaseManager()
             with db._get_connection() as conn:
                 draft_df = pd.read_sql_query(
-                    "SELECT player_id, draft_season, draft_pick FROM draft_picks "
-                    "WHERE player_id IS NOT NULL AND draft_pick IS NOT NULL",
+                    "SELECT player_id, draft_season, draft_pick FROM draft_picks_v2 "
+                    "WHERE player_id LIKE '00-%' AND draft_pick IS NOT NULL",
                     conn,
                 )
             if draft_df.empty:

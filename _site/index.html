@@ -150,7 +150,7 @@ details[open] summary::before{transform:rotate(90deg)}
 <div class="tab-bar" id="tabBar"></div>
 <div class="content" id="content"></div>
 <div class="footer">
-  Generated 2026-05-03 03:24 UTC &middot; predictions use only data available before each week
+  Generated 2026-05-03 05:15 UTC &middot; predictions use only data available before each week
 </div>
 
 <script>
@@ -163,7 +163,9 @@ const DRAFT = {"2024":{"spread":[{"n":"Jonathan Williams","p":"RB","t":"FA","ecr
 let selectedSeason = SEASONS[SEASONS.length - 1];
 let selPos = new Set(["QB","RB","WR","TE"]);
 const ALL_POS = ["QB","RB","WR","TE"];
-let viewMode = "predictions"; // "predictions" or "draft"
+// Default to draft tab in offseason (Feb-Aug), predictions during season (Sep-Jan)
+const _month = new Date().getMonth() + 1;
+let viewMode = (_month >= 2 && _month <= 8) ? "draft" : "predictions";
 let draftSlot = 6;
 
 function isAllPos() { return selPos.size === 4; }

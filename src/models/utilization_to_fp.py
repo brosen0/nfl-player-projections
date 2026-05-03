@@ -75,35 +75,37 @@ def _tune_converter_hyperparams(
     Uses 3-fold time-series CV on the training portion. Returns best params
     for RF and XGBoost. Falls back to defaults if tuning fails.
     """
-    rf_defaults = {"n_estimators": 200, "max_depth": 10}
-    xgb_defaults = {"n_estimators": 200, "max_depth": 8, "learning_rate": 0.05}
+    rf_defaults = {"n_estimators": 100, "max_depth": 6}
+    xgb_defaults = {"n_estimators": 100, "max_depth": 6, "learning_rate": 0.05}
 
     if len(X_train) < CONVERTER_TUNING_MIN_SAMPLES:
         return {"rf": rf_defaults, "xgb": xgb_defaults}
 
     tscv = TimeSeriesSplit(n_splits=3)
-    # Small grid: 27 combinations
-    param_grid = [
-        (ne, md, lr)
-        for ne in [100, 200, 300]
-        for md in [6, 8, 10]
-        for lr in [0.03, 0.05, 0.1]
-    ]
 
-    # Tune RF (n_estimators, max_depth only)
+    # Subsample large datasets to cap memory during tuning
+    max_tune_rows = 15000
+    if len(X_train) > max_tune_rows:
+        idx = np.linspace(0, len(X_train) - 1, max_tune_rows, dtype=int)
+        X_tune, y_tune = X_train[idx], y_train[idx]
+    else:
+        X_tune, y_tune = X_train, y_train
+
+    # Tune RF (n_estimators, max_depth) — 4 combos
     best_rf_score = float("inf")
     best_rf = rf_defaults.copy()
-    for ne in [100, 200, 300]:
-        for md in [6, 8, 10]:
+    for ne in [80, 150]:
+        for md in [5, 8]:
             scores = []
             try:
-                for tr_idx, va_idx in tscv.split(X_train):
+                for tr_idx, va_idx in tscv.split(X_tune):
                     m = RandomForestRegressor(
-                        n_estimators=ne, max_depth=md, random_state=42, n_jobs=1
+                        n_estimators=ne, max_depth=md, random_state=42,
+                        n_jobs=1, max_samples=min(10000, len(tr_idx)),
                     )
-                    m.fit(X_train[tr_idx], y_train[tr_idx])
-                    pred = m.predict(X_train[va_idx])
-                    scores.append(mean_squared_error(y_train[va_idx], pred))
+                    m.fit(X_tune[tr_idx], y_tune[tr_idx])
+                    pred = m.predict(X_tune[va_idx])
+                    scores.append(mean_squared_error(y_tune[va_idx], pred))
                 avg = np.mean(scores)
                 if avg < best_rf_score:
                     best_rf_score = avg
@@ -111,27 +113,29 @@ def _tune_converter_hyperparams(
             except Exception:
                 continue
 
-    # Tune XGBoost (n_estimators, max_depth, learning_rate)
+    # Tune XGBoost — 8 combos
     best_xgb_score = float("inf")
     best_xgb = xgb_defaults.copy()
     if HAS_XGB:
-        for ne, md, lr in param_grid:
-            scores = []
-            try:
-                for tr_idx, va_idx in tscv.split(X_train):
-                    m = xgb.XGBRegressor(
-                        n_estimators=ne, max_depth=md, learning_rate=lr,
-                        subsample=0.8, random_state=42, n_jobs=1,
-                    )
-                    m.fit(X_train[tr_idx], y_train[tr_idx])
-                    pred = m.predict(X_train[va_idx])
-                    scores.append(mean_squared_error(y_train[va_idx], pred))
-                avg = np.mean(scores)
-                if avg < best_xgb_score:
-                    best_xgb_score = avg
-                    best_xgb = {"n_estimators": ne, "max_depth": md, "learning_rate": lr}
-            except Exception:
-                continue
+        for ne in [80, 150]:
+            for md in [4, 7]:
+                for lr in [0.05, 0.1]:
+                    scores = []
+                    try:
+                        for tr_idx, va_idx in tscv.split(X_tune):
+                            m = xgb.XGBRegressor(
+                                n_estimators=ne, max_depth=md, learning_rate=lr,
+                                subsample=0.8, random_state=42, n_jobs=1,
+                            )
+                            m.fit(X_tune[tr_idx], y_tune[tr_idx])
+                            pred = m.predict(X_tune[va_idx])
+                            scores.append(mean_squared_error(y_tune[va_idx], pred))
+                        avg = np.mean(scores)
+                        if avg < best_xgb_score:
+                            best_xgb_score = avg
+                            best_xgb = {"n_estimators": ne, "max_depth": md, "learning_rate": lr}
+                    except Exception:
+                        continue
 
     return {"rf": best_rf, "xgb": best_xgb}
 

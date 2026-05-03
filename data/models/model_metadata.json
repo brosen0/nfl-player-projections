@@ -1,5 +1,5 @@
 {
-  "training_date": "2026-05-02T03:14:20.196516",
+  "training_date": "2026-05-03T00:14:31.495668",
   "feature_version": "9",
   "train_seasons": [
     2006,
@@ -145,5 +145,7 @@
         "spearman_rho": 0.405
       }
     }
-  }
+  },
+  "draft_capital_fix": "draft_picks_v2 (GSIS IDs), 121+ matches",
+  "converter_tuning": "reduced grid (8 combos), max_samples=10K"
 }

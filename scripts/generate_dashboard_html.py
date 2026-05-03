@@ -537,7 +537,9 @@ const DRAFT = {draft_json};
 let selectedSeason = SEASONS[SEASONS.length - 1];
 let selPos = new Set(["QB","RB","WR","TE"]);
 const ALL_POS = ["QB","RB","WR","TE"];
-let viewMode = "predictions"; // "predictions" or "draft"
+// Default to draft tab in offseason (Feb-Aug), predictions during season (Sep-Jan)
+const _month = new Date().getMonth() + 1;
+let viewMode = (_month >= 2 && _month <= 8) ? "draft" : "predictions";
 let draftSlot = 6;
 
 function isAllPos() {{ return selPos.size === 4; }}
