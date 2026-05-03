@@ -19,7 +19,8 @@ import pandas as pd
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 DB_PATH = PROJECT_ROOT / "data" / "nfl_data.db"
-SEASONS = list(range(2018, 2026))
+from datetime import datetime
+SEASONS = list(range(2018, datetime.now().year + 1))
 
 
 def _save_df(df: pd.DataFrame, table: str, conn: sqlite3.Connection,
