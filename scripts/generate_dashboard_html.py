@@ -595,8 +595,10 @@ function renderTabs() {{
   if (viewMode === "draft" && !draftSeasons.includes(selectedSeason)) selectedSeason = draftSeasons[draftSeasons.length-1] || 2025;
   seasonList.forEach(s => {{
     const btn = document.createElement("button");
+    const isPreseason = viewMode === "draft" && DRAFT[s] && DRAFT[s].hasActuals === false;
     btn.className = "tab" + (s === selectedSeason ? " active" : "");
-    btn.textContent = s;
+    btn.textContent = isPreseason ? s + " *" : s;
+    if (isPreseason) btn.style.fontStyle = "italic";
     btn.onclick = () => {{ selectedSeason = s; selPos = new Set(ALL_POS); render(); }};
     bar.appendChild(btn);
   }});
@@ -782,6 +784,22 @@ function renderDraftView() {{
   if (!d) return '<div class="card empty">No ADP data for this season.</div>';
   const hasActuals = d.hasActuals !== false;
   let h = '';
+
+  // Preseason disclaimer for upcoming season
+  if (!hasActuals) {{
+    const missing = [];
+    missing.push("NFL schedule (available late July)");
+    missing.push("Rosters & depth charts (available August)");
+    missing.push("Preseason & Week 1 stats");
+    h += `<div class="card" style="background:#fff8e1;border-left:4px solid #f9a825;padding:14px">
+      <div style="font-weight:600;font-size:0.9rem;margin-bottom:6px">Preseason projections &mdash; data is incomplete</div>
+      <div style="font-size:0.8rem;color:#555;line-height:1.5">
+        Rankings based on prior-season stats + ADP consensus. Rookies use ADP-implied projections (no NFL game data yet).
+        <div style="margin-top:6px"><strong>Not yet available:</strong> ${{missing.join(" &middot; ")}}</div>
+        <div style="margin-top:4px">ADP data updates as FantasyPros publishes new rankings through August. Re-run <code style="background:#f5f5f5;padding:1px 4px;border-radius:3px;font-size:0.75rem">python scripts/generate_dashboard_html.py</code> to refresh.</div>
+      </div>
+    </div>`;
+  }}
 
   // Compact validation banner (skip for preseason)
   const v10 = d.validation["10"];
