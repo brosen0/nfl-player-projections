@@ -231,6 +231,87 @@ def load_model_projections(
     return agg
 
 
+def load_preseason_projections(season: int, adp_df: pd.DataFrame = None) -> pd.DataFrame:
+    """Build preseason projections from prior-season stats for an upcoming
+    season that has no backtest predictions yet (e.g. 2026 before week 1).
+
+    Uses prior-season fantasy points per game as the projection basis.
+    If ``adp_df`` is provided, rookies (no prior-season stats) are added
+    with ADP-implied projections based on historical positional ECR curves.
+    Returns a DataFrame compatible with ``build_draft_board``."""
+    from src.utils.database import DatabaseManager
+    prior = season - 1
+    with DatabaseManager()._get_connection() as conn:
+        prior_df = pd.read_sql(
+            """
+            SELECT pws.player_id,
+                   p.name,
+                   p.position,
+                   pws.team,
+                   SUM(pws.fantasy_points) AS pred_total,
+                   SUM(pws.fantasy_points) AS actual_total,
+                   COUNT(*) AS weeks,
+                   AVG(pws.fantasy_points) AS ppg
+              FROM player_weekly_stats pws
+              JOIN players p ON pws.player_id = p.player_id
+             WHERE pws.season = ?
+               AND p.position IN ('QB', 'RB', 'WR', 'TE')
+               AND pws.fantasy_points > 0
+             GROUP BY pws.player_id
+            """,
+            conn,
+            params=(prior,),
+        )
+    if prior_df.empty and adp_df is None:
+        return prior_df
+
+    if not prior_df.empty:
+        prior_df["model_rank_value"] = prior_df["ppg"] * 17
+        prior_df["pred_total"] = prior_df["model_rank_value"]
+        prior_df = prior_df.drop(columns=["ppg"])
+
+    # Add rookies/unmatched ADP players with ECR-implied projections
+    if adp_df is not None and not adp_df.empty:
+        # Typical per-game FP by position at various ECR tiers (rough curves)
+        # These are historical averages for players drafted at each ECR range
+        def _ecr_to_ppg(ecr: float, pos: str) -> float:
+            """Convert ECR rank to estimated PPG based on positional curves."""
+            # Top-tier players by position
+            baselines = {"QB": 20.0, "RB": 14.0, "WR": 12.0, "TE": 10.0}
+            base = baselines.get(pos, 10.0)
+            # Decay: higher ECR = lower PPG, with diminishing returns
+            return max(base * (50.0 / (ecr + 30.0)), 1.0)
+
+        matched_names = set()
+        if not prior_df.empty:
+            matched_names = {
+                (_first_initial(n), _normalize(_last_token(n)), p)
+                for n, p in zip(prior_df["name"], prior_df["position"])
+            }
+
+        rookie_rows = []
+        for _, r in adp_df.iterrows():
+            key = (_first_initial(r["name"]), _normalize(_last_token(r["name"])), r["position"])
+            if key not in matched_names:
+                ppg = _ecr_to_ppg(r["ecr"], r["position"])
+                rookie_rows.append({
+                    "player_id": f"rookie_{r['name']}_{r['position']}",
+                    "name": r["name"],
+                    "position": r["position"],
+                    "team": r.get("team", ""),
+                    "pred_total": ppg * 17,
+                    "actual_total": 0.0,
+                    "weeks": 0,
+                    "model_rank_value": ppg * 17,
+                })
+
+        if rookie_rows:
+            rookies_df = pd.DataFrame(rookie_rows)
+            prior_df = pd.concat([prior_df, rookies_df], ignore_index=True)
+
+    return prior_df
+
+
 def _apply_vorp(agg: pd.DataFrame, basis_col: str = "pred_total") -> pd.Series:
     """Compute Value Over Replacement Player per row.
 

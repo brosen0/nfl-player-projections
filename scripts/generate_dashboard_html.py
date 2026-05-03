@@ -266,22 +266,37 @@ def _build_draft_advisor_data() -> Dict:
         return {}
 
     result = {}
-    for season in [2024, 2025]:
+    for season in [2024, 2025, 2026]:
         try:
             csv_path = latest_predictions_csv(season)
-            if not csv_path:
-                continue
-            adp_df = sd.load_adp_board(season)
-            projections = sd.load_model_projections(csv_path, ranking="week1", season=season)
+            if csv_path:
+                adp_df = sd.load_adp_board(season)
+                projections = sd.load_model_projections(csv_path, ranking="week1", season=season)
+            else:
+                # No backtest CSV (upcoming season) — use preseason projections
+                try:
+                    adp_df = sd.load_adp_board(season)
+                    projections = sd.load_preseason_projections(season, adp_df=adp_df)
+                    if projections.empty:
+                        continue
+                except Exception:
+                    continue
             board = sd.build_draft_board(adp_df, projections)
             matched = sum(1 for p in board if p.is_modelable)
             if matched < 50:
                 continue
 
-            # Spread data
+            # Spread data: top 80 by absolute spread + all ADP top-50 players
             spread_results = da.compute_spread(board)
+            top_ecr_names = {p.name for p in board if p.ecr <= 50}
+            included = set()
             spread_list = []
-            for r in spread_results[:80]:  # top 80 by absolute spread
+            for r in spread_results:
+                if len(included) >= 120 and r.name not in top_ecr_names:
+                    continue
+                if r.name in included:
+                    continue
+                included.add(r.name)
                 spread_list.append({
                     "n": r.name, "p": r.position, "t": r.team,
                     "ecr": round(r.ecr, 1),
