@@ -801,14 +801,35 @@ function renderDraftView() {{
     </div>`;
   }}
 
-  // Compact validation banner (skip for preseason)
-  const v10 = d.validation["10"];
-  if (v10 && hasActuals) {{
-    const cls = v10.acc >= 60 ? "good" : v10.acc >= 50 ? "neutral" : "bad";
-    h += `<div class="card" style="text-align:center;padding:12px">
-      <span class="call-stat-val ${{cls}}" style="font-size:1.2rem">${{v10.acc}}%</span>
-      <span style="font-size:0.85rem;color:#666"> accurate among top-150 ADP players where model disagrees by 10+ ranks (${{v10.wins}}/${{v10.n}})</span>
-    </div>`;
+  // Historical accuracy — always shown so user knows the model's track record
+  const histSeasons = Object.keys(DRAFT).filter(s => DRAFT[s].hasActuals !== false);
+  const histStats = histSeasons.map(s => DRAFT[s].validation["10"]).filter(Boolean);
+  if (histStats.length) {{
+    const totalWins = histStats.reduce((s,v) => s + v.wins, 0);
+    const totalN = histStats.reduce((s,v) => s + v.n, 0);
+    const overallAcc = Math.round(100 * totalWins / totalN);
+    const range = histStats.map(v => v.acc);
+    const lo = Math.min(...range), hi = Math.max(...range);
+    const cls = overallAcc >= 60 ? "good" : overallAcc >= 50 ? "neutral" : "bad";
+    const yearRange = histSeasons.join(", ");
+
+    if (hasActuals) {{
+      // Current season: show this season's accuracy prominently
+      const v10 = d.validation["10"];
+      if (v10) {{
+        h += `<div class="card" style="text-align:center;padding:12px">
+          <span class="call-stat-val ${{v10.acc>=60?"good":v10.acc>=50?"neutral":"bad"}}" style="font-size:1.2rem">${{v10.acc}}%</span>
+          <span style="font-size:0.85rem;color:#666"> accurate on top-150 players where model disagrees with ADP by 10+ ranks (${{v10.wins}}/${{v10.n}})</span>
+        </div>`;
+      }}
+    }} else {{
+      // Preseason: show historical track record
+      h += `<div class="card" style="text-align:center;padding:12px">
+        <div style="font-size:0.75rem;color:#888;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px">Historical Accuracy (${{yearRange}})</div>
+        <span class="call-stat-val ${{cls}}" style="font-size:1.2rem">${{overallAcc}}%</span>
+        <span style="font-size:0.85rem;color:#666"> when model disagrees with ADP by 10+ ranks among top-150 players (${{totalWins}}/${{totalN}})</span>
+      </div>`;
+    }}
   }}
 
   // VONA section (the actionable tool) — first
