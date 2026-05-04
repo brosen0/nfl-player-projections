@@ -835,8 +835,12 @@ class DatabaseManager:
         return len(out)
 
     def get_draft_picks(self, season: int = None, position: str = None) -> pd.DataFrame:
-        """Get draft picks with optional filters."""
-        query = "SELECT * FROM draft_picks WHERE 1=1"
+        """Get draft picks with optional filters.
+
+        Reads from ``draft_picks_v2`` (nfl-data-py source, GSIS IDs) which
+        has data.  The legacy ``draft_picks`` table is empty on most installs.
+        """
+        query = "SELECT player_id, position, draft_season, draft_round, draft_pick, draft_team FROM draft_picks_v2 WHERE player_id LIKE '00-%'"
         params: list = []
         if season:
             query += " AND draft_season = ?"

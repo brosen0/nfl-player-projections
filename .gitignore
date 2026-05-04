@@ -55,6 +55,8 @@ data/diagnostics/
 data/improvement_results/
 data/experiments/
 data/monitoring/
+data/artifacts/silver/
+data/backtest_results/
 
 # Frontend
 frontend/node_modules/

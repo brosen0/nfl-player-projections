@@ -429,112 +429,100 @@ class DraftDataLoader:
             return pd.DataFrame()
     
     def merge_draft_data(
-        self, 
-        df: pd.DataFrame, 
+        self,
+        df: pd.DataFrame,
         draft_df: pd.DataFrame = None,
         name_column: str = None
     ) -> pd.DataFrame:
         """
-        Merge draft data onto player DataFrame.
-        
-        Args:
-            df: Player DataFrame
-            draft_df: Draft data (will load if not provided)
-            name_column: Column to use for player name matching
-            
-        Returns:
-            DataFrame with draft_round and draft_pick columns added
+        Merge draft data onto player DataFrame using player_id (GSIS ID).
+        Falls back to name matching if player_id is not available.
         """
         result = df.copy()
-        
+
         # Load draft data if not provided
         if draft_df is None:
             if self._draft_cache is not None:
                 draft_df = self._draft_cache
             else:
                 draft_df = self.load_draft_data()
-        
+
         if draft_df.empty:
-            # Add default values for undrafted
             result['draft_round'] = 8
             result['draft_pick'] = 260
             result['is_undrafted'] = True
             print("No draft data available - defaulting all players to undrafted")
             return result
-        
-        # Determine name column
+
+        # Preferred path: join on player_id (GSIS ID) — accurate, no name ambiguity
+        if 'player_id' in result.columns and 'player_id' in draft_df.columns:
+            draft_lookup = (
+                draft_df[draft_df['player_id'].notna()]
+                .sort_values('draft_season', ascending=False)
+                .drop_duplicates(subset=['player_id'], keep='first')
+                [['player_id', 'draft_round', 'draft_pick', 'draft_season']]
+            )
+            merged = result.merge(
+                draft_lookup, on='player_id', how='left', suffixes=('', '_draft')
+            )
+            merged['is_undrafted'] = merged['draft_round'].isna()
+            merged['draft_round'] = merged['draft_round'].fillna(8).astype(int)
+            merged['draft_pick'] = merged['draft_pick'].fillna(260).astype(int)
+            merged['draft_season'] = merged['draft_season'].fillna(0).astype(int)
+
+            matches = (~merged['is_undrafted']).sum()
+            total = len(merged)
+            print(f"Draft data merge: {matches}/{total} matched, {total - matches} marked as undrafted")
+            return merged
+
+        # Fallback: name matching (less accurate)
         if name_column is None:
             for col in ['name', 'player_name', 'full_name']:
                 if col in result.columns:
                     name_column = col
                     break
-        
+
         if name_column is None or name_column not in result.columns:
             result['draft_round'] = 8
             result['draft_pick'] = 260
             result['is_undrafted'] = True
-            print("No name column found - defaulting all players to undrafted")
+            print("No player_id or name column - defaulting all to undrafted")
             return result
-        
-        # Prepare draft lookup (use most recent draft entry per player)
+
         draft_lookup = draft_df.sort_values('draft_season', ascending=False)
-        draft_lookup = draft_lookup.drop_duplicates(subset=['player_name'], keep='first')
-        draft_lookup = draft_lookup[['player_name', 'draft_round', 'draft_pick', 'draft_season']]
-        
-        # Create lookup dictionary for faster matching
-        draft_dict = {}
-        for _, row in draft_lookup.iterrows():
-            name = str(row['player_name']).lower().strip()
-            draft_dict[name] = {
-                'draft_round': row['draft_round'],
-                'draft_pick': row['draft_pick'],
-                'draft_season': row['draft_season'],
+        if 'player_name' in draft_lookup.columns:
+            draft_lookup = draft_lookup.drop_duplicates(subset=['player_name'], keep='first')
+            draft_dict = {
+                str(row['player_name']).lower().strip(): row
+                for _, row in draft_lookup.iterrows()
             }
-        
-        # Match players
+        else:
+            draft_dict = {}
+
         draft_rounds = []
         draft_picks = []
         is_undrafted = []
         matches = 0
-        
-        for idx, row in result.iterrows():
+
+        for _, row in result.iterrows():
             player_name = str(row[name_column]).lower().strip()
-            
-            # Try exact match first
             if player_name in draft_dict:
-                draft_rounds.append(draft_dict[player_name]['draft_round'])
-                draft_picks.append(draft_dict[player_name]['draft_pick'])
+                info = draft_dict[player_name]
+                draft_rounds.append(info['draft_round'])
+                draft_picks.append(info['draft_pick'])
                 is_undrafted.append(False)
                 matches += 1
             else:
-                # Try last name match
-                last_name = player_name.split()[-1] if player_name else ''
-                matched = False
-                
-                for dict_name, draft_info in draft_dict.items():
-                    if dict_name.endswith(last_name) and len(last_name) > 2:
-                        draft_rounds.append(draft_info['draft_round'])
-                        draft_picks.append(draft_info['draft_pick'])
-                        is_undrafted.append(False)
-                        matches += 1
-                        matched = True
-                        break
-                
-                if not matched:
-                    # Default for undrafted
-                    draft_rounds.append(8)
-                    draft_picks.append(260)
-                    is_undrafted.append(True)
-        
+                draft_rounds.append(8)
+                draft_picks.append(260)
+                is_undrafted.append(True)
+
         result['draft_round'] = draft_rounds
         result['draft_pick'] = draft_picks
         result['is_undrafted'] = is_undrafted
-        
-        # Log data quality
+
         total = len(result)
-        undrafted_count = sum(is_undrafted)
-        print(f"Draft data merge: {matches}/{total} matched, {undrafted_count} marked as undrafted")
-        
+        print(f"Draft data merge: {matches}/{total} matched, {total - matches} marked as undrafted")
         return result
     
     def validate_draft_data(self, df: pd.DataFrame) -> dict:
