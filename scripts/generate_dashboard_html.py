@@ -247,6 +247,126 @@ def compute_usage_trends(season: int) -> dict:
     return result
 
 
+def compute_defense_rankings(season: int) -> dict:
+    """Compute FP allowed per game by each defense, per position.
+
+    Returns {team: {pos: rank}} where rank 1 = easiest matchup (most FP allowed).
+    Uses schedule join since opponent field is empty in player_weekly_stats.
+    """
+    import sqlite3
+    from config.settings import DB_PATH
+
+    prior = season - 1
+    conn = sqlite3.connect(str(DB_PATH))
+
+    rankings = {}  # {pos: {defense_team: avg_fp_allowed}}
+    for pos in ["QB", "RB", "WR", "TE"]:
+        # FP allowed when team is away defense (opponent scores at home)
+        away = conn.execute("""
+            SELECT s.away_team as defense, AVG(pws.fantasy_points) as fp
+            FROM player_weekly_stats pws
+            JOIN players p ON pws.player_id = p.player_id
+            JOIN schedule s ON pws.season = s.season AND pws.week = s.week
+                AND pws.team = s.home_team
+            WHERE pws.season = ? AND p.position = ?
+            GROUP BY s.away_team
+        """, (prior, pos)).fetchall()
+
+        # FP allowed when team is home defense
+        home = conn.execute("""
+            SELECT s.home_team as defense, AVG(pws.fantasy_points) as fp
+            FROM player_weekly_stats pws
+            JOIN players p ON pws.player_id = p.player_id
+            JOIN schedule s ON pws.season = s.season AND pws.week = s.week
+                AND pws.team = s.away_team
+            WHERE pws.season = ? AND p.position = ?
+            GROUP BY s.home_team
+        """, (prior, pos)).fetchall()
+
+        # Combine home + away
+        from collections import defaultdict
+        totals = defaultdict(list)
+        for team, fp in away + home:
+            if team:
+                totals[team].append(fp)
+
+        avgs = {team: sum(fps) / len(fps) for team, fps in totals.items() if fps}
+        # Rank: 1 = most FP allowed (easiest), 32 = least (hardest)
+        sorted_teams = sorted(avgs.items(), key=lambda x: -x[1])
+        rankings[pos] = {team: rank + 1 for rank, (team, _) in enumerate(sorted_teams)}
+
+    conn.close()
+
+    # Build per-team summary: {team: {QB: rank, RB: rank, ...}}
+    all_teams = set()
+    for pos_ranks in rankings.values():
+        all_teams.update(pos_ranks.keys())
+
+    result = {}
+    for team in all_teams:
+        result[team] = {}
+        for pos in ["QB", "RB", "WR", "TE"]:
+            result[team][pos] = rankings[pos].get(team, 16)
+
+    return result
+
+
+# NFL divisions (fixed — each team plays 6 games vs division rivals)
+NFL_DIVISIONS = {
+    "BUF": ["MIA", "NE", "NYJ"], "MIA": ["BUF", "NE", "NYJ"],
+    "NE": ["BUF", "MIA", "NYJ"], "NYJ": ["BUF", "MIA", "NE"],
+    "BAL": ["CIN", "CLE", "PIT"], "CIN": ["BAL", "CLE", "PIT"],
+    "CLE": ["BAL", "CIN", "PIT"], "PIT": ["BAL", "CIN", "CLE"],
+    "HOU": ["IND", "JAX", "TEN"], "IND": ["HOU", "JAX", "TEN"],
+    "JAX": ["HOU", "IND", "TEN"], "TEN": ["HOU", "IND", "JAX"],
+    "DEN": ["KC", "LAC", "LV"], "KC": ["DEN", "LAC", "LV"],
+    "LAC": ["DEN", "KC", "LV"], "LV": ["DEN", "KC", "LAC"],
+    "DAL": ["NYG", "PHI", "WAS"], "NYG": ["DAL", "PHI", "WAS"],
+    "PHI": ["DAL", "NYG", "WAS"], "WAS": ["DAL", "NYG", "PHI"],
+    "CHI": ["DET", "GB", "MIN"], "DET": ["CHI", "GB", "MIN"],
+    "GB": ["CHI", "DET", "MIN"], "MIN": ["CHI", "DET", "GB"],
+    "ATL": ["CAR", "NO", "TB"], "CAR": ["ATL", "NO", "TB"],
+    "NO": ["ATL", "CAR", "TB"], "TB": ["ATL", "CAR", "NO"],
+    "ARI": ["LAR", "SEA", "SF"], "LAR": ["ARI", "SEA", "SF"],
+    "SEA": ["ARI", "LAR", "SF"], "SF": ["ARI", "LAR", "SEA"],
+}
+
+
+def compute_sos_adjustment(
+    player_team: str, position: str, defense_rankings: dict
+) -> tuple[float, str]:
+    """Compute SOS multiplier from division rival defense quality.
+
+    6 of 17 games are against division rivals (known before schedule).
+    Average their defense rank at this position → SOS proxy.
+    """
+    rivals = NFL_DIVISIONS.get(player_team, [])
+    if not rivals or not defense_rankings:
+        return 1.0, ""
+
+    rival_ranks = []
+    for rival in rivals:
+        rank = defense_rankings.get(rival, {}).get(position)
+        if rank is not None:
+            rival_ranks.append(rank)
+
+    if not rival_ranks:
+        return 1.0, ""
+
+    avg_rank = sum(rival_ranks) / len(rival_ranks)
+    # avg_rank 1-10 = easy division, 11-22 = neutral, 23-32 = tough
+    if avg_rank <= 10:
+        mult = 1.03
+        label = "Easy div"
+    elif avg_rank >= 23:
+        mult = 0.97
+        label = "Hard div"
+    else:
+        return 1.0, ""
+
+    return mult, label
+
+
 def check_data_sources(season: int) -> list[dict]:
     """Check which data sources are available for a season.
 
@@ -574,21 +694,25 @@ def build_board_data(season: int):
 
     # Build normalized lookup for usage roles (first_initial, last_name, pos) -> role
     # because DB names are "T.McBride" but ADP names are "Trey McBride"
-    def _norm_key(name, pos):
+    SUFFIXES = {"jr", "sr", "ii", "iii", "iv", "v", "jr."}
+
+    def _norm_key(name, pos=None):
         name = name.strip()
-        if "." in name:
+        if "." in name and " " not in name:
+            # Abbreviated: "T.McBride"
             parts = name.split(".")
             initial = parts[0].strip()[0].lower() if parts[0].strip() else ""
             last = parts[-1].strip().lower()
         else:
+            # Full: "James Cook III" or "Travis Etienne Jr."
             parts = name.split()
             initial = parts[0][0].lower() if parts else ""
-            last = parts[-1].lower() if parts else ""
-        # Strip suffixes like Jr, II, III, IV
-        for suf in (" jr", " sr", " ii", " iii", " iv", " v"):
-            if last.endswith(suf):
-                last = last[:-len(suf)].strip()
-        return (initial, "".join(c for c in last if c.isalnum()), pos)
+            # Walk backwards past suffixes to find the real last name
+            idx = len(parts) - 1
+            while idx > 0 and parts[idx].lower().rstrip(".") in SUFFIXES:
+                idx -= 1
+            last = parts[idx].lower() if idx >= 0 else ""
+        return (initial, "".join(c for c in last if c.isalnum()))
 
     usage_roles = {}  # normalized key -> role data
     for name, data in raw_usage_roles.items():
@@ -616,10 +740,11 @@ def build_board_data(season: int):
                 proj_role_map[sr.name] = f"{pos}{rank}"
 
     # Compute projection adjustments
-    print("  Computing adjustments (age, team changes, usage trends)...")
+    print("  Computing adjustments (age, team changes, usage trends, SOS)...")
     age_adj = compute_age_adjustments(season)
     team_change_adj = compute_team_changes(season)
     trend_adj = compute_usage_trends(season)
+    def_rankings = compute_defense_rankings(season)
 
     # Serialize board for JS
     players = []
@@ -672,6 +797,14 @@ def build_board_data(season: int):
                 else:
                     adj_reasons.append(f"Usage {tr['slope']:.0f}")
                 break
+
+        # Strength of schedule (division rival defense quality)
+        sos_mult, sos_label = compute_sos_adjustment(
+            sr.team, sr.position, def_rankings
+        )
+        if sos_mult != 1.0:
+            adj_mult *= sos_mult
+            adj_reasons.append(sos_label)
 
         adjusted_proj = round(raw_proj * adj_mult, 1)
         adj_pct = round((adj_mult - 1.0) * 100)
