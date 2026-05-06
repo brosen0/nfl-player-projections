@@ -614,19 +614,6 @@ tr.fade td{{background:#fef3f2}}
 .btn-undo:hover{{background:#ffcdd2}}
 .empty{{text-align:center;color:#888;padding:24px;font-size:0.9rem}}
 .footer{{text-align:center;padding:24px 16px;color:#aaa;font-size:0.7rem}}
-.sources-grid{{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:8px}}
-.src-item{{
-  display:flex;align-items:center;gap:10px;padding:10px 14px;
-  border-radius:8px;background:#f8f9fa;font-size:0.85rem;
-}}
-.src-dot{{
-  width:10px;height:10px;border-radius:50%;flex-shrink:0;
-}}
-.src-dot.available{{background:#43a047}}
-.src-dot.partial{{background:#f9a825}}
-.src-dot.unavailable{{background:#ccc}}
-.src-name{{font-weight:600;flex:1}}
-.src-detail{{font-size:0.75rem;color:#888}}
 @media(max-width:600px){{
   .draft-state{{grid-template-columns:1fr}}
   table{{font-size:0.8rem}}
@@ -663,7 +650,6 @@ function renderTabs(){{
   t.innerHTML=[
     ["rankings","Rankings"],
     ["companion","Draft Companion"],
-    ["sources","Data Sources"],
   ].map(([k,l])=>`<button class="tab ${{view===k?"active":""}}" onclick="view='${{k}}';render()">${{l}}</button>`).join("");
 }}
 
@@ -708,6 +694,17 @@ function renderRankings(){{
       <span style="font-size:1.3rem;font-weight:700">${{v.acc}}%</span>
       <span style="font-size:0.9rem;color:#555"> ${{label}} accuracy when model disagrees with ADP by 10+ ranks (${{v.wins}}/${{v.n}})</span>
     </div>`;
+  }}
+
+  // Data sources checklist
+  const src=META.sources||[];
+  if(src.length){{
+    h+=`<div style="display:flex;flex-wrap:wrap;gap:6px 14px;font-size:0.75rem;color:#888;margin-bottom:12px;padding:0 2px">`;
+    for(const s of src){{
+      const icon=s.status==="available"?"\\u2705":s.status==="partial"?"\\u26A0\\uFE0F":"\\u2B1C";
+      h+=`<span>${{icon}} ${{s.name}}</span>`;
+    }}
+    h+=`</div>`;
   }}
 
   h+=renderPills();
@@ -921,54 +918,6 @@ function undoPick(id){{
   }}
 }}
 
-// Data sources
-function renderSources(){{
-  const sources=META.sources||[];
-  const avail=sources.filter(s=>s.status==="available").length;
-  const total=sources.length;
-  let h="";
-
-  h+=`<div class="card" style="text-align:center;padding:14px">
-    <span style="font-size:1.3rem;font-weight:700">${{avail}}/${{total}}</span>
-    <span style="font-size:0.9rem;color:#555"> data sources available for ${{META.season}} projections</span>
-  </div>`;
-
-  h+=`<div class="card">
-    <div style="font-weight:600;margin-bottom:12px">Projection Data Sources</div>
-    <div class="sources-grid">`;
-
-  for(const s of sources){{
-    h+=`<div class="src-item">
-      <span class="src-dot ${{s.status}}"></span>
-      <div>
-        <div class="src-name">${{s.name}}</div>
-        <div class="src-detail">${{s.detail}}</div>
-      </div>
-    </div>`;
-  }}
-
-  h+=`</div></div>`;
-
-  // Explanation
-  const missing=sources.filter(s=>s.status==="unavailable");
-  if(missing.length){{
-    h+=`<div class="card" style="border-left:4px solid #f9a825;background:#fffde7">
-      <div style="font-weight:600;margin-bottom:6px">What this means</div>
-      <div style="font-size:0.85rem;color:#555;line-height:1.6">
-        Rankings are based on available data only. Missing sources reduce projection accuracy:
-        <ul style="margin:8px 0 0;padding-left:20px">`;
-    for(const m of missing){{
-      h+=`<li><strong>${{m.name}}</strong> &mdash; ${{m.detail}}</li>`;
-    }}
-    h+=`</ul>
-        <div style="margin-top:8px">Re-run <code style="background:#f5f5f5;padding:2px 6px;border-radius:3px;font-size:0.8rem">python scripts/generate_dashboard_html.py</code> after new data becomes available to refresh.</div>
-      </div>
-    </div>`;
-  }}
-
-  return h;
-}}
-
 // Render
 function render(){{
   renderTabs();
@@ -977,8 +926,7 @@ function render(){{
     el.innerHTML=renderRankings();
     renderTable();
   }}
-  else if(view==="companion")el.innerHTML=renderCompanion();
-  else el.innerHTML=renderSources();
+  else el.innerHTML=renderCompanion();
 }}
 
 render();
