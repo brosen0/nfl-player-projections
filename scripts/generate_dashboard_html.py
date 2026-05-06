@@ -186,7 +186,7 @@ def build_board_data(season: int):
     # Serialize board for JS
     players = []
     for i, sr in enumerate(spread_results):
-        if sr.ecr > 200:
+        if sr.ecr > 300:
             continue
         players.append({
             "id": i,
