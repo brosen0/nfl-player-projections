@@ -270,16 +270,15 @@ def load_preseason_projections(season: int, adp_df: pd.DataFrame = None) -> pd.D
         prior_df["pred_total"] = prior_df["model_rank_value"]
         prior_df = prior_df.drop(columns=["ppg"])
 
-    # Add rookies/unmatched ADP players with ECR-implied projections
+    # Add rookies/unmatched ADP players
     if adp_df is not None and not adp_df.empty:
-        # Typical per-game FP by position at various ECR tiers (rough curves)
-        # These are historical averages for players drafted at each ECR range
+        # Try to use draft capital data for rookies
+        draft_capital = _load_draft_capital(season)
+
         def _ecr_to_ppg(ecr: float, pos: str) -> float:
-            """Convert ECR rank to estimated PPG based on positional curves."""
-            # Top-tier players by position
+            """Fallback: ECR rank to estimated PPG for undrafted players."""
             baselines = {"QB": 20.0, "RB": 14.0, "WR": 12.0, "TE": 10.0}
             base = baselines.get(pos, 10.0)
-            # Decay: higher ECR = lower PPG, with diminishing returns
             return max(base * (50.0 / (ecr + 30.0)), 1.0)
 
         matched_names = set()
@@ -293,16 +292,22 @@ def load_preseason_projections(season: int, adp_df: pd.DataFrame = None) -> pd.D
         for _, r in adp_df.iterrows():
             key = (_first_initial(r["name"]), _normalize(_last_token(r["name"])), r["position"])
             if key not in matched_names:
-                ppg = _ecr_to_ppg(r["ecr"], r["position"])
+                # Check if we have draft capital for this player
+                dc = draft_capital.get(key)
+                if dc:
+                    proj = dc["proj"]
+                else:
+                    proj = _ecr_to_ppg(r["ecr"], r["position"]) * 17
+
                 rookie_rows.append({
                     "player_id": f"rookie_{r['name']}_{r['position']}",
                     "name": r["name"],
                     "position": r["position"],
                     "team": r.get("team", ""),
-                    "pred_total": ppg * 17,
+                    "pred_total": proj,
                     "actual_total": 0.0,
                     "weeks": 0,
-                    "model_rank_value": ppg * 17,
+                    "model_rank_value": proj,
                 })
 
         if rookie_rows:
@@ -310,6 +315,55 @@ def load_preseason_projections(season: int, adp_df: pd.DataFrame = None) -> pd.D
             prior_df = pd.concat([prior_df, rookies_df], ignore_index=True)
 
     return prior_df
+
+
+def _load_draft_capital(season: int) -> dict:
+    """Load draft picks for a season and return {(initial, last, pos): {round, proj}}."""
+    draft_path = Path(__file__).resolve().parent.parent / "data" / "draft_picks.parquet"
+    if not draft_path.exists():
+        return {}
+
+    dp = pd.read_parquet(draft_path)
+    cls = dp[(dp["season"] == season) & (dp["position"].isin(["QB", "RB", "WR", "TE"]))]
+    if cls.empty:
+        return {}
+
+    # Build historical rookie curve
+    curve = _build_rookie_curve(dp)
+
+    result = {}
+    for _, r in cls.iterrows():
+        key = (_first_initial(r["pfr_player_name"]), _normalize(_last_token(r["pfr_player_name"])), r["position"])
+        rnd = int(r["round"])
+        proj = curve.get((r["position"], rnd), 50.0)
+        result[key] = {"round": rnd, "proj": proj}
+    return result
+
+
+def _build_rookie_curve(dp: pd.DataFrame, seasons=range(2020, 2025)) -> dict:
+    """Build (position, round) → avg rookie season FP from historical data."""
+    from src.utils.database import DatabaseManager
+    skill = dp[
+        (dp["position"].isin(["QB", "RB", "WR", "TE"]))
+        & (dp["season"].isin(seasons))
+        & (dp["gsis_id"].notna())
+    ]
+    with DatabaseManager()._get_connection() as conn:
+        curves = {}
+        for pos in ["QB", "RB", "WR", "TE"]:
+            for rnd in range(1, 8):
+                picks = skill[(skill["position"] == pos) & (skill["round"] == rnd)]
+                fps = []
+                for _, r in picks.iterrows():
+                    row = conn.execute(
+                        "SELECT SUM(fantasy_points) FROM player_weekly_stats "
+                        "WHERE player_id=? AND season=?",
+                        (r["gsis_id"], int(r["season"])),
+                    ).fetchone()
+                    if row[0] and row[0] > 0:
+                        fps.append(row[0])
+                curves[(pos, rnd)] = round(sum(fps) / len(fps), 1) if fps else 50.0
+    return curves
 
 
 def _apply_vorp(agg: pd.DataFrame, basis_col: str = "pred_total") -> pd.Series:

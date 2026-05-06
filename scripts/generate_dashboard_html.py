@@ -38,6 +38,62 @@ from scripts.draft_advisor import (
 )
 
 SITE_DIR = PROJECT_ROOT / "_site"
+DRAFT_PICKS_PATH = PROJECT_ROOT / "data" / "draft_picks.parquet"
+
+# PFR team codes → standard codes used in the rest of the system
+PFR_TEAM_MAP = {
+    "GNB": "GB", "KAN": "KC", "LVR": "LV", "NOR": "NO",
+    "NWE": "NE", "SFO": "SF", "TAM": "TB",
+}
+
+
+def load_draft_class(season: int) -> pd.DataFrame:
+    """Load draft picks for a season from parquet, normalize team codes."""
+    if not DRAFT_PICKS_PATH.exists():
+        return pd.DataFrame()
+    dp = pd.read_parquet(DRAFT_PICKS_PATH)
+    cls = dp[(dp["season"] == season) & (dp["position"].isin(["QB", "RB", "WR", "TE"]))].copy()
+    if cls.empty:
+        return cls
+    cls["team"] = cls["team"].map(lambda t: PFR_TEAM_MAP.get(t, t))
+    cls = cls.rename(columns={"pfr_player_name": "name"})
+    return cls[["name", "position", "team", "round", "pick"]].reset_index(drop=True)
+
+
+def build_rookie_projection_curve(seasons: range = range(2020, 2025)) -> dict:
+    """Build position+round → expected season FP from historical data."""
+    import sqlite3
+    from config.settings import DB_PATH
+
+    if not DRAFT_PICKS_PATH.exists():
+        return {}
+
+    dp = pd.read_parquet(DRAFT_PICKS_PATH)
+    skill = dp[
+        (dp["position"].isin(["QB", "RB", "WR", "TE"]))
+        & (dp["season"].isin(seasons))
+        & (dp["gsis_id"].notna())
+    ]
+
+    conn = sqlite3.connect(str(DB_PATH))
+    curves: dict = {}  # (pos, round) -> avg_fp
+
+    for pos in ["QB", "RB", "WR", "TE"]:
+        for rnd in range(1, 8):
+            picks = skill[(skill["position"] == pos) & (skill["round"] == rnd)]
+            fps = []
+            for _, r in picks.iterrows():
+                row = conn.execute(
+                    "SELECT SUM(fantasy_points) FROM player_weekly_stats "
+                    "WHERE player_id=? AND season=?",
+                    (r["gsis_id"], int(r["season"])),
+                ).fetchone()
+                if row[0] and row[0] > 0:
+                    fps.append(row[0])
+            curves[(pos, rnd)] = round(sum(fps) / len(fps), 1) if fps else 0
+
+    conn.close()
+    return curves
 
 
 def check_data_sources(season: int) -> list[dict]:
@@ -214,9 +270,10 @@ def build_team_tendencies(season: int) -> dict:
 
 
 def build_usage_roles(season: int) -> dict:
-    """Build player roles from actual usage data (targets, snaps, carries)."""
+    """Build player roles from actual usage data + rookie draft capital."""
     import sqlite3
     from config.settings import DB_PATH
+    from collections import defaultdict
 
     prior = season - 1
     conn = sqlite3.connect(str(DB_PATH))
@@ -240,7 +297,6 @@ def build_usage_roles(season: int) -> dict:
 
     conn.close()
 
-    from collections import defaultdict
     team_pos = defaultdict(lambda: defaultdict(list))
     for team, name, pos, tgt, carries, snaps, rec, games in rows:
         team_pos[team][pos].append({
@@ -250,17 +306,37 @@ def build_usage_roles(season: int) -> dict:
             "snaps": snaps or 0,
             "receptions": rec or 0,
             "games": games,
+            "is_rookie": False,
+            "draft_round": 0,
+        })
+
+    # Inject rookies from draft class into their teams
+    draft_class = load_draft_class(season)
+    rookie_curve = build_rookie_projection_curve()
+    for _, rk in draft_class.iterrows():
+        team = rk["team"]
+        pos = rk["position"]
+        rnd = int(rk["round"])
+        # Estimate usage from draft capital — Round 1 gets starter-level usage
+        est_fp = rookie_curve.get((pos, rnd), 50)
+        team_pos[team][pos].append({
+            "name": rk["name"],
+            "targets": est_fp * 0.3 if pos != "RB" else est_fp * 0.1,
+            "carries": est_fp * 0.5 if pos == "RB" else 0,
+            "snaps": est_fp * 10,
+            "receptions": 0,
+            "games": 0,
+            "is_rookie": True,
+            "draft_round": rnd,
         })
 
     # Rank within team+position by primary usage metric
-    roles = {}  # name -> {role, target_share, snap_pct, usage_note}
+    roles = {}
     for team, positions in team_pos.items():
-        # Compute team totals for share calculations
         team_targets = sum(p["targets"] for pos_list in positions.values() for p in pos_list)
         team_carries = sum(p["carries"] for pos_list in positions.values() for p in pos_list)
 
         for pos, players in positions.items():
-            # Sort by primary metric: QB/WR/TE by targets+snaps, RB by carries+targets
             if pos == "RB":
                 players.sort(key=lambda x: -(x["carries"] + x["targets"]))
             else:
@@ -270,8 +346,9 @@ def build_usage_roles(season: int) -> dict:
                 tgt_share = round(p["targets"] / team_targets * 100) if team_targets else 0
                 carry_share = round(p["carries"] / team_carries * 100) if team_carries else 0
 
-                # Usage note
-                if pos == "RB":
+                if p["is_rookie"]:
+                    note = f"Rookie R{p['draft_round']}"
+                elif pos == "RB":
                     if carry_share >= 60:
                         note = "Bellcow"
                     elif carry_share >= 35:
@@ -289,7 +366,7 @@ def build_usage_roles(season: int) -> dict:
                         note = "Rotational"
                     else:
                         note = "Depth"
-                else:  # QB
+                else:
                     note = "Starter" if rank == 1 else "Backup"
 
                 roles[p["name"]] = {
