@@ -188,7 +188,7 @@ function renderPills(){
 function setSort(col){
   if(sortCol===col)sortAsc=!sortAsc;
   else{sortCol=col;sortAsc=col==="mr"||col==="ecr";}
-  render();
+  renderTable();
 }
 
 function sorted(arr){
@@ -222,9 +222,15 @@ function renderRankings(){
   h+=renderPills();
 
   // Search
-  h+=`<input class="search-box" placeholder="Search players..." value="${searchQ}" oninput="searchQ=this.value;render()">`;
+  h+=`<input class="search-box" id="searchInput" placeholder="Search players..." value="${searchQ}" oninput="searchQ=this.value;renderTable()">`;
 
-  // Table
+  // Table container — updated independently so search box keeps focus
+  h+=`<div id="tableArea"></div>`;
+
+  return h;
+}
+
+function buildTableHTML(){
   let players=filterPos(BOARD);
   if(searchQ){
     const q=searchQ.toLowerCase();
@@ -235,7 +241,7 @@ function renderRankings(){
   const arrow=c=>sortCol===c?(sortAsc?"\u25B2":"\u25BC"):"";
   const actH=META.has_actuals?`<th class="num" onclick="setSort('act')">Actual ${arrow("act")}</th><th onclick="setSort('w')">Hit? ${arrow("w")}</th>`:"";
 
-  h+=`<div class="card" style="padding:0;overflow-x:auto"><table>
+  let h=`<div class="card" style="padding:0;overflow-x:auto"><table>
     <tr>
       <th onclick="setSort('mr')">Rank ${arrow("mr")}</th>
       <th>Player</th>
@@ -277,6 +283,11 @@ function renderRankings(){
   </div>`;
 
   return h;
+}
+
+function renderTable(){
+  const el=document.getElementById("tableArea");
+  if(el)el.innerHTML=buildTableHTML();
 }
 
 // Draft companion
@@ -455,7 +466,10 @@ function renderSources(){
 function render(){
   renderTabs();
   const el=document.getElementById("main");
-  if(view==="rankings")el.innerHTML=renderRankings();
+  if(view==="rankings"){
+    el.innerHTML=renderRankings();
+    renderTable();
+  }
   else if(view==="companion")el.innerHTML=renderCompanion();
   else el.innerHTML=renderSources();
 }
