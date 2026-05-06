@@ -160,6 +160,146 @@ def check_data_sources(season: int) -> list[dict]:
     return sources
 
 
+def build_team_tendencies(season: int) -> dict:
+    """Build team-level rushing/passing tendency vectors from prior season."""
+    import sqlite3
+    from config.settings import DB_PATH
+
+    prior = season - 1
+    conn = sqlite3.connect(str(DB_PATH))
+
+    rows = conn.execute("""
+        SELECT team,
+               SUM(rushing_attempts) as rush_att,
+               SUM(passing_attempts) as pass_att,
+               SUM(rushing_yards) as rush_yd,
+               SUM(passing_yards) as pass_yd,
+               SUM(targets) as total_targets
+        FROM player_weekly_stats
+        WHERE season = ? AND team IS NOT NULL AND team != ''
+        GROUP BY team
+    """, (prior,)).fetchall()
+
+    teams = {}
+    for team, rush_att, pass_att, rush_yd, pass_yd, total_tgt in rows:
+        rush_att = rush_att or 0
+        pass_att = pass_att or 0
+        total = rush_att + pass_att
+        if total == 0:
+            continue
+        teams[team] = {
+            "rush_pct": round(rush_att / total * 100),
+            "pass_pct": round(pass_att / total * 100),
+            "rush_yd": round(rush_yd or 0),
+            "pass_yd": round(pass_yd or 0),
+            "rush_att": round(rush_att),
+            "pass_att": round(pass_att),
+        }
+
+    # Classify tendency
+    for t in teams.values():
+        if t["rush_pct"] >= 45:
+            t["tendency"] = "Run-heavy"
+        elif t["rush_pct"] >= 40:
+            t["tendency"] = "Balanced"
+        elif t["rush_pct"] >= 35:
+            t["tendency"] = "Pass-lean"
+        else:
+            t["tendency"] = "Pass-heavy"
+
+    conn.close()
+    return teams
+
+
+def build_usage_roles(season: int) -> dict:
+    """Build player roles from actual usage data (targets, snaps, carries)."""
+    import sqlite3
+    from config.settings import DB_PATH
+
+    prior = season - 1
+    conn = sqlite3.connect(str(DB_PATH))
+
+    rows = conn.execute("""
+        SELECT pws.team, p.name, p.position,
+               SUM(pws.targets) as total_targets,
+               SUM(pws.rushing_attempts) as total_carries,
+               SUM(pws.snap_count) as total_snaps,
+               SUM(pws.receptions) as total_rec,
+               COUNT(DISTINCT pws.week) as games
+        FROM player_weekly_stats pws
+        JOIN players p ON pws.player_id = p.player_id
+        WHERE pws.season = ?
+          AND p.position IN ('QB', 'RB', 'WR', 'TE')
+          AND pws.team IS NOT NULL AND pws.team != ''
+        GROUP BY pws.team, pws.player_id
+        HAVING games >= 4
+        ORDER BY pws.team, total_snaps DESC
+    """, (prior,)).fetchall()
+
+    conn.close()
+
+    from collections import defaultdict
+    team_pos = defaultdict(lambda: defaultdict(list))
+    for team, name, pos, tgt, carries, snaps, rec, games in rows:
+        team_pos[team][pos].append({
+            "name": name,
+            "targets": tgt or 0,
+            "carries": carries or 0,
+            "snaps": snaps or 0,
+            "receptions": rec or 0,
+            "games": games,
+        })
+
+    # Rank within team+position by primary usage metric
+    roles = {}  # name -> {role, target_share, snap_pct, usage_note}
+    for team, positions in team_pos.items():
+        # Compute team totals for share calculations
+        team_targets = sum(p["targets"] for pos_list in positions.values() for p in pos_list)
+        team_carries = sum(p["carries"] for pos_list in positions.values() for p in pos_list)
+
+        for pos, players in positions.items():
+            # Sort by primary metric: QB/WR/TE by targets+snaps, RB by carries+targets
+            if pos == "RB":
+                players.sort(key=lambda x: -(x["carries"] + x["targets"]))
+            else:
+                players.sort(key=lambda x: -(x["targets"] + x["snaps"]))
+
+            for rank, p in enumerate(players, 1):
+                tgt_share = round(p["targets"] / team_targets * 100) if team_targets else 0
+                carry_share = round(p["carries"] / team_carries * 100) if team_carries else 0
+
+                # Usage note
+                if pos == "RB":
+                    if carry_share >= 60:
+                        note = "Bellcow"
+                    elif carry_share >= 35:
+                        note = "Lead back"
+                    elif carry_share >= 20:
+                        note = "Committee"
+                    else:
+                        note = "Backup"
+                elif pos in ("WR", "TE"):
+                    if tgt_share >= 20:
+                        note = "Alpha"
+                    elif tgt_share >= 12:
+                        note = "Starter"
+                    elif tgt_share >= 6:
+                        note = "Rotational"
+                    else:
+                        note = "Depth"
+                else:  # QB
+                    note = "Starter" if rank == 1 else "Backup"
+
+                roles[p["name"]] = {
+                    "role": f"{pos}{rank}",
+                    "tgt_share": tgt_share,
+                    "carry_share": carry_share,
+                    "usage": note,
+                }
+
+    return roles
+
+
 def build_board_data(season: int):
     """Build the full draft board with spread, VORP, and projections."""
     adp_df = load_adp_board(season)
@@ -200,22 +340,52 @@ def build_board_data(season: int):
             tier_num = (rank - 1) // tier_size + 1
             pos_rank_map[sr.name] = (rank, f"{pos}{tier_num}")
 
-    # Team role: rank players within their NFL team by projection
+    # Real usage-based roles from prior season play-by-play
+    raw_usage_roles = build_usage_roles(season)
+    team_tendencies = build_team_tendencies(season)
+
+    # Build normalized lookup for usage roles (first_initial, last_name, pos) -> role
+    # because DB names are "T.McBride" but ADP names are "Trey McBride"
+    def _norm_key(name, pos):
+        name = name.strip()
+        if "." in name:
+            parts = name.split(".")
+            initial = parts[0].strip()[0].lower() if parts[0].strip() else ""
+            last = parts[-1].strip().lower()
+        else:
+            parts = name.split()
+            initial = parts[0][0].lower() if parts else ""
+            last = parts[-1].lower() if parts else ""
+        # Strip suffixes like Jr, II, III, IV
+        for suf in (" jr", " sr", " ii", " iii", " iv", " v"):
+            if last.endswith(suf):
+                last = last[:-len(suf)].strip()
+        return (initial, "".join(c for c in last if c.isalnum()), pos)
+
+    usage_roles = {}  # normalized key -> role data
+    for name, data in raw_usage_roles.items():
+        pos = data["role"][:2]
+        key = _norm_key(name, pos)
+        # Keep the one with higher usage
+        existing = usage_roles.get(key)
+        if existing is None or (data["tgt_share"] + data["carry_share"]) > (existing["tgt_share"] + existing["carry_share"]):
+            usage_roles[key] = data
+
+    # Fallback: projection-based role for players with no prior-season data
     team_groups = {}
     for sr in spread_results:
         if sr.ecr > 300:
             continue
         team_groups.setdefault(sr.team, []).append(sr)
-    team_role_map = {}  # name -> role label (e.g. "WR1 on CIN")
+    proj_role_map = {}
     for team, group in team_groups.items():
-        # Rank within team by position
         team_pos = {}
         for sr in group:
             team_pos.setdefault(sr.position, []).append(sr)
         for pos, pos_players in team_pos.items():
             pos_players.sort(key=lambda s: -s.model_projection)
             for rank, sr in enumerate(pos_players, 1):
-                team_role_map[sr.name] = f"{pos}{rank}"
+                proj_role_map[sr.name] = f"{pos}{rank}"
 
     # Serialize board for JS
     players = []
@@ -223,7 +393,23 @@ def build_board_data(season: int):
         if sr.ecr > 300:
             continue
         pos_rank, tier = pos_rank_map.get(sr.name, (999, f"{sr.position}?"))
-        team_role = team_role_map.get(sr.name, "")
+
+        # Use real usage role if available, else projection-based
+        ur = usage_roles.get(_norm_key(sr.name, sr.position))
+        if ur:
+            team_role = ur["role"]
+            usage_note = ur["usage"]
+            tgt_share = ur["tgt_share"]
+            carry_share = ur["carry_share"]
+        else:
+            team_role = proj_role_map.get(sr.name, "")
+            usage_note = "Rookie" if "rookie_" in str(sr.name).lower() else "Proj"
+            tgt_share = 0
+            carry_share = 0
+
+        # Team tendency
+        tt = team_tendencies.get(sr.team, {})
+
         players.append({
             "id": i,
             "n": sr.name,
@@ -237,6 +423,12 @@ def build_board_data(season: int):
             "tier": tier,
             "pr": pos_rank,
             "role": team_role,
+            "usage": usage_note,
+            "ts": tgt_share,
+            "cs": carry_share,
+            "tt": tt.get("tendency", ""),
+            "trp": tt.get("rush_pct", 0),
+            "tpp": tt.get("pass_pct", 0),
             "act": round(sr.actual_total, 1) if has_actuals else None,
             "w": sr.model_wins if has_actuals else None,
         })
@@ -380,6 +572,20 @@ tr.fade td{{background:#fef3f2}}
 .tier-2{{background:#fff8e1;color:#f57f17}}
 .tier-3{{background:#f5f5f5;color:#888}}
 .role-badge{{font-weight:600;font-size:0.8rem}}
+.usage-tag{{
+  display:inline-block;padding:1px 6px;border-radius:3px;
+  font-size:0.65rem;font-weight:500;margin-left:4px;
+}}
+.usage-elite{{background:#e8f5e9;color:#2e7d32}}
+.usage-solid{{background:#e3f2fd;color:#1565c0}}
+.usage-other{{background:#f5f5f5;color:#888}}
+.tend-tag{{
+  display:inline-block;padding:1px 5px;border-radius:3px;
+  font-size:0.6rem;font-weight:500;margin-left:2px;
+}}
+.tend-run{{background:#fff3e0;color:#e65100}}
+.tend-pass{{background:#e8eaf6;color:#283593}}
+.tend-bal{{background:#f5f5f5;color:#666}}
 .slot-picker{{
   display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:14px;
 }}
@@ -547,7 +753,7 @@ function buildTableHTML(){{
   let players=filterPos(BOARD);
   if(searchQ){{
     const q=searchQ.toLowerCase();
-    players=players.filter(p=>p.n.toLowerCase().includes(q)||p.t.toLowerCase().includes(q)||p.tier.toLowerCase()===q||(p.role&&p.role.toLowerCase().includes(q)));
+    players=players.filter(p=>p.n.toLowerCase().includes(q)||p.t.toLowerCase().includes(q)||p.tier.toLowerCase()===q||(p.role&&p.role.toLowerCase().includes(q))||(p.usage&&p.usage.toLowerCase().includes(q))||(p.tt&&p.tt.toLowerCase().includes(q)));
   }}
   players=sorted(players);
 
@@ -561,6 +767,7 @@ function buildTableHTML(){{
       <th>Pos</th>
       <th onclick="setSort('tier')">Tier ${{arrow("tier")}}</th>
       <th>Role</th>
+      <th>Team</th>
       <th class="num" onclick="setSort('ecr')">ADP ${{arrow("ecr")}}</th>
       <th class="num" onclick="setSort('sp')">Spread ${{arrow("sp")}}</th>
       <th class="num" onclick="setSort('proj')">Proj ${{arrow("proj")}}</th>
@@ -569,6 +776,8 @@ function buildTableHTML(){{
     </tr>`;
 
   const tierCls=t=>{{const n=parseInt(t.slice(-1));return n===1?"tier-1":n===2?"tier-2":"tier-3"}};
+  const usageCls=u=>u==="Bellcow"||u==="Alpha"?"usage-elite":u==="Lead back"||u==="Starter"?"usage-solid":"usage-other";
+  const tendCls=t=>t==="Run-heavy"?"tend-run":t==="Pass-heavy"?"tend-pass":"tend-bal";
 
   for(const p of players){{
     const spCls=p.sp>5?"spread-pos":p.sp<-5?"spread-neg":"";
@@ -579,14 +788,22 @@ function buildTableHTML(){{
       const hitCls=p.w?"spread-pos":"spread-neg";
       actCells=`<td class="num">${{p.act}}</td><td class="${{hitCls}}">${{p.w?"Yes":"No"}}</td>`;
     }}
-    const roleNum=p.role?p.role.slice(-1):"";
-    const roleIcon=roleNum==="1"?"star":roleNum==="2"?"":"";
+    const shareStr=p.p==="RB"&&p.cs?p.cs+"% car":p.ts?p.ts+"% tgt":"";
     h+=`<tr class="${{rowCls}}">
       <td class="num">${{p.mr}}</td>
       <td style="font-weight:500">${{p.n}}</td>
       <td><span class="pos pos-${{p.p}}">${{p.p}}</span></td>
       <td><span class="tier-badge ${{tierCls(p.tier)}}">${{p.tier}}</span></td>
-      <td><span class="role-badge">${{p.role||""}}</span> <span style="color:#aaa;font-size:0.75rem">${{p.t}}</span></td>
+      <td>
+        <span class="role-badge">${{p.role||""}}</span>
+        <span class="usage-tag ${{usageCls(p.usage)}}">${{p.usage||""}}</span>
+        ${{shareStr?`<span style="color:#999;font-size:0.7rem;display:block">${{shareStr}}</span>`:""}}
+      </td>
+      <td>
+        <span style="font-weight:500">${{p.t}}</span>
+        ${{p.tt?`<span class="tend-tag ${{tendCls(p.tt)}}">${{p.tt}}</span>`:""}}
+        ${{p.trp?`<span style="color:#999;font-size:0.7rem;display:block">${{p.trp}}/${{p.tpp}}</span>`:""}}
+      </td>
       <td class="num">${{p.ecr}}</td>
       <td class="num ${{spCls}}">${{spStr}}</td>
       <td class="num">${{p.proj}}</td>
