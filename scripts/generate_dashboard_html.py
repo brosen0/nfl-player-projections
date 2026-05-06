@@ -110,6 +110,23 @@ AGE_CURVES = {
 
 TEAM_CHANGE_PENALTY = {"QB": 0.10, "RB": 0.05, "WR": 0.12, "TE": 0.08}
 
+# Regression to mean: how much of a career year is retained next season
+# From 2020-2025 analysis of 102 career-year player-seasons
+REGRESSION_RETAIN = {"QB": 0.833, "RB": 0.748, "WR": 0.763, "TE": 0.774}
+CAREER_YEAR_THRESHOLD = 0.30  # 30% above career avg = career year
+
+# Injury availability → games multiplier (from r=0.57 historical analysis)
+# Key: (low_avail, high_avail) → multiplier vs baseline 13.85 GP
+AVAILABILITY_CURVE = [
+    (0.00, 0.40, 0.363),
+    (0.40, 0.50, 0.534),
+    (0.50, 0.60, 0.651),
+    (0.60, 0.70, 0.721),
+    (0.70, 0.80, 0.821),
+    (0.80, 0.90, 0.935),
+    (0.90, 1.01, 1.000),  # healthy baseline
+]
+
 
 def compute_age_adjustments(season: int) -> dict:
     """Return {normalized_name_key: {age, multiplier}} for players with birth dates."""
@@ -244,6 +261,218 @@ def compute_usage_trends(season: int) -> dict:
                 "metric": metric,
                 "mult": mult,
             }
+    return result
+
+
+def compute_injury_risk(season: int) -> dict:
+    """Discount projections based on 3-year games-played availability.
+
+    Returns {player_name: {avail_rate, expected_gp, mult}}.
+    """
+    import sqlite3
+    from config.settings import DB_PATH
+
+    conn = sqlite3.connect(str(DB_PATH))
+    prior_seasons = (season - 3, season - 2, season - 1)
+
+    rows = conn.execute("""
+        SELECT p.name, p.position,
+               COUNT(DISTINCT pws.season || ':' || pws.week) as total_games,
+               COUNT(DISTINCT pws.season) as seasons_active
+        FROM player_weekly_stats pws
+        JOIN players p ON pws.player_id = p.player_id
+        WHERE pws.season IN (?, ?, ?)
+          AND p.position IN ('QB','RB','WR','TE')
+          AND pws.fantasy_points > 0
+        GROUP BY pws.player_id
+        HAVING seasons_active >= 2
+    """, prior_seasons).fetchall()
+
+    conn.close()
+
+    result = {}
+    for name, pos, total_games, seasons_active in rows:
+        possible_games = seasons_active * 17
+        avail_rate = total_games / possible_games if possible_games > 0 else 1.0
+
+        # Look up multiplier from availability curve
+        mult = 1.0
+        for low, high, m in AVAILABILITY_CURVE:
+            if low <= avail_rate < high:
+                mult = m
+                break
+
+        if mult >= 0.99:
+            continue  # healthy player, no discount
+
+        # Cap at 0.65 — don't discount more than 35% for injury alone
+        mult = max(0.65, mult)
+        expected_gp = round(mult * 17, 1)
+        result[name] = {
+            "avail_rate": round(avail_rate, 2),
+            "expected_gp": expected_gp,
+            "mult": round(mult, 3),
+        }
+
+    return result
+
+
+def compute_breakout_candidates(season: int) -> dict:
+    """Identify players with efficiency + volume + snap share momentum.
+
+    Only flags players where all three signals align (reduces false positives).
+    Returns {player_name: {eff_change, vol_change, mult}}.
+    """
+    import sqlite3
+    from config.settings import DB_PATH
+
+    prior = season - 1
+    prior2 = season - 2
+    conn = sqlite3.connect(str(DB_PATH))
+
+    # Per-touch efficiency and volume for two seasons
+    rows = conn.execute("""
+        SELECT p.name, p.position, pws.season,
+               SUM(pws.targets) + SUM(pws.rushing_attempts) as touches,
+               SUM(pws.fantasy_points) as total_fp,
+               COUNT(DISTINCT pws.week) as games,
+               AVG(CASE WHEN pws.week > 9 THEN pws.snap_share END) as late_snap
+        FROM player_weekly_stats pws
+        JOIN players p ON pws.player_id = p.player_id
+        WHERE pws.season IN (?, ?)
+          AND p.position IN ('RB','WR','TE')
+          AND pws.fantasy_points > 0
+        GROUP BY pws.player_id, pws.season
+        HAVING games >= 8 AND touches >= 40
+    """, (prior2, prior)).fetchall()
+
+    conn.close()
+
+    # Group by player
+    from collections import defaultdict
+    player_data = defaultdict(dict)
+    for name, pos, yr, touches, fp, games, late_snap in rows:
+        player_data[name][yr] = {
+            "pos": pos,
+            "touches": touches,
+            "fp": fp,
+            "eff": fp / touches if touches > 0 else 0,
+            "games": games,
+            "late_snap": late_snap or 0,
+        }
+
+    result = {}
+    for name, seasons in player_data.items():
+        if prior not in seasons or prior2 not in seasons:
+            continue
+
+        cur = seasons[prior]
+        prev = seasons[prior2]
+
+        if prev["eff"] <= 0:
+            continue
+
+        eff_change = (cur["eff"] - prev["eff"]) / prev["eff"]
+        vol_change = (cur["touches"] - prev["touches"]) / prev["touches"] if prev["touches"] > 0 else 0
+
+        # Both must align:
+        # 1. Efficiency improved 15%+
+        # 2. Volume stable or growing (>= -10%)
+        if eff_change >= 0.15 and vol_change >= -0.10:
+            # Conservative boost — only +5% since 75% of efficiency jumps revert
+            # But combined signals have higher persistence (~45%)
+            mult = 1.05
+            result[name] = {
+                "eff_change": round(eff_change * 100),
+                "vol_change": round(vol_change * 100),
+                "mult": mult,
+            }
+
+    return result
+
+
+def compute_regression_adjustments(season: int) -> dict:
+    """Identify career-year players who should regress.
+
+    Compares most recent season PPG to 3-year career avg.
+    If recent season was CAREER_YEAR_THRESHOLD above career avg,
+    apply position-specific regression multiplier.
+
+    Returns {player_name: {career_ppg, recent_ppg, pct_above, mult}}.
+    """
+    import sqlite3
+    from config.settings import DB_PATH
+
+    prior = season - 1
+    conn = sqlite3.connect(str(DB_PATH))
+
+    # Get per-season PPG for each player over the last 4 seasons
+    rows = conn.execute("""
+        SELECT p.name, p.position, pws.season,
+               AVG(pws.fantasy_points) as ppg,
+               COUNT(DISTINCT pws.week) as games
+        FROM player_weekly_stats pws
+        JOIN players p ON pws.player_id = p.player_id
+        WHERE pws.season BETWEEN ? AND ?
+          AND p.position IN ('QB','RB','WR','TE')
+          AND pws.fantasy_points > 0
+        GROUP BY pws.player_id, pws.season
+        HAVING games >= 6
+    """, (prior - 3, prior)).fetchall()
+
+    conn.close()
+
+    # Group by player
+    from collections import defaultdict
+    player_seasons = defaultdict(list)
+    player_pos = {}
+    for name, pos, season_yr, ppg, games in rows:
+        player_seasons[name].append((season_yr, ppg, games))
+        player_pos[name] = pos
+
+    result = {}
+    for name, seasons_data in player_seasons.items():
+        if len(seasons_data) < 2:
+            continue
+
+        pos = player_pos[name]
+        if pos not in REGRESSION_RETAIN:
+            continue
+
+        # Most recent season
+        seasons_data.sort(key=lambda x: x[0])
+        recent_season, recent_ppg, _ = seasons_data[-1]
+        if recent_season != prior:
+            continue  # player didn't play last season
+
+        # Career avg from prior seasons (excluding most recent)
+        prior_ppgs = [ppg for yr, ppg, _ in seasons_data if yr < recent_season]
+        if not prior_ppgs:
+            continue
+        career_ppg = sum(prior_ppgs) / len(prior_ppgs)
+
+        if career_ppg <= 0:
+            continue
+
+        pct_above = (recent_ppg - career_ppg) / career_ppg
+        if pct_above < CAREER_YEAR_THRESHOLD:
+            continue
+
+        # Apply regression: project next year as blend between
+        # career_year * retain_rate and career_avg * 1.17
+        retain = REGRESSION_RETAIN[pos]
+        # The multiplier represents how much to discount the raw projection
+        # Raw proj is based on recent season. Regression pulls it toward career avg.
+        mult = retain + (1.0 - retain) * (career_ppg / recent_ppg)
+        mult = max(0.6, min(1.0, mult))
+
+        result[name] = {
+            "career_ppg": round(career_ppg, 1),
+            "recent_ppg": round(recent_ppg, 1),
+            "pct_above": round(pct_above * 100),
+            "mult": round(mult, 3),
+        }
+
     return result
 
 
@@ -744,6 +973,9 @@ def build_board_data(season: int):
     age_adj = compute_age_adjustments(season)
     team_change_adj = compute_team_changes(season)
     trend_adj = compute_usage_trends(season)
+    regression_adj = compute_regression_adjustments(season)
+    injury_adj = compute_injury_risk(season)
+    breakout_adj = compute_breakout_candidates(season)
     def_rankings = compute_defense_rankings(season)
 
     # Serialize board for JS
@@ -797,6 +1029,36 @@ def build_board_data(season: int):
                 else:
                     adj_reasons.append(f"Usage {tr['slope']:.0f}")
                 break
+
+        # Regression to mean — career-year players regress
+        ra = None
+        for rname, rdata in regression_adj.items():
+            if _norm_key(rname) == _norm_key(sr.name):
+                ra = rdata
+                break
+        if ra:
+            adj_mult *= ra["mult"]
+            adj_reasons.append(f"Regress {ra['pct_above']}%yr")
+
+        # Injury risk — discount based on 3-year availability
+        ia = None
+        for iname, idata in injury_adj.items():
+            if _norm_key(iname) == _norm_key(sr.name):
+                ia = idata
+                break
+        if ia:
+            adj_mult *= ia["mult"]
+            adj_reasons.append(f"Inj {ia['expected_gp']:.0f}g")
+
+        # Breakout detection — efficiency + volume + snap share momentum
+        ba = None
+        for bname, bdata in breakout_adj.items():
+            if _norm_key(bname) == _norm_key(sr.name):
+                ba = bdata
+                break
+        if ba:
+            adj_mult *= ba["mult"]
+            adj_reasons.append(f"Breakout +{ba['eff_change']}%eff")
 
         # Strength of schedule (division rival defense quality)
         sos_mult, sos_label = compute_sos_adjustment(
