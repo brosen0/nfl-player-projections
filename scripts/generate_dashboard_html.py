@@ -96,6 +96,157 @@ def build_rookie_projection_curve(seasons: range = range(2020, 2025)) -> dict:
     return curves
 
 
+# ------------------------------------------------------------------
+# Projection adjustments (age, team change, usage trend)
+# ------------------------------------------------------------------
+
+# Position-specific aging: (decline_start_age, pct_per_year)
+AGE_CURVES = {
+    "QB": (37, 0.03),
+    "RB": (27, 0.05),
+    "WR": (30, 0.04),
+    "TE": (31, 0.03),
+}
+
+TEAM_CHANGE_PENALTY = {"QB": 0.10, "RB": 0.05, "WR": 0.12, "TE": 0.08}
+
+
+def compute_age_adjustments(season: int) -> dict:
+    """Return {normalized_name_key: {age, multiplier}} for players with birth dates."""
+    try:
+        import nfl_data_py as nfl
+        rosters = nfl.import_seasonal_rosters([season - 1])
+    except Exception:
+        return {}
+
+    if "birth_date" not in rosters.columns or "position" not in rosters.columns:
+        return {}
+
+    from datetime import datetime
+    season_start = datetime(season, 9, 1)
+    result = {}
+    for _, r in rosters.iterrows():
+        pos = r.get("position")
+        if pos not in AGE_CURVES or pd.isna(r.get("birth_date")):
+            continue
+        try:
+            bd = pd.to_datetime(r["birth_date"])
+            age = (season_start - bd).days / 365.25
+        except Exception:
+            continue
+
+        decline_start, rate = AGE_CURVES[pos]
+        if age > decline_start:
+            years_over = age - decline_start
+            mult = max(0.5, 1.0 - rate * years_over)
+        else:
+            mult = 1.0
+
+        name = r.get("player_name") or r.get("name") or ""
+        if not name:
+            continue
+        result[name] = {"age": round(age, 1), "mult": round(mult, 3)}
+
+    return result
+
+
+def compute_team_changes(season: int) -> dict:
+    """Return {player_name: {from_team, to_team, multiplier}} for players who changed teams."""
+    import sqlite3
+    from config.settings import DB_PATH
+
+    prior = season - 1
+    prior2 = season - 2
+    conn = sqlite3.connect(str(DB_PATH))
+
+    rows = conn.execute("""
+        SELECT p.name, p.position, a.team AS team_old, b.team AS team_new
+        FROM (
+            SELECT player_id, team, COUNT(*) as gp
+            FROM player_weekly_stats WHERE season = ?
+            GROUP BY player_id
+            HAVING gp >= 4
+        ) a
+        JOIN (
+            SELECT player_id, team, COUNT(*) as gp
+            FROM player_weekly_stats WHERE season = ?
+            GROUP BY player_id
+            HAVING gp >= 4
+        ) b ON a.player_id = b.player_id
+        JOIN players p ON a.player_id = p.player_id
+        WHERE a.team != b.team
+          AND a.team != '' AND b.team != ''
+          AND p.position IN ('QB','RB','WR','TE')
+    """, (prior2, prior)).fetchall()
+
+    conn.close()
+
+    result = {}
+    for name, pos, old_team, new_team in rows:
+        penalty = TEAM_CHANGE_PENALTY.get(pos, 0.05)
+        result[name] = {
+            "from": old_team,
+            "to": new_team,
+            "mult": round(1.0 - penalty, 2),
+        }
+    return result
+
+
+def compute_usage_trends(season: int) -> dict:
+    """Return {player_name: {early, late, slope, multiplier}} based on late-season usage."""
+    import sqlite3
+    from config.settings import DB_PATH
+
+    prior = season - 1
+    conn = sqlite3.connect(str(DB_PATH))
+
+    rows = conn.execute("""
+        SELECT p.name, p.position,
+               AVG(CASE WHEN pws.week <= 9 THEN pws.targets END) as early_tgt,
+               AVG(CASE WHEN pws.week > 9 THEN pws.targets END) as late_tgt,
+               AVG(CASE WHEN pws.week <= 9 THEN pws.rushing_attempts END) as early_car,
+               AVG(CASE WHEN pws.week > 9 THEN pws.rushing_attempts END) as late_car
+        FROM player_weekly_stats pws
+        JOIN players p ON pws.player_id = p.player_id
+        WHERE pws.season = ? AND p.position IN ('QB','RB','WR','TE')
+        GROUP BY pws.player_id
+        HAVING COUNT(*) >= 8
+    """, (prior,)).fetchall()
+
+    conn.close()
+
+    result = {}
+    for name, pos, early_tgt, late_tgt, early_car, late_car in rows:
+        # RBs use carries, others use targets
+        if pos == "RB":
+            early = early_car or 0
+            late = late_car or 0
+            metric = "carries"
+        else:
+            early = early_tgt or 0
+            late = late_tgt or 0
+            metric = "targets"
+
+        slope = late - early
+
+        if slope >= 2.0:
+            mult = 1.05
+        elif slope <= -2.0:
+            mult = 0.92
+        else:
+            mult = 1.0
+
+        if mult != 1.0:
+            result[name] = {
+                "early": round(early, 1),
+                "late": round(late, 1),
+                "slope": round(slope, 1),
+                "metric": metric,
+                "mult": mult,
+            }
+    return result
+
+
 def check_data_sources(season: int) -> list[dict]:
     """Check which data sources are available for a season.
 
@@ -464,6 +615,12 @@ def build_board_data(season: int):
             for rank, sr in enumerate(pos_players, 1):
                 proj_role_map[sr.name] = f"{pos}{rank}"
 
+    # Compute projection adjustments
+    print("  Computing adjustments (age, team changes, usage trends)...")
+    age_adj = compute_age_adjustments(season)
+    team_change_adj = compute_team_changes(season)
+    trend_adj = compute_usage_trends(season)
+
     # Serialize board for JS
     players = []
     for i, sr in enumerate(spread_results):
@@ -485,6 +642,40 @@ def build_board_data(season: int):
         # Team tendency
         tt = team_tendencies.get(sr.team, {})
 
+        # Apply adjustments
+        raw_proj = sr.model_projection
+        adj_mult = 1.0
+        adj_reasons = []
+        player_age = None
+
+        # Age — match by full name or normalized
+        aa = age_adj.get(sr.name)
+        if aa:
+            player_age = aa["age"]
+            if aa["mult"] < 1.0:
+                adj_mult *= aa["mult"]
+                adj_reasons.append(f"Age {aa['age']:.0f}")
+
+        # Team change — match by DB name via norm key
+        for tc_name, tc in team_change_adj.items():
+            if _norm_key(tc_name, sr.position) == _norm_key(sr.name, sr.position):
+                adj_mult *= tc["mult"]
+                adj_reasons.append(f"New team")
+                break
+
+        # Usage trend — match by DB name via norm key
+        for tr_name, tr in trend_adj.items():
+            if _norm_key(tr_name, sr.position) == _norm_key(sr.name, sr.position):
+                adj_mult *= tr["mult"]
+                if tr["slope"] > 0:
+                    adj_reasons.append(f"Usage +{tr['slope']:.0f}")
+                else:
+                    adj_reasons.append(f"Usage {tr['slope']:.0f}")
+                break
+
+        adjusted_proj = round(raw_proj * adj_mult, 1)
+        adj_pct = round((adj_mult - 1.0) * 100)
+
         players.append({
             "id": i,
             "n": sr.name,
@@ -493,7 +684,11 @@ def build_board_data(season: int):
             "ecr": round(sr.ecr, 1),
             "mr": sr.model_rank,
             "sp": sr.rank_spread,
-            "proj": round(sr.model_projection, 1),
+            "proj": adjusted_proj,
+            "rawProj": round(raw_proj, 1),
+            "adjPct": adj_pct,
+            "adjR": ", ".join(adj_reasons) if adj_reasons else "",
+            "age": player_age,
             "vorp": round(vorp_map.get(sr.name, 0), 1),
             "role": team_role,
             "usage": usage_note,
@@ -833,6 +1028,7 @@ function buildTableHTML(){{
       <th class="num" onclick="setSort('ecr')">ADP ${{arrow("ecr")}}</th>
       <th class="num" onclick="setSort('sp')">Spread ${{arrow("sp")}}</th>
       <th class="num" onclick="setSort('proj')">Proj ${{arrow("proj")}}</th>
+      <th class="num" onclick="setSort('adjPct')">Adj ${{arrow("adjPct")}}</th>
       <th class="num" onclick="setSort('vorp')">VORP ${{arrow("vorp")}}</th>
       ${{actH}}
     </tr>`;
@@ -867,6 +1063,7 @@ function buildTableHTML(){{
       <td class="num">${{p.ecr}}</td>
       <td class="num ${{spCls}}">${{spStr}}</td>
       <td class="num">${{p.proj}}</td>
+      <td class="num">${{p.adjPct?`<span class="${{p.adjPct>0?"spread-pos":"spread-neg"}}" title="${{p.adjR}}">${{p.adjPct>0?"+":""}}${{p.adjPct}}%</span>`:""}}${{p.adjR?`<span style="display:block;font-size:0.65rem;color:#999">${{p.adjR}}</span>`:""}}</td>
       <td class="num">${{p.vorp}}</td>
       ${{actCells}}
     </tr>`;
