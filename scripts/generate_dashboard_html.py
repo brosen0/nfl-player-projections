@@ -323,23 +323,6 @@ def build_board_data(season: int):
 
     has_actuals = csv is not None
 
-    # Position tiers: rank within position by projection, assign tier
-    # QB1=top 12, RB1=top 12, WR1=top 12, TE1=top 12, then 2/3/etc
-    TIER_SIZE = {"QB": 12, "RB": 12, "WR": 12, "TE": 12}
-    pos_groups = {}
-    for sr in spread_results:
-        if sr.ecr > 300:
-            continue
-        pos_groups.setdefault(sr.position, []).append(sr)
-    # Sort each group by model projection descending
-    pos_rank_map = {}  # name -> (pos_rank, tier_label)
-    for pos, group in pos_groups.items():
-        group.sort(key=lambda s: -s.model_projection)
-        tier_size = TIER_SIZE.get(pos, 12)
-        for rank, sr in enumerate(group, 1):
-            tier_num = (rank - 1) // tier_size + 1
-            pos_rank_map[sr.name] = (rank, f"{pos}{tier_num}")
-
     # Real usage-based roles from prior season play-by-play
     raw_usage_roles = build_usage_roles(season)
     team_tendencies = build_team_tendencies(season)
@@ -392,8 +375,6 @@ def build_board_data(season: int):
     for i, sr in enumerate(spread_results):
         if sr.ecr > 300:
             continue
-        pos_rank, tier = pos_rank_map.get(sr.name, (999, f"{sr.position}?"))
-
         # Use real usage role if available, else projection-based
         ur = usage_roles.get(_norm_key(sr.name, sr.position))
         if ur:
@@ -420,8 +401,6 @@ def build_board_data(season: int):
             "sp": sr.rank_spread,
             "proj": round(sr.model_projection, 1),
             "vorp": round(vorp_map.get(sr.name, 0), 1),
-            "tier": tier,
-            "pr": pos_rank,
             "role": team_role,
             "usage": usage_note,
             "ts": tgt_share,
@@ -564,13 +543,6 @@ tr.fade td{{background:#fef3f2}}
 .pos-WR{{background:#1e88e5}}.pos-TE{{background:#f9a825;color:#333}}
 .spread-pos{{color:#2e7d32;font-weight:600}}
 .spread-neg{{color:#c62828;font-weight:600}}
-.tier-badge{{
-  display:inline-block;padding:2px 8px;border-radius:4px;
-  font-size:0.75rem;font-weight:600;
-}}
-.tier-1{{background:#e8f5e9;color:#2e7d32}}
-.tier-2{{background:#fff8e1;color:#f57f17}}
-.tier-3{{background:#f5f5f5;color:#888}}
 .role-badge{{font-weight:600;font-size:0.8rem}}
 .usage-tag{{
   display:inline-block;padding:1px 6px;border-radius:3px;
@@ -753,7 +725,7 @@ function buildTableHTML(){{
   let players=filterPos(BOARD);
   if(searchQ){{
     const q=searchQ.toLowerCase();
-    players=players.filter(p=>p.n.toLowerCase().includes(q)||p.t.toLowerCase().includes(q)||p.tier.toLowerCase()===q||(p.role&&p.role.toLowerCase().includes(q))||(p.usage&&p.usage.toLowerCase().includes(q))||(p.tt&&p.tt.toLowerCase().includes(q)));
+    players=players.filter(p=>p.n.toLowerCase().includes(q)||p.t.toLowerCase().includes(q)||(p.role&&p.role.toLowerCase().includes(q))||(p.usage&&p.usage.toLowerCase().includes(q))||(p.tt&&p.tt.toLowerCase().includes(q)));
   }}
   players=sorted(players);
 
@@ -765,7 +737,6 @@ function buildTableHTML(){{
       <th onclick="setSort('mr')">Rank ${{arrow("mr")}}</th>
       <th>Player</th>
       <th>Pos</th>
-      <th onclick="setSort('tier')">Tier ${{arrow("tier")}}</th>
       <th>Role</th>
       <th>Team</th>
       <th class="num" onclick="setSort('ecr')">ADP ${{arrow("ecr")}}</th>
@@ -775,7 +746,6 @@ function buildTableHTML(){{
       ${{actH}}
     </tr>`;
 
-  const tierCls=t=>{{const n=parseInt(t.slice(-1));return n===1?"tier-1":n===2?"tier-2":"tier-3"}};
   const usageCls=u=>u==="Bellcow"||u==="Alpha"?"usage-elite":u==="Lead back"||u==="Starter"?"usage-solid":"usage-other";
   const tendCls=t=>t==="Run-heavy"?"tend-run":t==="Pass-heavy"?"tend-pass":"tend-bal";
 
@@ -793,7 +763,6 @@ function buildTableHTML(){{
       <td class="num">${{p.mr}}</td>
       <td style="font-weight:500">${{p.n}}</td>
       <td><span class="pos pos-${{p.p}}">${{p.p}}</span></td>
-      <td><span class="tier-badge ${{tierCls(p.tier)}}">${{p.tier}}</span></td>
       <td>
         <span class="role-badge">${{p.role||""}}</span>
         <span class="usage-tag ${{usageCls(p.usage)}}">${{p.usage||""}}</span>
