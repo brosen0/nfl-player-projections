@@ -16,6 +16,8 @@ import json
 import sys
 from pathlib import Path
 
+import pandas as pd
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
@@ -308,7 +310,26 @@ def build_board_data(season: int):
     if csv:
         projections = load_model_projections(csv, ranking="season_sum", season=season)
     else:
-        projections = load_preseason_projections(season, adp_df=adp_df)
+        # No backtest for this season yet — use prior season's ML predictions
+        # as the projection basis (much better than raw PPG * 17),
+        # then fill in rookies/unmatched with ECR-implied projections
+        prior_csv = _latest_predictions_csv(season - 1)
+        if prior_csv:
+            ml_proj = load_model_projections(
+                prior_csv, ranking="season_sum", season=season - 1
+            )
+            ml_proj["actual_total"] = 0.0
+            # Merge with preseason projections for rookies
+            fallback = load_preseason_projections(season, adp_df=adp_df)
+            if not fallback.empty:
+                # Keep ML projections, add rookies not in ML set
+                ml_names = set(ml_proj["name"].tolist())
+                rookies = fallback[~fallback["name"].isin(ml_names)]
+                projections = pd.concat([ml_proj, rookies], ignore_index=True)
+            else:
+                projections = ml_proj
+        else:
+            projections = load_preseason_projections(season, adp_df=adp_df)
 
     board = build_draft_board(adp_df, projections)
     spread_results = compute_spread(board)
