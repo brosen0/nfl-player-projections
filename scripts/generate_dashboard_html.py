@@ -1000,7 +1000,7 @@ def build_board_data(season: int):
         tt = team_tendencies.get(sr.team, {})
 
         # Apply adjustments
-        raw_proj = sr.model_projection
+        raw_proj = sr.blended_projection
         adj_mult = 1.0
         adj_reasons = []
         player_age = None

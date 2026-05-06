@@ -212,6 +212,13 @@ class FeatureEngineer:
         # averages have little data.
         df = self._merge_preseason_ecr(df)
 
+        # v13 features: age, team change, availability, career year, Bayesian prior
+        df = self._add_age_curve_feature(df)
+        df = self._create_team_change_features(df)
+        df = self._add_availability_3yr(df)
+        df = self._add_career_year_flag(df)
+        df = self._add_bayesian_prior_ppg(df)
+
         # Impute NaN/inf
         df = self._impute_missing(df)
 
@@ -250,6 +257,94 @@ class FeatureEngineer:
         df["prev_season_ppg"] = df.groupby("player_id")["_tmp_season_ppg"].shift(1)
         df.drop(columns=["_tmp_season_ppg"], inplace=True, errors="ignore")
         df = self._apply_rookie_prior(df)
+        return df
+
+    def _add_age_curve_feature(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Add position-specific age curve (quadratic decline from peak)."""
+        from config.settings import AGE_CURVE_PARAMS
+        default_peak, default_coeff = 27, 0.005
+
+        if "age" in df.columns:
+            age = df["age"].fillna(26)
+        elif "season" in df.columns and "birth_year" in df.columns:
+            age = df["season"] - df["birth_year"]
+        else:
+            df["age_curve"] = 1.0
+            return df
+
+        if "position" in df.columns:
+            peak = df["position"].map(
+                {p: c["peak"] for p, c in AGE_CURVE_PARAMS.items()}
+            ).fillna(default_peak)
+            coeff = df["position"].map(
+                {p: c["coefficient"] for p, c in AGE_CURVE_PARAMS.items()}
+            ).fillna(default_coeff)
+        else:
+            peak, coeff = default_peak, default_coeff
+
+        df["age_curve"] = (1.0 - coeff * ((age - peak) ** 2)).clip(lower=0.3)
+        return df
+
+    def _add_availability_3yr(self, df: pd.DataFrame) -> pd.DataFrame:
+        """3-year games-played availability rate (shifted to avoid leakage)."""
+        if "player_id" not in df.columns or "season" not in df.columns:
+            df["availability_3yr"] = 1.0
+            return df
+
+        gp = (
+            df.groupby(["player_id", "season"])
+            .size()
+            .reset_index(name="gp")
+        )
+        gp["gp"] = gp["gp"].clip(upper=17)
+        gp = gp.sort_values(["player_id", "season"])
+
+        gp["gp_3yr"] = gp.groupby("player_id")["gp"].transform(
+            lambda x: x.shift(1).rolling(3, min_periods=1).sum()
+        )
+        gp["seasons_3yr"] = gp.groupby("player_id")["gp"].transform(
+            lambda x: x.shift(1).rolling(3, min_periods=1).count()
+        )
+        gp["availability_3yr"] = (
+            gp["gp_3yr"] / (gp["seasons_3yr"] * 17)
+        ).clip(0, 1.0).fillna(1.0)
+
+        avail_map = gp.set_index(["player_id", "season"])["availability_3yr"].to_dict()
+        df["availability_3yr"] = df.apply(
+            lambda r: avail_map.get((r.get("player_id"), r.get("season")), 1.0), axis=1
+        )
+        return df
+
+    def _add_career_year_flag(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Binary: 1 if player's prior season was 30%+ above career avg PPG."""
+        if "prev_season_ppg" not in df.columns or "player_id" not in df.columns:
+            df["career_year_flag"] = 0
+            return df
+
+        career_ppg = df.groupby("player_id")["prev_season_ppg"].transform(
+            lambda x: x.shift(1).expanding(min_periods=1).mean()
+        )
+        pct_above = (df["prev_season_ppg"] - career_ppg) / career_ppg.clip(lower=1.0)
+        df["career_year_flag"] = (pct_above >= 0.30).astype(int).fillna(0)
+        return df
+
+    def _add_bayesian_prior_ppg(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Shrink player PPG toward position average for thin-data players.
+
+        alpha = min(1.0, career_games / 34). Rookies (0 games) get pure
+        position average; 2+ year vets get their own PPG unaltered.
+        """
+        if "prev_season_ppg" not in df.columns or "position" not in df.columns:
+            df["bayesian_prior_ppg"] = 0.0
+            return df
+
+        pos_avg = df.groupby("position")["prev_season_ppg"].transform("mean")
+        career_games = df.groupby("player_id").cumcount()
+        alpha = (career_games / 34.0).clip(upper=1.0)
+
+        df["bayesian_prior_ppg"] = (
+            alpha * df["prev_season_ppg"] + (1 - alpha) * pos_avg
+        ).fillna(pos_avg).fillna(0.0)
         return df
 
     # Module-level cache for pre-season ECR (ADP).
@@ -395,6 +490,10 @@ class FeatureEngineer:
             "passing_attempts", "passing_tds",
             "yards_per_carry", "yards_per_target", "yards_per_attempt",
             "completion_pct",
+            # QB efficiency signals (from PBP, 2018+)
+            "pass_epa_per_play", "pass_success_rate",
+            "pass_wpa_per_play", "rush_epa_per_play",
+            "td_rate", "int_rate",
             # Position shares — computed in _create_base_features from
             # raw totals; roll3 of a same-week share is the leakage-
             # safe draftable signal (prior three games' average share).
@@ -428,9 +527,17 @@ class FeatureEngineer:
         new_cols["catch_rate"] = safe_divide(df["receptions"], df["targets"]) * 100
 
         # Advanced PBP efficiency (EPA/WPA per opportunity)
-        pass_plays = df.get("pass_plays", df.get("passing_attempts", pd.Series(0, index=df.index)))
-        rush_plays = df.get("rush_plays", df.get("rushing_attempts", pd.Series(0, index=df.index)))
-        recv_targets = df.get("recv_targets", df.get("targets", pd.Series(0, index=df.index)))
+        # Prefer pass_plays/rush_plays/recv_targets if populated; fall back to
+        # passing_attempts/rushing_attempts/targets when the PBP columns are empty.
+        pass_plays = df.get("pass_plays", pd.Series(0, index=df.index))
+        if pass_plays.sum() == 0 and "passing_attempts" in df.columns:
+            pass_plays = df["passing_attempts"]
+        rush_plays = df.get("rush_plays", pd.Series(0, index=df.index))
+        if rush_plays.sum() == 0 and "rushing_attempts" in df.columns:
+            rush_plays = df["rushing_attempts"]
+        recv_targets = df.get("recv_targets", pd.Series(0, index=df.index))
+        if recv_targets.sum() == 0 and "targets" in df.columns:
+            recv_targets = df["targets"]
         if "pass_epa" in df.columns:
             new_cols["pass_epa_per_play"] = safe_divide(df["pass_epa"], pass_plays)
         if "rush_epa" in df.columns:
@@ -2206,16 +2313,19 @@ class FeatureEngineer:
                 return df
             draft_df["raw_capital"] = draft_df["draft_pick"].apply(draft_capital_value_from_pick)
             draft_df = draft_df.drop_duplicates(subset=["player_id"], keep="first")
-            df = df.merge(
-                draft_df[["player_id", "draft_season", "raw_capital"]],
-                on="player_id", how="left",
-            )
+            # Use existing draft_season if already present (from season_long_features),
+            # otherwise merge it from draft_df to avoid _x/_y column conflicts.
+            merge_cols = ["player_id", "raw_capital"]
+            if "draft_season" not in df.columns:
+                merge_cols.insert(1, "draft_season")
+            df = df.merge(draft_df[merge_cols], on="player_id", how="left")
             # Decay: full value year 1, zero by year 6
-            years_since = df["season"] - df["draft_season"].fillna(df["season"])
+            draft_season_col = df["draft_season"] if "draft_season" in df.columns else df["season"]
+            years_since = df["season"] - draft_season_col.fillna(df["season"])
             df["draft_capital_value"] = (
                 df["raw_capital"].fillna(0.05) * (1.0 - 0.2 * years_since).clip(lower=0.0)
             )
-            df = df.drop(columns=["draft_season", "raw_capital"], errors="ignore")
+            df = df.drop(columns=["raw_capital"], errors="ignore")
         except Exception as e:
             print(f"  WARNING: Could not merge draft capital: {e}")
             df["draft_capital_value"] = 0.05

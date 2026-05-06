@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-05-02T02:08:18.177275",
+  "generated_at": "2026-05-06T08:18:38.815169",
   "train_seasons": [
     2006,
     2007,
@@ -23,30 +23,42 @@
   ],
   "status_by_position": {
     "QB": {
-      "hybrid_4w": "unexpected_error:cannot access local variable 'np' where it is not associated with a value",
-      "deep_18w": "unexpected_error:cannot access local variable 'np' where it is not associated with a value"
+      "hybrid_4w": "skipped_fast_mode",
+      "deep_18w": "skipped_fast_mode"
     },
     "RB": {
-      "hybrid_4w": "unexpected_error:cannot access local variable 'np' where it is not associated with a value",
-      "deep_18w": "unexpected_error:cannot access local variable 'np' where it is not associated with a value"
+      "hybrid_4w": "skipped_fast_mode",
+      "deep_18w": "skipped_fast_mode"
     },
     "WR": {
-      "hybrid_4w": "unexpected_error:cannot access local variable 'np' where it is not associated with a value",
-      "deep_18w": "unexpected_error:cannot access local variable 'np' where it is not associated with a value"
+      "hybrid_4w": "skipped_fast_mode",
+      "deep_18w": "skipped_fast_mode"
     },
     "TE": {
-      "hybrid_4w": "unexpected_error:cannot access local variable 'np' where it is not associated with a value",
-      "deep_18w": "unexpected_error:cannot access local variable 'np' where it is not associated with a value"
+      "hybrid_4w": "skipped_fast_mode",
+      "deep_18w": "skipped_fast_mode"
     }
   },
   "target_semantics": {
     "QB": {
-      "1w": "target_1w_or_target_util_1w_trainer_selected",
-      "4w": "target_util_4w_preferred_over_target_4w",
-      "18w": "target_util_18w_preferred_over_target_18w"
+      "1w": "component",
+      "4w": "component",
+      "18w": "component"
     },
-    "RB": {},
-    "WR": {},
-    "TE": {}
+    "RB": {
+      "1w": "component",
+      "4w": "component",
+      "18w": "component"
+    },
+    "WR": {
+      "1w": "component",
+      "4w": "component",
+      "18w": "component"
+    },
+    "TE": {
+      "1w": "component",
+      "4w": "component",
+      "18w": "component"
+    }
   }
 }

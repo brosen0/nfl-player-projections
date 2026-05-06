@@ -305,6 +305,8 @@ CAUSAL_FEATURES = {
         "ngs_rush_yards_over_expected_per_att_roll3_mean",
         "opp_fpts_allowed", "implied_team_total", "spread",
         "injury_score", "prev_season_ppg", "preseason_ecr",
+        "age_curve", "team_changed", "availability_3yr",
+        "career_year_flag", "bayesian_prior_ppg",
     ],
     "WR": [
         "target_share_pct_roll3_mean", "air_yards_share_pct_roll3_mean",
@@ -313,6 +315,8 @@ CAUSAL_FEATURES = {
         "ngs_avg_separation_roll3_mean",
         "opp_fpts_allowed", "implied_team_total", "spread",
         "injury_score", "prev_season_ppg", "preseason_ecr",
+        "age_curve", "team_changed", "availability_3yr",
+        "career_year_flag", "bayesian_prior_ppg",
     ],
     "TE": [
         "snap_share_pct_roll3_mean",
@@ -322,6 +326,8 @@ CAUSAL_FEATURES = {
         "ngs_avg_separation_roll3_mean",
         "opp_fpts_allowed", "implied_team_total", "spread",
         "injury_score", "prev_season_ppg", "preseason_ecr",
+        "age_curve", "team_changed", "availability_3yr",
+        "career_year_flag", "bayesian_prior_ppg",
     ],
     "QB": [
         # Volume (3-week rolling)
@@ -339,6 +345,8 @@ CAUSAL_FEATURES = {
         "opp_fpts_allowed", "implied_team_total", "spread",
         # Player context
         "injury_score", "prev_season_ppg", "preseason_ecr",
+        "age_curve", "team_changed", "availability_3yr",
+        "career_year_flag", "bayesian_prior_ppg",
     ],
 }
 
@@ -478,7 +486,7 @@ QB_TARGET_CHOICE_FILENAME = "qb_target_choice.json"
 
 # Feature set version: bump when feature_engineering adds/removes/renames model features.
 # Saved when training; checked when loading models. Mismatch triggers a retrain warning.
-FEATURE_VERSION = "12"  # v12: QB HistGBR with NaN-aware PBP features, 26 causal features, GBR for RB/WR/TE
+FEATURE_VERSION = "13"  # v13: age_curve, team_changed, availability_3yr, career_year_flag, bayesian_prior_ppg added to causal
 FEATURE_VERSION_FILENAME = "feature_version.txt"
 
 # =============================================================================

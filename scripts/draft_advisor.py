@@ -43,6 +43,9 @@ from scripts.snake_draft_sim import (
 
 RESULTS_DIR = PROJECT_ROOT / "data" / "backtest_results"
 
+# Blend weight for ADP vs model (empirically tuned on 2024+2025 backtests)
+ADP_BLEND_WEIGHT = 0.50
+
 
 # ====================================================================
 # Data helpers
@@ -97,10 +100,13 @@ class SpreadResult:
     rank_spread: int  # positive = model says undervalued
     model_projection: float
     adp_implied: float
+    blended_projection: float
     actual_total: float
     model_error: float
     adp_error: float
+    blended_error: float
     model_wins: bool
+    blended_wins: bool  # blended closer than both model and ADP
 
 
 def compute_spread(board: List[DraftPlayer]) -> List[SpreadResult]:
@@ -128,9 +134,13 @@ def compute_spread(board: List[DraftPlayer]) -> List[SpreadResult]:
         model_proj = p.pred_total
         actual = p.actual_total
 
+        blended = (1 - ADP_BLEND_WEIGHT) * model_proj + ADP_BLEND_WEIGHT * adp_implied
+
         model_error = abs(model_proj - actual) if actual > 0 else float("inf")
         adp_error = abs(adp_implied - actual) if actual > 0 and adp_implied > 0 else float("inf")
+        blended_error = abs(blended - actual) if actual > 0 and adp_implied > 0 else float("inf")
         model_wins = model_error < adp_error
+        blended_wins = blended_error < adp_error
 
         results.append(SpreadResult(
             name=p.name,
@@ -141,10 +151,13 @@ def compute_spread(board: List[DraftPlayer]) -> List[SpreadResult]:
             rank_spread=rank_spread,
             model_projection=model_proj,
             adp_implied=adp_implied,
+            blended_projection=blended,
             actual_total=actual,
             model_error=model_error,
             adp_error=adp_error,
+            blended_error=blended_error,
             model_wins=model_wins,
+            blended_wins=blended_wins,
         ))
 
     results.sort(key=lambda r: -abs(r.rank_spread))
@@ -166,11 +179,14 @@ def validate_spread_direction(
         return {"n": 0, "model_wins": 0, "accuracy": 0.0}
 
     wins = sum(1 for r in eligible if r.model_wins)
+    blended_wins = sum(1 for r in eligible if r.blended_wins)
     return {
         "n": len(eligible),
         "model_wins": wins,
         "adp_wins": len(eligible) - wins,
         "accuracy": wins / len(eligible),
+        "blended_wins": blended_wins,
+        "blended_accuracy": blended_wins / len(eligible),
     }
 
 

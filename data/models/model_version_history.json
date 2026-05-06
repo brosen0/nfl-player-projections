@@ -1,8 +1,16 @@
 [
   {
-    "training_date": "2026-02-14T23:12:04.956347",
-    "feature_version": "4",
+    "training_date": "2026-05-04T23:59:36.096882",
+    "feature_version": "12",
     "train_seasons": [
+      2006,
+      2007,
+      2008,
+      2009,
+      2010,
+      2011,
+      2012,
+      2013,
       2014,
       2015,
       2016,
@@ -22,86 +30,447 @@
       "WR",
       "TE"
     ],
-    "training_metrics": {
+    "oof_metrics": {},
+    "test_metrics": {
       "QB": {
-        "1w": {
-          "rmse": 12.121604889746694,
-          "mae": 9.339921383506173,
-          "r2": 0.5943927187658047
-        },
-        "4w": {
-          "rmse": 4.1846357657103,
-          "mae": 2.820296132084918,
-          "r2": 0.9317983409352009
-        },
-        "18w": {
-          "rmse": 4.235940743178481,
-          "mae": 3.0227702821199216,
-          "r2": 0.9095715586516137
+        "FP (component)": {
+          "rmse": 7.1210827903411404,
+          "mae": 5.849825315718142,
+          "r2": 0.08222188526202778,
+          "within_7pt_pct": 65.88050314465409,
+          "within_10pt_pct": 84.11949685534591,
+          "n_samples": 636,
+          "mape": 87.36604024350687,
+          "spearman_rho": 0.3435894407218346
         }
       },
       "RB": {
-        "1w": {
-          "rmse": 11.68224380708439,
-          "mae": 9.105209410370337,
-          "r2": 0.514782874033911
-        },
-        "4w": {
-          "rmse": 3.792237305717355,
-          "mae": 2.718796031764392,
-          "r2": 0.9235344382695583
-        },
-        "18w": {
-          "rmse": 3.9483591159158973,
-          "mae": 2.8828085693477767,
-          "r2": 0.8923403065885237
+        "FP (component)": {
+          "rmse": 6.934005758566835,
+          "mae": 5.319013795678619,
+          "r2": 0.2311632656172775,
+          "within_7pt_pct": 74.82698961937716,
+          "within_10pt_pct": 87.19723183391004,
+          "n_samples": 1156,
+          "mape": 76.51525525849189,
+          "spearman_rho": 0.48693270573451114
         }
       },
       "WR": {
-        "1w": {
-          "rmse": 7.138558363309689,
-          "mae": 4.5060047470753535,
-          "r2": 0.7717042696019097
-        },
-        "4w": {
-          "rmse": 2.0266378724474547,
-          "mae": 1.2765525485443245,
-          "r2": 0.9768750164780078
-        },
-        "18w": {
-          "rmse": 2.455457463531392,
-          "mae": 1.9159849818810109,
-          "r2": 0.9622232825543365
+        "FP (component)": {
+          "rmse": 5.7289619483658445,
+          "mae": 4.304655657248196,
+          "r2": 0.24458785046127907,
+          "within_7pt_pct": 82.84760170006071,
+          "within_10pt_pct": 92.1372191863995,
+          "n_samples": 3294,
+          "mape": 73.9198742829448,
+          "spearman_rho": 0.46480429322495775
         }
       },
       "TE": {
-        "1w": {
-          "rmse": 4.594309830538017,
-          "mae": 3.6088976351859405,
-          "r2": 0.7495861778876305
-        },
-        "4w": {
-          "rmse": 1.8389288514842295,
-          "mae": 1.428861836809203,
-          "r2": 0.9477070243597345
-        },
-        "18w": {
-          "rmse": 1.3055979253174606,
-          "mae": 0.8853128357956324,
-          "r2": 0.9666686497745277
+        "FP (component)": {
+          "rmse": 5.495903790016635,
+          "mae": 4.059079364596942,
+          "r2": 0.13717695250569595,
+          "within_7pt_pct": 84.65473145780051,
+          "within_10pt_pct": 92.8388746803069,
+          "n_samples": 391,
+          "mape": 71.36093944689071,
+          "spearman_rho": 0.4250292782019911
         }
       }
     },
     "n_features_per_position": {
-      "QB": 50,
-      "RB": 50,
-      "WR": 50,
-      "TE": 50
+      "QB": 17,
+      "RB": 14,
+      "WR": 13,
+      "TE": 13
     },
-    "previous_training_date": null,
-    "previous_feature_version": null,
-    "rollback_available": false,
-    "n_rollback_versions": 0,
+    "previous_training_date": "2026-05-04T23:55:47.967519",
+    "previous_feature_version": "12",
+    "rollback_available": true,
+    "n_rollback_versions": 5,
+    "horizon_status_file": "/Users/benrosen/nfl-player-projections/data/models/horizon_model_status.json",
+    "bounded_scaler_file": "/Users/benrosen/nfl-player-projections/data/models/feature_scaler_bounded.joblib"
+  },
+  {
+    "training_date": "2026-05-05T00:07:13.258284",
+    "feature_version": "12",
+    "train_seasons": [
+      2006,
+      2007,
+      2008,
+      2009,
+      2010,
+      2011,
+      2012,
+      2013,
+      2014,
+      2015,
+      2016,
+      2017,
+      2018,
+      2019,
+      2020,
+      2021,
+      2022,
+      2023,
+      2024
+    ],
+    "test_season": 2025,
+    "positions_trained": [
+      "QB",
+      "RB",
+      "WR",
+      "TE"
+    ],
+    "oof_metrics": {},
+    "test_metrics": {
+      "QB": {
+        "FP (component)": {
+          "rmse": 7.262266696320465,
+          "mae": 6.086131566756933,
+          "r2": 0.04546904953957742,
+          "within_7pt_pct": 63.83647798742138,
+          "within_10pt_pct": 80.81761006289308,
+          "n_samples": 636,
+          "mape": 96.34878207644022,
+          "spearman_rho": 0.3283413254327459
+        }
+      },
+      "RB": {
+        "FP (component)": {
+          "rmse": 6.934005758566835,
+          "mae": 5.319013795678619,
+          "r2": 0.2311632656172775,
+          "within_7pt_pct": 74.82698961937716,
+          "within_10pt_pct": 87.19723183391004,
+          "n_samples": 1156,
+          "mape": 76.51525525849189,
+          "spearman_rho": 0.48693270573451114
+        }
+      },
+      "WR": {
+        "FP (component)": {
+          "rmse": 5.7289619483658445,
+          "mae": 4.304655657248196,
+          "r2": 0.24458785046127907,
+          "within_7pt_pct": 82.84760170006071,
+          "within_10pt_pct": 92.1372191863995,
+          "n_samples": 3294,
+          "mape": 73.9198742829448,
+          "spearman_rho": 0.46480429322495775
+        }
+      },
+      "TE": {
+        "FP (component)": {
+          "rmse": 5.495903790016635,
+          "mae": 4.059079364596942,
+          "r2": 0.13717695250569595,
+          "within_7pt_pct": 84.65473145780051,
+          "within_10pt_pct": 92.8388746803069,
+          "n_samples": 391,
+          "mape": 71.36093944689071,
+          "spearman_rho": 0.4250292782019911
+        }
+      }
+    },
+    "n_features_per_position": {
+      "QB": 17,
+      "RB": 14,
+      "WR": 13,
+      "TE": 13
+    },
+    "previous_training_date": "2026-05-04T23:59:36.096882",
+    "previous_feature_version": "12",
+    "rollback_available": true,
+    "n_rollback_versions": 5,
+    "horizon_status_file": "/Users/benrosen/nfl-player-projections/data/models/horizon_model_status.json",
+    "bounded_scaler_file": "/Users/benrosen/nfl-player-projections/data/models/feature_scaler_bounded.joblib"
+  },
+  {
+    "training_date": "2026-05-05T00:11:33.202290",
+    "feature_version": "12",
+    "train_seasons": [
+      2006,
+      2007,
+      2008,
+      2009,
+      2010,
+      2011,
+      2012,
+      2013,
+      2014,
+      2015,
+      2016,
+      2017,
+      2018,
+      2019,
+      2020,
+      2021,
+      2022,
+      2023,
+      2024
+    ],
+    "test_season": 2025,
+    "positions_trained": [
+      "QB",
+      "RB",
+      "WR",
+      "TE"
+    ],
+    "oof_metrics": {},
+    "test_metrics": {
+      "QB": {
+        "FP (component)": {
+          "rmse": 7.196408366397404,
+          "mae": 5.936375125264219,
+          "r2": 0.06270299993393169,
+          "within_7pt_pct": 64.62264150943396,
+          "within_10pt_pct": 83.64779874213836,
+          "n_samples": 636,
+          "mape": 89.01817706228631,
+          "spearman_rho": 0.31758219385162834
+        }
+      },
+      "RB": {
+        "FP (component)": {
+          "rmse": 6.934005758566835,
+          "mae": 5.319013795678619,
+          "r2": 0.2311632656172775,
+          "within_7pt_pct": 74.82698961937716,
+          "within_10pt_pct": 87.19723183391004,
+          "n_samples": 1156,
+          "mape": 76.51525525849189,
+          "spearman_rho": 0.48693270573451114
+        }
+      },
+      "WR": {
+        "FP (component)": {
+          "rmse": 5.7289619483658445,
+          "mae": 4.304655657248196,
+          "r2": 0.24458785046127907,
+          "within_7pt_pct": 82.84760170006071,
+          "within_10pt_pct": 92.1372191863995,
+          "n_samples": 3294,
+          "mape": 73.9198742829448,
+          "spearman_rho": 0.46480429322495775
+        }
+      },
+      "TE": {
+        "FP (component)": {
+          "rmse": 5.495903790016635,
+          "mae": 4.059079364596942,
+          "r2": 0.13717695250569595,
+          "within_7pt_pct": 84.65473145780051,
+          "within_10pt_pct": 92.8388746803069,
+          "n_samples": 391,
+          "mape": 71.36093944689071,
+          "spearman_rho": 0.4250292782019911
+        }
+      }
+    },
+    "n_features_per_position": {
+      "QB": 17,
+      "RB": 14,
+      "WR": 13,
+      "TE": 13
+    },
+    "previous_training_date": "2026-05-05T00:07:13.258284",
+    "previous_feature_version": "12",
+    "rollback_available": true,
+    "n_rollback_versions": 5,
+    "horizon_status_file": "/Users/benrosen/nfl-player-projections/data/models/horizon_model_status.json",
+    "bounded_scaler_file": "/Users/benrosen/nfl-player-projections/data/models/feature_scaler_bounded.joblib"
+  },
+  {
+    "training_date": "2026-05-05T00:16:22.962347",
+    "feature_version": "12",
+    "train_seasons": [
+      2006,
+      2007,
+      2008,
+      2009,
+      2010,
+      2011,
+      2012,
+      2013,
+      2014,
+      2015,
+      2016,
+      2017,
+      2018,
+      2019,
+      2020,
+      2021,
+      2022,
+      2023,
+      2024
+    ],
+    "test_season": 2025,
+    "positions_trained": [
+      "QB",
+      "RB",
+      "WR",
+      "TE"
+    ],
+    "oof_metrics": {},
+    "test_metrics": {
+      "QB": {
+        "FP (component)": {
+          "rmse": 7.155282225483968,
+          "mae": 5.892643723174957,
+          "r2": 0.07338534615318348,
+          "within_7pt_pct": 65.40880503144653,
+          "within_10pt_pct": 83.17610062893081,
+          "n_samples": 636,
+          "mape": 88.25963952076349,
+          "spearman_rho": 0.3241869329148756
+        }
+      },
+      "RB": {
+        "FP (component)": {
+          "rmse": 6.934005758566835,
+          "mae": 5.319013795678619,
+          "r2": 0.2311632656172775,
+          "within_7pt_pct": 74.82698961937716,
+          "within_10pt_pct": 87.19723183391004,
+          "n_samples": 1156,
+          "mape": 76.51525525849189,
+          "spearman_rho": 0.48693270573451114
+        }
+      },
+      "WR": {
+        "FP (component)": {
+          "rmse": 5.7289619483658445,
+          "mae": 4.304655657248196,
+          "r2": 0.24458785046127907,
+          "within_7pt_pct": 82.84760170006071,
+          "within_10pt_pct": 92.1372191863995,
+          "n_samples": 3294,
+          "mape": 73.9198742829448,
+          "spearman_rho": 0.46480429322495775
+        }
+      },
+      "TE": {
+        "FP (component)": {
+          "rmse": 5.495903790016635,
+          "mae": 4.059079364596942,
+          "r2": 0.13717695250569595,
+          "within_7pt_pct": 84.65473145780051,
+          "within_10pt_pct": 92.8388746803069,
+          "n_samples": 391,
+          "mape": 71.36093944689071,
+          "spearman_rho": 0.4250292782019911
+        }
+      }
+    },
+    "n_features_per_position": {
+      "QB": 26,
+      "RB": 14,
+      "WR": 13,
+      "TE": 13
+    },
+    "previous_training_date": "2026-05-05T00:11:33.202290",
+    "previous_feature_version": "12",
+    "rollback_available": true,
+    "n_rollback_versions": 5,
+    "horizon_status_file": "/Users/benrosen/nfl-player-projections/data/models/horizon_model_status.json",
+    "bounded_scaler_file": "/Users/benrosen/nfl-player-projections/data/models/feature_scaler_bounded.joblib"
+  },
+  {
+    "training_date": "2026-05-05T00:27:09.165690",
+    "feature_version": "12",
+    "train_seasons": [
+      2006,
+      2007,
+      2008,
+      2009,
+      2010,
+      2011,
+      2012,
+      2013,
+      2014,
+      2015,
+      2016,
+      2017,
+      2018,
+      2019,
+      2020,
+      2021,
+      2022,
+      2023,
+      2024
+    ],
+    "test_season": 2025,
+    "positions_trained": [
+      "QB",
+      "RB",
+      "WR",
+      "TE"
+    ],
+    "oof_metrics": {},
+    "test_metrics": {
+      "QB": {
+        "FP (component)": {
+          "rmse": 7.1210827903411404,
+          "mae": 5.849825315718142,
+          "r2": 0.08222188526202778,
+          "within_7pt_pct": 65.88050314465409,
+          "within_10pt_pct": 84.11949685534591,
+          "n_samples": 636,
+          "mape": 87.36604024350687,
+          "spearman_rho": 0.3435894407218346
+        }
+      },
+      "RB": {
+        "FP (component)": {
+          "rmse": 6.934005758566835,
+          "mae": 5.319013795678619,
+          "r2": 0.2311632656172775,
+          "within_7pt_pct": 74.82698961937716,
+          "within_10pt_pct": 87.19723183391004,
+          "n_samples": 1156,
+          "mape": 76.51525525849189,
+          "spearman_rho": 0.48693270573451114
+        }
+      },
+      "WR": {
+        "FP (component)": {
+          "rmse": 5.7289619483658445,
+          "mae": 4.304655657248196,
+          "r2": 0.24458785046127907,
+          "within_7pt_pct": 82.84760170006071,
+          "within_10pt_pct": 92.1372191863995,
+          "n_samples": 3294,
+          "mape": 73.9198742829448,
+          "spearman_rho": 0.46480429322495775
+        }
+      },
+      "TE": {
+        "FP (component)": {
+          "rmse": 5.495903790016635,
+          "mae": 4.059079364596942,
+          "r2": 0.13717695250569595,
+          "within_7pt_pct": 84.65473145780051,
+          "within_10pt_pct": 92.8388746803069,
+          "n_samples": 391,
+          "mape": 71.36093944689071,
+          "spearman_rho": 0.4250292782019911
+        }
+      }
+    },
+    "n_features_per_position": {
+      "QB": 17,
+      "RB": 14,
+      "WR": 13,
+      "TE": 13
+    },
+    "previous_training_date": "2026-05-05T00:16:22.962347",
+    "previous_feature_version": "12",
+    "rollback_available": true,
+    "n_rollback_versions": 5,
     "horizon_status_file": "/Users/benrosen/nfl-player-projections/data/models/horizon_model_status.json",
     "bounded_scaler_file": "/Users/benrosen/nfl-player-projections/data/models/feature_scaler_bounded.joblib"
   }

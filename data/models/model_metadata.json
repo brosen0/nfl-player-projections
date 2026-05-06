@@ -1,6 +1,6 @@
 {
-  "training_date": "2026-05-03T00:14:31.495668",
-  "feature_version": "9",
+  "training_date": "2026-05-06T08:18:40.349841",
+  "feature_version": "13",
   "train_seasons": [
     2006,
     2007,
@@ -29,123 +29,67 @@
     "WR",
     "TE"
   ],
-  "training_metrics": {
+  "oof_metrics": {},
+  "test_metrics": {
     "QB": {
-      "1w": {
-        "rmse": 7.0900691736728705,
-        "mae": 5.645088544570701,
-        "r2": 0.29383577159672536
-      },
-      "4w": {
-        "rmse": 20.398105692596,
-        "mae": 15.8152216125769,
-        "r2": 0.47402000583193304
-      },
-      "18w": {
-        "rmse": 54.59848022003127,
-        "mae": 40.274136192903796,
-        "r2": 0.6008454664964404
+      "FP (component)": {
+        "rmse": 7.084802165507726,
+        "mae": 5.852869301572784,
+        "r2": 0.09154988829658306,
+        "within_7pt_pct": 65.56603773584906,
+        "within_10pt_pct": 84.11949685534591,
+        "n_samples": 636,
+        "mape": 88.51535754162289,
+        "spearman_rho": 0.37633332584016854
       }
     },
     "RB": {
-      "1w": {
-        "rmse": 14.744327223846103,
-        "mae": 11.67313315516319,
-        "r2": 0.4779868449045709
-      },
-      "4w": {
-        "rmse": 11.944255372867028,
-        "mae": 9.384990660208112,
-        "r2": 0.5563052547129018
-      },
-      "18w": {
-        "rmse": 11.564875947004607,
-        "mae": 9.070874346083256,
-        "r2": 0.551102686287519
+      "FP (component)": {
+        "rmse": 6.907620363640672,
+        "mae": 5.31921108956909,
+        "r2": 0.23700331396624397,
+        "within_7pt_pct": 74.82698961937716,
+        "within_10pt_pct": 87.19723183391004,
+        "n_samples": 1156,
+        "mape": 77.28256089804168,
+        "spearman_rho": 0.49072138781575936
       }
     },
     "WR": {
-      "1w": {
-        "rmse": 13.704829508598621,
-        "mae": 7.612385237983811,
-        "r2": 0.22600700494140402
-      },
-      "4w": {
-        "rmse": 10.332244106693915,
-        "mae": 6.496439033078289,
-        "r2": 0.34862584953662945
-      },
-      "18w": {
-        "rmse": 9.993289008983044,
-        "mae": 6.306513956457957,
-        "r2": 0.36276009342051874
+      "FP (component)": {
+        "rmse": 5.720785841435716,
+        "mae": 4.306393768370066,
+        "r2": 0.24674248974195445,
+        "within_7pt_pct": 82.69581056466302,
+        "within_10pt_pct": 92.25865209471766,
+        "n_samples": 3294,
+        "mape": 74.19554076861552,
+        "spearman_rho": 0.4694838862322734
       }
     },
     "TE": {
-      "1w": {
-        "rmse": 10.738628573387087,
-        "mae": 7.0407223313143525,
-        "r2": 0.12066567208318513
-      },
-      "4w": {
-        "rmse": 10.833016121682814,
-        "mae": 7.135952430754693,
-        "r2": 0.12366503991864364
-      },
-      "18w": {
-        "rmse": 10.741920364800993,
-        "mae": 6.991122273788463,
-        "r2": 0.14579879956155695
+      "FP (component)": {
+        "rmse": 5.472927949618295,
+        "mae": 4.073439711893268,
+        "r2": 0.14437600391093608,
+        "within_7pt_pct": 84.14322250639387,
+        "within_10pt_pct": 92.07161125319693,
+        "n_samples": 391,
+        "mape": 73.35678460592418,
+        "spearman_rho": 0.42720550620250175
       }
     }
   },
   "n_features_per_position": {
-    "QB": 13,
-    "RB": 14,
-    "WR": 13,
-    "TE": 13
+    "QB": 22,
+    "RB": 19,
+    "WR": 18,
+    "TE": 18
   },
-  "previous_training_date": "2026-02-14T23:12:04.956347",
-  "previous_feature_version": "4",
+  "previous_training_date": "2026-05-05T00:27:09.165690",
+  "previous_feature_version": "12",
   "rollback_available": true,
-  "n_rollback_versions": 1,
+  "n_rollback_versions": 5,
   "horizon_status_file": "/Users/benrosen/nfl-player-projections/data/models/horizon_model_status.json",
-  "bounded_scaler_file": "/Users/benrosen/nfl-player-projections/data/models/feature_scaler_bounded.joblib",
-  "training_mode": "component",
-  "test_metrics": {
-    "QB": {
-      "FP (component)": {
-        "rmse": 7.11,
-        "mae": 5.84,
-        "r2": 0.085,
-        "spearman_rho": 0.334
-      }
-    },
-    "RB": {
-      "FP (component)": {
-        "rmse": 6.97,
-        "mae": 5.31,
-        "r2": 0.224,
-        "spearman_rho": 0.488
-      }
-    },
-    "WR": {
-      "FP (component)": {
-        "rmse": 5.73,
-        "mae": 4.29,
-        "r2": 0.243,
-        "spearman_rho": 0.464
-      }
-    },
-    "TE": {
-      "FP (component)": {
-        "rmse": 5.56,
-        "mae": 4.05,
-        "r2": 0.118,
-        "spearman_rho": 0.405
-      }
-    }
-  },
-  "draft_capital_fix": "draft_picks_v2 (GSIS IDs), 121+ matches",
-  "converter_tuning": "reduced grid (8 combos), max_samples=10K"
+  "bounded_scaler_file": "/Users/benrosen/nfl-player-projections/data/models/feature_scaler_bounded.joblib"
 }

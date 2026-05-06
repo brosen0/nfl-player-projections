@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-05-02T23:56:44.082387",
+  "generated_at": "2026-05-06T08:18:38.697504",
   "strict_requirements": false,
   "distribution_shift": {
     "adversarial_auc": 1.0,
@@ -90,11 +90,11 @@
         "importance": 0.0011
       },
       {
-        "feature": "team_rush_attempts_x",
+        "feature": "opp_fpts_allowed_s2d_lag1",
         "importance": 0.0
       },
       {
-        "feature": "opp_fpts_allowed_s2d_lag1",
+        "feature": "utilization_score_raw",
         "importance": 0.0
       }
     ]
