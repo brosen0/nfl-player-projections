@@ -115,6 +115,16 @@ SCORING_FORMATS = {
     "standard": SCORING_STANDARD,
 }
 
+# ESPN integration slot mappings
+ESPN_SLOT_MAP = {
+    "QB": "QB", "RB": "RB", "WR": "WR", "TE": "TE",
+    "RB/WR/TE": "FLEX", "RB/WR": "FLEX", "WR/TE": "FLEX",
+    "OP": "SUPERFLEX", "BE": "BENCH", "IR": "IR", "K": "K", "D/ST": "DST",
+}
+ESPN_DEFAULT_ROSTER_SLOTS = {
+    "QB": 1, "RB": 2, "WR": 2, "TE": 1, "FLEX": 1, "BENCH": 6,
+}
+
 # Kicker scoring
 SCORING_KICKER = {
     "fg_0_39": 3,        # FG made 0-39 yards
@@ -314,13 +324,20 @@ CAUSAL_FEATURES = {
         "injury_score", "prev_season_ppg", "preseason_ecr",
     ],
     "QB": [
+        # Volume (3-week rolling)
         "passing_attempts_roll3_mean", "passing_tds_roll3_mean",
         "rushing_attempts_roll3_mean", "rushing_yards_roll3_mean",
-        "yards_per_attempt_roll3_mean",
-        "completion_pct_roll3_mean",
+        "rushing_tds_roll3_mean",
+        # Efficiency (3-week rolling)
+        "yards_per_attempt_roll3_mean", "completion_pct_roll3_mean",
+        # PBP advanced (3-week rolling, 2018+)
         "pass_epa_per_play_roll3_mean", "pass_success_rate_roll3_mean",
+        # NGS (3-week rolling, 2018+)
         "ngs_completion_percentage_above_expectation_roll3_mean",
+        "ngs_avg_time_to_throw_roll3_mean",
+        # Game context
         "opp_fpts_allowed", "implied_team_total", "spread",
+        # Player context
         "injury_score", "prev_season_ppg", "preseason_ecr",
     ],
 }
@@ -331,6 +348,17 @@ CAUSAL_FEATURES = {
 # Council Phase 2: predict stable components separately (targets, receptions,
 # yards, TDs) then assemble FP from those predictions.  Each component has
 # higher autocorrelation and lower touchdown contamination than raw FP.
+
+# PBP/NGS features that are only available 2018+.  For pre-2018 rows these
+# should be NaN (not 0) so HistGradientBoosting can treat them as missing.
+QB_PBP_FEATURES = [
+    "pass_epa_per_play_roll3_mean", "pass_success_rate_roll3_mean",
+    "pass_wpa_per_play_roll3_mean", "rush_epa_per_play_roll3_mean",
+    "ngs_completion_percentage_above_expectation_roll3_mean",
+    "ngs_avg_time_to_throw_roll3_mean",
+    "ngs_aggressiveness_roll3_mean",
+    "ngs_avg_air_yards_to_sticks_roll3_mean",
+]
 
 # PPR scoring weights: stat_column -> points_per_unit
 PPR_SCORING_WEIGHTS = {
@@ -450,7 +478,7 @@ QB_TARGET_CHOICE_FILENAME = "qb_target_choice.json"
 
 # Feature set version: bump when feature_engineering adds/removes/renames model features.
 # Saved when training; checked when loading models. Mismatch triggers a retrain warning.
-FEATURE_VERSION = "9"  # v9: Snap counts (PFR→GSIS fix), NGS stats (CPOE/RYOE/separation), draft capital (decayed)
+FEATURE_VERSION = "12"  # v12: QB HistGBR with NaN-aware PBP features, 26 causal features, GBR for RB/WR/TE
 FEATURE_VERSION_FILENAME = "feature_version.txt"
 
 # =============================================================================
