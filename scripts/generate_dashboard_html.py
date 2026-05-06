@@ -38,6 +38,128 @@ from scripts.draft_advisor import (
 SITE_DIR = PROJECT_ROOT / "_site"
 
 
+def check_data_sources(season: int) -> list[dict]:
+    """Check which data sources are available for a season.
+
+    Returns a list of {name, status, detail} dicts where status is
+    'available', 'unavailable', or 'partial'.
+    """
+    import sqlite3
+    from config.settings import DB_PATH
+
+    conn = sqlite3.connect(str(DB_PATH))
+    sources = []
+
+    def _count(query, params=()):
+        return conn.execute(query, params).fetchone()[0]
+
+    # 1. Prior season stats (basis of preseason projections)
+    prior = season - 1
+    prior_stats = _count(
+        "SELECT COUNT(*) FROM player_weekly_stats WHERE season=?", (prior,)
+    )
+    sources.append({
+        "name": f"{prior} Player Stats",
+        "status": "available" if prior_stats > 500 else "unavailable",
+        "detail": f"{prior_stats:,} player-weeks" if prior_stats else "No data",
+    })
+
+    # 2. ADP / Expert Consensus Rankings
+    adp_count = _count(
+        "SELECT COUNT(*) FROM adp_history WHERE season=?", (season,)
+    )
+    sources.append({
+        "name": "ADP / Expert Rankings",
+        "status": "available" if adp_count > 50 else "unavailable",
+        "detail": f"{adp_count:,} rankings" if adp_count else "Not yet scraped",
+    })
+
+    # 3. NFL Schedule
+    sched_count = _count(
+        "SELECT COUNT(*) FROM schedule WHERE season=?", (season,)
+    )
+    sources.append({
+        "name": f"{season} NFL Schedule",
+        "status": "available" if sched_count >= 256 else "unavailable",
+        "detail": f"{sched_count} games" if sched_count else "Released ~May",
+    })
+
+    # 4. Vegas lines (spreads + totals)
+    vegas_count = _count(
+        "SELECT COUNT(*) FROM schedule WHERE season=? AND spread_line IS NOT NULL",
+        (season,),
+    )
+    sources.append({
+        "name": "Vegas Lines",
+        "status": "available" if vegas_count >= 256 else (
+            "partial" if vegas_count > 0 else "unavailable"
+        ),
+        "detail": f"{vegas_count} games" if vegas_count else "Available ~August",
+    })
+
+    # 5. Current season game stats
+    curr_stats = _count(
+        "SELECT COUNT(*) FROM player_weekly_stats WHERE season=?", (season,)
+    )
+    sources.append({
+        "name": f"{season} Game Stats",
+        "status": "available" if curr_stats > 500 else (
+            "partial" if curr_stats > 0 else "unavailable"
+        ),
+        "detail": f"{curr_stats:,} player-weeks" if curr_stats else "Season hasn't started",
+    })
+
+    # 6. Rookie / NFL Draft data
+    try:
+        rookie_count = _count(
+            "SELECT COUNT(*) FROM draft_picks WHERE season=?", (season,)
+        )
+    except sqlite3.OperationalError:
+        rookie_count = 0
+    sources.append({
+        "name": f"{season} NFL Draft Picks",
+        "status": "available" if rookie_count > 50 else "unavailable",
+        "detail": f"{rookie_count} picks" if rookie_count else "Available after NFL Draft (~April)",
+    })
+
+    # 7. NGS (Next Gen Stats)
+    try:
+        ngs_count = _count(
+            "SELECT COUNT(*) FROM ngs_passing WHERE season=?", (season,)
+        )
+    except sqlite3.OperationalError:
+        ngs_count = 0
+    sources.append({
+        "name": "Next Gen Stats",
+        "status": "available" if ngs_count > 100 else "unavailable",
+        "detail": f"{ngs_count:,} records" if ngs_count else "In-season only (2018+)",
+    })
+
+    # 8. Injury reports
+    try:
+        inj_count = _count(
+            "SELECT COUNT(*) FROM injuries WHERE season=?", (season,)
+        )
+    except sqlite3.OperationalError:
+        inj_count = 0
+    sources.append({
+        "name": "Injury Reports",
+        "status": "available" if inj_count > 50 else "unavailable",
+        "detail": f"{inj_count:,} reports" if inj_count else "In-season only",
+    })
+
+    # 9. Walk-forward backtest predictions
+    csv = _latest_predictions_csv(season)
+    sources.append({
+        "name": "ML Backtest Predictions",
+        "status": "available" if csv else "unavailable",
+        "detail": str(csv.name) if csv else "Requires full season of data",
+    })
+
+    conn.close()
+    return sources
+
+
 def build_board_data(season: int):
     """Build the full draft board with spread, VORP, and projections."""
     adp_df = load_adp_board(season)
@@ -128,7 +250,7 @@ def build_vona_data(board, adp_df, max_slots=14):
     return vona_all
 
 
-def generate_html(board_data, vona_data):
+def generate_html(board_data, vona_data, data_sources):
     """Generate the complete HTML page."""
     season = board_data["season"]
     players_json = json.dumps(board_data["players"], separators=(",", ":"))
@@ -139,6 +261,7 @@ def generate_html(board_data, vona_data):
         "has_actuals": board_data["has_actuals"],
         "teams": TEAMS,
         "rounds": ROUNDS,
+        "sources": data_sources,
     }, separators=(",", ":"))
 
     return f"""<!DOCTYPE html>
@@ -266,6 +389,19 @@ tr.fade td{{background:#fef3f2}}
 .btn-undo:hover{{background:#ffcdd2}}
 .empty{{text-align:center;color:#888;padding:24px;font-size:0.9rem}}
 .footer{{text-align:center;padding:24px 16px;color:#aaa;font-size:0.7rem}}
+.sources-grid{{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:8px}}
+.src-item{{
+  display:flex;align-items:center;gap:10px;padding:10px 14px;
+  border-radius:8px;background:#f8f9fa;font-size:0.85rem;
+}}
+.src-dot{{
+  width:10px;height:10px;border-radius:50%;flex-shrink:0;
+}}
+.src-dot.available{{background:#43a047}}
+.src-dot.partial{{background:#f9a825}}
+.src-dot.unavailable{{background:#ccc}}
+.src-name{{font-weight:600;flex:1}}
+.src-detail{{font-size:0.75rem;color:#888}}
 @media(max-width:600px){{
   .draft-state{{grid-template-columns:1fr}}
   table{{font-size:0.8rem}}
@@ -302,6 +438,7 @@ function renderTabs(){{
   t.innerHTML=[
     ["rankings","Rankings"],
     ["companion","Draft Companion"],
+    ["sources","Data Sources"],
   ].map(([k,l])=>`<button class="tab ${{view===k?"active":""}}" onclick="view='${{k}}';render()">${{l}}</button>`).join("");
 }}
 
@@ -532,12 +669,61 @@ function undoPick(id){{
   }}
 }}
 
+// Data sources
+function renderSources(){{
+  const sources=META.sources||[];
+  const avail=sources.filter(s=>s.status==="available").length;
+  const total=sources.length;
+  let h="";
+
+  h+=`<div class="card" style="text-align:center;padding:14px">
+    <span style="font-size:1.3rem;font-weight:700">${{avail}}/${{total}}</span>
+    <span style="font-size:0.9rem;color:#555"> data sources available for ${{META.season}} projections</span>
+  </div>`;
+
+  h+=`<div class="card">
+    <div style="font-weight:600;margin-bottom:12px">Projection Data Sources</div>
+    <div class="sources-grid">`;
+
+  for(const s of sources){{
+    h+=`<div class="src-item">
+      <span class="src-dot ${{s.status}}"></span>
+      <div>
+        <div class="src-name">${{s.name}}</div>
+        <div class="src-detail">${{s.detail}}</div>
+      </div>
+    </div>`;
+  }}
+
+  h+=`</div></div>`;
+
+  // Explanation
+  const missing=sources.filter(s=>s.status==="unavailable");
+  if(missing.length){{
+    h+=`<div class="card" style="border-left:4px solid #f9a825;background:#fffde7">
+      <div style="font-weight:600;margin-bottom:6px">What this means</div>
+      <div style="font-size:0.85rem;color:#555;line-height:1.6">
+        Rankings are based on available data only. Missing sources reduce projection accuracy:
+        <ul style="margin:8px 0 0;padding-left:20px">`;
+    for(const m of missing){{
+      h+=`<li><strong>${{m.name}}</strong> &mdash; ${{m.detail}}</li>`;
+    }}
+    h+=`</ul>
+        <div style="margin-top:8px">Re-run <code style="background:#f5f5f5;padding:2px 6px;border-radius:3px;font-size:0.8rem">python scripts/generate_dashboard_html.py</code> after new data becomes available to refresh.</div>
+      </div>
+    </div>`;
+  }}
+
+  return h;
+}}
+
 // Render
 function render(){{
   renderTabs();
   const el=document.getElementById("main");
   if(view==="rankings")el.innerHTML=renderRankings();
-  else el.innerHTML=renderCompanion();
+  else if(view==="companion")el.innerHTML=renderCompanion();
+  else el.innerHTML=renderSources();
 }}
 
 render();
@@ -568,8 +754,13 @@ def main():
     )
     print(f"  VONA computed for {len(vona_data)} slots")
 
+    print("  Checking data sources...")
+    data_sources = check_data_sources(season)
+    avail = sum(1 for s in data_sources if s["status"] == "available")
+    print(f"  {avail}/{len(data_sources)} sources available")
+
     print("  Generating HTML...")
-    html = generate_html(board_data, vona_data)
+    html = generate_html(board_data, vona_data, data_sources)
 
     SITE_DIR.mkdir(parents=True, exist_ok=True)
     out_path = SITE_DIR / "index.html"
