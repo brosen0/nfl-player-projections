@@ -167,17 +167,13 @@ def check_data_sources(season: int) -> list[dict]:
         "detail": f"{curr_stats:,} player-weeks" if curr_stats else "Season hasn't started",
     })
 
-    # 6. Rookie / NFL Draft data
-    try:
-        rookie_count = _count(
-            "SELECT COUNT(*) FROM draft_picks WHERE season=?", (season,)
-        )
-    except sqlite3.OperationalError:
-        rookie_count = 0
+    # 6. Rookie / NFL Draft data (from parquet, not DB)
+    draft_class = load_draft_class(season)
+    rookie_count = len(draft_class)
     sources.append({
         "name": f"{season} NFL Draft Picks",
-        "status": "available" if rookie_count > 50 else "unavailable",
-        "detail": f"{rookie_count} picks" if rookie_count else "Available after NFL Draft (~April)",
+        "status": "available" if rookie_count > 0 else "unavailable",
+        "detail": f"{rookie_count} skill picks" if rookie_count else "Available after NFL Draft (~April)",
     })
 
     # 7. NGS (Next Gen Stats)
