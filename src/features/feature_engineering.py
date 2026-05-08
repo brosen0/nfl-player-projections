@@ -219,7 +219,9 @@ class FeatureEngineer:
         df = self._add_career_year_flag(df)
         df = self._add_bayesian_prior_ppg(df)
 
-        # v14: late-season momentum (trajectory entering offseason)
+        # v14: late-season momentum + contracts + depth chart
+        df = self._add_contract_features(df)
+        df = self._add_depth_chart_rank(df)
         df = self._add_late_season_momentum(df)
 
         # Impute NaN/inf
@@ -375,6 +377,105 @@ class FeatureEngineer:
         df["bayesian_prior_ppg"] = (
             alpha * df["prev_season_ppg"] + (1 - alpha) * pos_avg
         ).fillna(pos_avg).fillna(0.0)
+        return df
+
+    def _add_depth_chart_rank(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Add official depth chart rank (1=starter, 2=backup, etc.)."""
+        if "player_id" not in df.columns or "season" not in df.columns:
+            df["depth_chart_rank"] = 1
+            return df
+
+        try:
+            import sqlite3
+            from config.settings import DB_PATH
+            c = sqlite3.connect(str(DB_PATH))
+            # Get week 1 depth chart per player per season (preseason designation)
+            rows = c.execute("""
+                SELECT gsis_id, season, depth_team
+                FROM depth_charts
+                WHERE position IN ('QB','RB','WR','TE')
+                  AND gsis_id IS NOT NULL
+                  AND week = 1
+            """).fetchall()
+            c.close()
+        except Exception:
+            df["depth_chart_rank"] = 1
+            return df
+
+        # Build lookup: (gsis_id, season) → depth rank
+        dc_map = {}
+        for gsis, season, depth in rows:
+            key = (gsis, int(season))
+            dc_map[key] = int(depth) if depth else 3
+
+        df["depth_chart_rank"] = df.apply(
+            lambda r: dc_map.get((r.get("player_id"), r.get("season")), 3), axis=1
+        )
+        return df
+
+    def _add_contract_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Add contract year flag and APY rank from contracts table."""
+        if "player_id" not in df.columns or "season" not in df.columns:
+            df["is_contract_year"] = 0
+            df["contract_apy_rank"] = 0.5
+            return df
+
+        try:
+            import sqlite3
+            from config.settings import DB_PATH
+            c = sqlite3.connect(str(DB_PATH))
+            contracts = c.execute("""
+                SELECT gsis_id, position, year_signed, years, apy
+                FROM contracts
+                WHERE gsis_id IS NOT NULL AND years > 0
+                  AND position IN ('QB','RB','WR','TE')
+            """).fetchall()
+            c.close()
+        except Exception:
+            df["is_contract_year"] = 0
+            df["contract_apy_rank"] = 0.5
+            return df
+
+        # Build lookup: gsis_id → (final_year, apy, position)
+        contract_map = {}
+        for gsis, pos, yr_signed, yrs, apy in contracts:
+            final_year = int(yr_signed + yrs - 1)
+            existing = contract_map.get(gsis)
+            # Keep the most recent contract
+            if existing is None or yr_signed > existing[0]:
+                contract_map[gsis] = (yr_signed, final_year, float(apy or 0), pos)
+
+        # Compute positional APY percentiles
+        from collections import defaultdict
+        pos_apys = defaultdict(list)
+        for gsis, (_, _, apy, pos) in contract_map.items():
+            if apy > 0:
+                pos_apys[pos].append(apy)
+        pos_apys_sorted = {pos: sorted(vals) for pos, vals in pos_apys.items()}
+
+        def _apy_pctile(apy, pos):
+            vals = pos_apys_sorted.get(pos, [])
+            if not vals or apy <= 0:
+                return 0.5
+            rank = sum(1 for v in vals if v <= apy)
+            return rank / len(vals)
+
+        is_cy = []
+        apy_rank = []
+        for _, row in df.iterrows():
+            pid = row.get("player_id")
+            season = row.get("season")
+            info = contract_map.get(pid)
+            if info:
+                _, final_year, apy, pos = info
+                is_cy.append(1 if season == final_year else 0)
+                apy_rank.append(_apy_pctile(apy, pos))
+            else:
+                is_cy.append(0)
+                apy_rank.append(0.5)
+
+        df["is_contract_year"] = is_cy
+        df["contract_apy_rank"] = apy_rank
         return df
 
     def _add_late_season_momentum(self, df: pd.DataFrame) -> pd.DataFrame:

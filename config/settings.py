@@ -310,6 +310,7 @@ CAUSAL_FEATURES = {
         "age_curve", "team_changed", "availability_3yr",
         "career_year_flag", "bayesian_prior_ppg",
         "fp_late6_vs_season",
+        "is_contract_year", "contract_apy_rank", "depth_chart_rank",
     ],
     "WR": [
         "target_share_pct_roll3_mean", "air_yards_share_pct_roll3_mean",
@@ -323,6 +324,7 @@ CAUSAL_FEATURES = {
         "age_curve", "team_changed", "availability_3yr",
         "career_year_flag", "bayesian_prior_ppg",
         "fp_late6_vs_season",
+        "is_contract_year", "contract_apy_rank", "depth_chart_rank",
     ],
     "TE": [
         "snap_share_pct_roll3_mean",
@@ -337,6 +339,7 @@ CAUSAL_FEATURES = {
         "age_curve", "team_changed", "availability_3yr",
         "career_year_flag", "bayesian_prior_ppg",
         "fp_late6_vs_season",
+        "is_contract_year", "contract_apy_rank", "depth_chart_rank",
     ],
     "QB": [
         # Volume (3-week rolling)
@@ -357,6 +360,7 @@ CAUSAL_FEATURES = {
         "age_curve", "team_changed", "availability_3yr",
         "career_year_flag", "bayesian_prior_ppg",
         "fp_late6_vs_season",
+        "is_contract_year", "contract_apy_rank", "depth_chart_rank",
     ],
 }
 
@@ -496,7 +500,7 @@ QB_TARGET_CHOICE_FILENAME = "qb_target_choice.json"
 
 # Feature set version: bump when feature_engineering adds/removes/renames model features.
 # Saved when training; checked when loading models. Mismatch triggers a retrain warning.
-FEATURE_VERSION = "14"  # v14: PBP EPA features for RB/WR/TE + late-season momentum (fp_late6_vs_season)
+FEATURE_VERSION = "14"  # v14: PBP EPA, late momentum, contracts, depth charts
 FEATURE_VERSION_FILENAME = "feature_version.txt"
 
 # =============================================================================
