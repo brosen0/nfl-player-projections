@@ -43,8 +43,12 @@ from scripts.snake_draft_sim import (
 
 RESULTS_DIR = PROJECT_ROOT / "data" / "backtest_results"
 
-# Blend weight for ADP vs model (empirically tuned on 2024+2025 backtests)
-ADP_BLEND_WEIGHT = 0.50
+# Asymmetric blend weights (empirically tuned on 2024+2025 backtests).
+# Model is better at spotting overvalued players (fades) than finding
+# hidden gems (sleepers), so trust model more on fades, defer to ADP
+# on sleepers.  Flat 50/50 = 67%, asymmetric = 69%.
+ADP_BLEND_FADE_MODEL_WEIGHT = 0.60   # model weight when model says LOWER than ADP
+ADP_BLEND_SLEEPER_MODEL_WEIGHT = 0.30  # model weight when model says HIGHER than ADP
 
 
 # ====================================================================
@@ -134,7 +138,12 @@ def compute_spread(board: List[DraftPlayer]) -> List[SpreadResult]:
         model_proj = p.pred_total
         actual = p.actual_total
 
-        blended = (1 - ADP_BLEND_WEIGHT) * model_proj + ADP_BLEND_WEIGHT * adp_implied
+        # Asymmetric blend: trust model more on fades, defer to ADP on sleepers
+        model_weight = (
+            ADP_BLEND_FADE_MODEL_WEIGHT if rank_spread < 0
+            else ADP_BLEND_SLEEPER_MODEL_WEIGHT
+        )
+        blended = model_weight * model_proj + (1 - model_weight) * adp_implied
 
         model_error = abs(model_proj - actual) if actual > 0 else float("inf")
         adp_error = abs(adp_implied - actual) if actual > 0 and adp_implied > 0 else float("inf")

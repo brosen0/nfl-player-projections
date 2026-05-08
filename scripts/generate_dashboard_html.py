@@ -1209,8 +1209,17 @@ th:hover{{color:#1a1a2e}}
 th.num,td.num{{text-align:right}}
 td{{padding:8px;border-bottom:1px solid #f0f0f0}}
 tr:hover td{{background:#f8f9ff}}
-tr.sleeper td{{background:#f1f8e9}}
+tr.sleeper td{{background:#f9fbe7}}
 tr.fade td{{background:#fef3f2}}
+tr.fade-strong td{{background:#ffebee}}
+.signal{{
+  display:inline-block;padding:1px 6px;border-radius:3px;
+  font-size:0.65rem;font-weight:600;margin-left:4px;
+}}
+.signal-fade-strong{{background:#c62828;color:#fff}}
+.signal-fade{{background:#ffcdd2;color:#c62828}}
+.signal-sleeper{{background:#e8f5e9;color:#2e7d32}}
+.signal-sleeper-mild{{background:#f1f8e9;color:#558b2f}}
 .pos{{
   display:inline-block;padding:2px 8px;border-radius:4px;
   font-size:0.75rem;font-weight:600;color:#fff;
@@ -1423,10 +1432,20 @@ function buildTableHTML(){{
   const usageCls=u=>u==="Bellcow"||u==="Alpha"?"usage-elite":u==="Lead back"||u==="Starter"?"usage-solid":"usage-other";
   const tendCls=t=>t==="Run-heavy"?"tend-run":t==="Pass-heavy"?"tend-pass":"tend-bal";
 
+  // Signal strength: fades are high-confidence (71% historical), sleepers lower (58%)
+  function signalTag(sp){{
+    const abs_sp=Math.abs(sp);
+    if(sp<=-25)return`<span class="signal signal-fade-strong">FADE</span>`;
+    if(sp<=-10)return`<span class="signal signal-fade">Fade</span>`;
+    if(sp>=25)return`<span class="signal signal-sleeper">Sleeper</span>`;
+    if(sp>=10)return`<span class="signal signal-sleeper-mild">Sleeper?</span>`;
+    return"";
+  }}
+
   for(const p of players){{
     const spCls=p.sp>5?"spread-pos":p.sp<-5?"spread-neg":"";
     const spStr=p.sp>0?"+"+p.sp:String(p.sp);
-    const rowCls=p.sp>=10?"sleeper":p.sp<=-10?"fade":"";
+    const rowCls=p.sp<=-25?"fade-strong":p.sp<=-10?"fade":p.sp>=10?"sleeper":"";
     let actCells="";
     if(META.has_actuals){{
       const hitCls=p.w?"spread-pos":"spread-neg";
@@ -1448,7 +1467,7 @@ function buildTableHTML(){{
         ${{p.trp?`<span style="color:#999;font-size:0.7rem;display:block">${{p.trp}}/${{p.tpp}}</span>`:""}}
       </td>
       <td class="num">${{p.ecr}}</td>
-      <td class="num ${{spCls}}">${{spStr}}</td>
+      <td class="num ${{spCls}}">${{spStr}} ${{signalTag(p.sp)}}</td>
       <td class="num">${{p.proj}}</td>
       <td class="num">${{p.adjPct?`<span class="${{p.adjPct>0?"spread-pos":"spread-neg"}}" title="${{p.adjR}}">${{p.adjPct>0?"+":""}}${{p.adjPct}}%</span>`:""}}${{p.adjR?`<span style="display:block;font-size:0.65rem;color:#999">${{p.adjR}}</span>`:""}}</td>
       <td class="num">${{p.vorp}}</td>
@@ -1459,9 +1478,11 @@ function buildTableHTML(){{
 
   // Legend
   h+=`<div style="font-size:0.75rem;color:#888;margin-top:8px">
-    <span style="display:inline-block;width:12px;height:12px;background:#f1f8e9;border:1px solid #c8e6c9;border-radius:2px;vertical-align:middle"></span> Sleeper (model 10+ ranks higher)
+    <span class="signal signal-fade-strong" style="font-size:0.7rem">FADE</span> Overvalued by ADP (71% accurate)
     &nbsp;&nbsp;
-    <span style="display:inline-block;width:12px;height:12px;background:#fef3f2;border:1px solid #ffcdd2;border-radius:2px;vertical-align:middle"></span> Fade (model 10+ ranks lower)
+    <span class="signal signal-fade" style="font-size:0.7rem">Fade</span> Likely overvalued
+    &nbsp;&nbsp;
+    <span class="signal signal-sleeper" style="font-size:0.7rem">Sleeper</span> Possible value (58% accurate)
   </div>`;
 
   return h;
