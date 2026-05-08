@@ -999,13 +999,16 @@ def build_board_data(season: int):
         # Team tendency
         tt = team_tendencies.get(sr.team, {})
 
-        # Apply adjustments
+        # Collect context signals (informational — shown to user but most
+        # don't modify the projection since the model + ADP blend already
+        # prices them in. Only age curve applies as a multiplier since
+        # ablation shows it adds +1pp accuracy).
         raw_proj = sr.blended_projection
         adj_mult = 1.0
         adj_reasons = []
         player_age = None
 
-        # Age — match by full name or normalized
+        # Age — only adjustment that improves accuracy on top of blend
         aa = age_adj.get(sr.name)
         if aa:
             player_age = aa["age"]
@@ -1013,59 +1016,48 @@ def build_board_data(season: int):
                 adj_mult *= aa["mult"]
                 adj_reasons.append(f"Age {aa['age']:.0f}")
 
-        # Team change — match by DB name via norm key
+        # Context signals (informational only — no projection change)
         for tc_name, tc in team_change_adj.items():
             if _norm_key(tc_name, sr.position) == _norm_key(sr.name, sr.position):
-                adj_mult *= tc["mult"]
-                adj_reasons.append(f"New team")
+                adj_reasons.append("New team")
                 break
 
-        # Usage trend — match by DB name via norm key
         for tr_name, tr in trend_adj.items():
             if _norm_key(tr_name, sr.position) == _norm_key(sr.name, sr.position):
-                adj_mult *= tr["mult"]
                 if tr["slope"] > 0:
                     adj_reasons.append(f"Usage +{tr['slope']:.0f}")
                 else:
                     adj_reasons.append(f"Usage {tr['slope']:.0f}")
                 break
 
-        # Regression to mean — career-year players regress
         ra = None
         for rname, rdata in regression_adj.items():
             if _norm_key(rname) == _norm_key(sr.name):
                 ra = rdata
                 break
         if ra:
-            adj_mult *= ra["mult"]
             adj_reasons.append(f"Regress {ra['pct_above']}%yr")
 
-        # Injury risk — discount based on 3-year availability
         ia = None
         for iname, idata in injury_adj.items():
             if _norm_key(iname) == _norm_key(sr.name):
                 ia = idata
                 break
         if ia:
-            adj_mult *= ia["mult"]
             adj_reasons.append(f"Inj {ia['expected_gp']:.0f}g")
 
-        # Breakout detection — efficiency + volume + snap share momentum
         ba = None
         for bname, bdata in breakout_adj.items():
             if _norm_key(bname) == _norm_key(sr.name):
                 ba = bdata
                 break
         if ba:
-            adj_mult *= ba["mult"]
             adj_reasons.append(f"Breakout +{ba['eff_change']}%eff")
 
-        # Strength of schedule (division rival defense quality)
-        sos_mult, sos_label = compute_sos_adjustment(
+        _, sos_label = compute_sos_adjustment(
             sr.team, sr.position, def_rankings
         )
-        if sos_mult != 1.0:
-            adj_mult *= sos_mult
+        if sos_label:
             adj_reasons.append(sos_label)
 
         adjusted_proj = round(raw_proj * adj_mult, 1)
