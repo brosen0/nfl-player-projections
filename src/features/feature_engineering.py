@@ -219,6 +219,9 @@ class FeatureEngineer:
         df = self._add_career_year_flag(df)
         df = self._add_bayesian_prior_ppg(df)
 
+        # v14: late-season momentum (trajectory entering offseason)
+        df = self._add_late_season_momentum(df)
+
         # Impute NaN/inf
         df = self._impute_missing(df)
 
@@ -345,6 +348,48 @@ class FeatureEngineer:
         df["bayesian_prior_ppg"] = (
             alpha * df["prev_season_ppg"] + (1 - alpha) * pos_avg
         ).fillna(pos_avg).fillna(0.0)
+        return df
+
+    def _add_late_season_momentum(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Late-season FP momentum: avg FP weeks 13+ / season avg.
+
+        Ratio > 1.0 = trending up entering offseason (positive draft signal).
+        Ratio < 1.0 = trending down (negative signal).
+        Shifted by 1 season: for Week 1 of season N, this reflects
+        the late-season momentum from season N-1.
+        """
+        if "fantasy_points" not in df.columns or "season" not in df.columns:
+            df["fp_late6_vs_season"] = 1.0
+            return df
+
+        # Per-player per-season: compute season avg and late-season avg
+        season_avg = df.groupby(["player_id", "season"])["fantasy_points"].transform("mean")
+        is_late = df["week"] >= 13
+        late_avg = df.groupby(["player_id", "season"])["fantasy_points"].transform(
+            lambda x: x.where(df.loc[x.index, "week"] >= 13).mean()
+        )
+
+        ratio = (late_avg / season_avg.clip(lower=1.0)).fillna(1.0).clip(0.3, 2.5)
+
+        # Shift by 1 season: map each player's current-season ratio to next season
+        # So for prediction at season N, we use season N-1's late momentum
+        season_ratio = (
+            df.groupby(["player_id", "season"])
+            .agg(fp_late6=("fantasy_points", lambda x: x[df.loc[x.index, "week"] >= 13].mean()),
+                 fp_avg=("fantasy_points", "mean"))
+            .reset_index()
+        )
+        season_ratio["fp_late6_vs_season"] = (
+            season_ratio["fp_late6"] / season_ratio["fp_avg"].clip(lower=1.0)
+        ).fillna(1.0).clip(0.3, 2.5)
+
+        # Shift: map season N ratio to season N+1 rows
+        season_ratio["season"] = season_ratio["season"] + 1
+        ratio_map = season_ratio.set_index(["player_id", "season"])["fp_late6_vs_season"].to_dict()
+
+        df["fp_late6_vs_season"] = df.apply(
+            lambda r: ratio_map.get((r.get("player_id"), r.get("season")), 1.0), axis=1
+        )
         return df
 
     # Module-level cache for pre-season ECR (ADP).

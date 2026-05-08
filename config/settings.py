@@ -303,20 +303,26 @@ CAUSAL_FEATURES = {
         "rushing_attempts_roll3_mean", "targets_roll3_mean",
         "rushing_tds_roll3_mean", "yards_per_carry_roll3_mean",
         "ngs_rush_yards_over_expected_per_att_roll3_mean",
+        # PBP efficiency (2018+) — EPA captures play value in context
+        "rush_epa_per_play_roll3_mean",
         "opp_fpts_allowed", "implied_team_total", "spread",
         "injury_score", "prev_season_ppg", "preseason_ecr",
         "age_curve", "team_changed", "availability_3yr",
         "career_year_flag", "bayesian_prior_ppg",
+        "fp_late6_vs_season",
     ],
     "WR": [
         "target_share_pct_roll3_mean", "air_yards_share_pct_roll3_mean",
         "targets_roll3_mean", "receptions_roll3_mean",
         "receiving_tds_roll3_mean", "yards_per_target_roll3_mean",
         "ngs_avg_separation_roll3_mean",
+        # PBP efficiency (2018+) — receiving EPA per target
+        "recv_epa_per_target_roll3_mean",
         "opp_fpts_allowed", "implied_team_total", "spread",
         "injury_score", "prev_season_ppg", "preseason_ecr",
         "age_curve", "team_changed", "availability_3yr",
         "career_year_flag", "bayesian_prior_ppg",
+        "fp_late6_vs_season",
     ],
     "TE": [
         "snap_share_pct_roll3_mean",
@@ -324,10 +330,13 @@ CAUSAL_FEATURES = {
         "targets_roll3_mean", "receptions_roll3_mean",
         "receiving_tds_roll3_mean", "yards_per_target_roll3_mean",
         "ngs_avg_separation_roll3_mean",
+        # PBP efficiency (2018+) — receiving EPA per target
+        "recv_epa_per_target_roll3_mean",
         "opp_fpts_allowed", "implied_team_total", "spread",
         "injury_score", "prev_season_ppg", "preseason_ecr",
         "age_curve", "team_changed", "availability_3yr",
         "career_year_flag", "bayesian_prior_ppg",
+        "fp_late6_vs_season",
     ],
     "QB": [
         # Volume (3-week rolling)
@@ -347,6 +356,7 @@ CAUSAL_FEATURES = {
         "injury_score", "prev_season_ppg", "preseason_ecr",
         "age_curve", "team_changed", "availability_3yr",
         "career_year_flag", "bayesian_prior_ppg",
+        "fp_late6_vs_season",
     ],
 }
 
@@ -486,7 +496,7 @@ QB_TARGET_CHOICE_FILENAME = "qb_target_choice.json"
 
 # Feature set version: bump when feature_engineering adds/removes/renames model features.
 # Saved when training; checked when loading models. Mismatch triggers a retrain warning.
-FEATURE_VERSION = "13"  # v13: age_curve, team_changed, availability_3yr, career_year_flag, bayesian_prior_ppg added to causal
+FEATURE_VERSION = "14"  # v14: PBP EPA features for RB/WR/TE + late-season momentum (fp_late6_vs_season)
 FEATURE_VERSION_FILENAME = "feature_version.txt"
 
 # =============================================================================
