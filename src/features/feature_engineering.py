@@ -219,7 +219,9 @@ class FeatureEngineer:
         df = self._add_career_year_flag(df)
         df = self._add_bayesian_prior_ppg(df)
 
-        # v14: late-season momentum + contracts + depth chart
+        # v14: late-season momentum + contracts + depth chart + scheme + combine
+        df = self._add_combine_features(df)
+        df = self._add_scheme_tendencies(df)
         df = self._add_contract_features(df)
         df = self._add_depth_chart_rank(df)
         df = self._add_late_season_momentum(df)
@@ -377,6 +379,119 @@ class FeatureEngineer:
         df["bayesian_prior_ppg"] = (
             alpha * df["prev_season_ppg"] + (1 - alpha) * pos_avg
         ).fillna(pos_avg).fillna(0.0)
+        return df
+
+    def _add_combine_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Add combine athleticism features (speed score, BMI).
+
+        Speed score = (weight * 200) / (forty^4). Higher = better
+        athlete for size. RBs above 100 historically outperform.
+        """
+        if "player_id" not in df.columns:
+            df["speed_score"] = 0.0
+            df["bmi"] = 0.0
+            return df
+
+        try:
+            import sqlite3
+            from pathlib import Path
+            from config.settings import DB_PATH, PROJECT_ROOT
+            c = sqlite3.connect(str(DB_PATH))
+            combine = pd.read_sql(
+                "SELECT pfr_id, pos, forty, wt, ht FROM combine_data_v2 "
+                "WHERE pos IN ('QB','RB','WR','TE') AND forty IS NOT NULL AND wt IS NOT NULL",
+                c,
+            )
+            c.close()
+            # Match via draft picks parquet (pfr_id → gsis_id)
+            dp_path = PROJECT_ROOT / "data" / "draft_picks.parquet"
+            if dp_path.exists():
+                dp = pd.read_parquet(dp_path, columns=["pfr_player_id", "gsis_id"])
+                dp = dp.dropna(subset=["pfr_player_id", "gsis_id"])
+                combine = combine.merge(dp, left_on="pfr_id", right_on="pfr_player_id", how="inner")
+            else:
+                df["speed_score"] = 0.0
+                df["bmi"] = 0.0
+                return df
+        except Exception:
+            df["speed_score"] = 0.0
+            df["bmi"] = 0.0
+            return df
+
+        combine_map = {}
+        for _, r in combine.iterrows():
+            try:
+                forty_f = float(r["forty"])
+                wt_f = float(r["wt"])
+                gsis_id = r["gsis_id"]
+                ss = (wt_f * 200.0) / (forty_f ** 4) if forty_f > 0 else 0
+                ht = r.get("ht", "")
+                if ht and "-" in str(ht):
+                    parts = str(ht).split("-")
+                    inches = int(parts[0]) * 12 + int(parts[1])
+                else:
+                    inches = 72
+                bmi = (wt_f * 703) / (inches ** 2) if inches > 0 else 0
+                combine_map[gsis_id] = (round(ss, 1), round(bmi, 1))
+            except (ValueError, TypeError):
+                pass
+
+        if combine_map:
+            df["speed_score"] = df["player_id"].map(
+                lambda pid: combine_map.get(pid, (0.0, 0.0))[0]
+            )
+            df["bmi"] = df["player_id"].map(
+                lambda pid: combine_map.get(pid, (0.0, 0.0))[1]
+            )
+        else:
+            df["speed_score"] = 0.0
+            df["bmi"] = 0.0
+        return df
+
+    def _add_scheme_tendencies(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Add team scheme tendency features from FTN charting data."""
+        if "team" not in df.columns or "season" not in df.columns:
+            for col in ["team_motion_rate", "team_play_action_rate", "team_shotgun_rate"]:
+                df[col] = 0.5
+            return df
+
+        try:
+            import sqlite3
+            from config.settings import DB_PATH
+            c = sqlite3.connect(str(DB_PATH))
+            # Get season-level averages per team (shifted: use prior season for preseason)
+            rows = c.execute("""
+                SELECT team, season, AVG(motion_rate) as motion,
+                       AVG(play_action_rate) as pa, AVG(shotgun_rate) as sg
+                FROM team_scheme_tendencies
+                GROUP BY team, season
+            """).fetchall()
+            c.close()
+        except Exception:
+            for col in ["team_motion_rate", "team_play_action_rate", "team_shotgun_rate"]:
+                df[col] = 0.5
+            return df
+
+        # Build lookup shifted by 1 season (use prior year's scheme for prediction)
+        scheme_map = {}
+        for team, season, motion, pa, sg in rows:
+            scheme_map[(team, int(season) + 1)] = (
+                round(motion or 0.5, 3),
+                round(pa or 0.1, 3),
+                round(sg or 0.5, 3),
+            )
+
+        motion_vals, pa_vals, sg_vals = [], [], []
+        for _, row in df.iterrows():
+            key = (row.get("team"), row.get("season"))
+            vals = scheme_map.get(key, (0.5, 0.1, 0.5))
+            motion_vals.append(vals[0])
+            pa_vals.append(vals[1])
+            sg_vals.append(vals[2])
+
+        df["team_motion_rate"] = motion_vals
+        df["team_play_action_rate"] = pa_vals
+        df["team_shotgun_rate"] = sg_vals
         return df
 
     def _add_depth_chart_rank(self, df: pd.DataFrame) -> pd.DataFrame:

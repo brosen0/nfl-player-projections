@@ -311,6 +311,7 @@ CAUSAL_FEATURES = {
         "career_year_flag", "bayesian_prior_ppg",
         "fp_late6_vs_season",
         "is_contract_year", "contract_apy_rank", "depth_chart_rank",
+        "speed_score", "team_motion_rate", "team_play_action_rate",
     ],
     "WR": [
         "target_share_pct_roll3_mean", "air_yards_share_pct_roll3_mean",
@@ -325,6 +326,7 @@ CAUSAL_FEATURES = {
         "career_year_flag", "bayesian_prior_ppg",
         "fp_late6_vs_season",
         "is_contract_year", "contract_apy_rank", "depth_chart_rank",
+        "speed_score", "team_motion_rate", "team_play_action_rate",
     ],
     "TE": [
         "snap_share_pct_roll3_mean",
@@ -340,6 +342,7 @@ CAUSAL_FEATURES = {
         "career_year_flag", "bayesian_prior_ppg",
         "fp_late6_vs_season",
         "is_contract_year", "contract_apy_rank", "depth_chart_rank",
+        "speed_score", "team_motion_rate", "team_play_action_rate",
     ],
     "QB": [
         # Volume (3-week rolling)
@@ -361,6 +364,7 @@ CAUSAL_FEATURES = {
         "career_year_flag", "bayesian_prior_ppg",
         "fp_late6_vs_season",
         "is_contract_year", "contract_apy_rank", "depth_chart_rank",
+        "speed_score", "team_motion_rate", "team_play_action_rate",
     ],
 }
 
