@@ -21,7 +21,6 @@ from typing import Any, Dict, List, Optional
 import joblib
 import numpy as np
 import pandas as pd
-from sklearn.ensemble import GradientBoostingRegressor
 from sklearn.preprocessing import StandardScaler
 
 logger = logging.getLogger(__name__)
@@ -30,13 +29,15 @@ logger = logging.getLogger(__name__)
 class ComponentPredictor:
     """Predict individual stat components per position, assemble fantasy points.
 
-    For each position, trains a separate GradientBoosting model for each stat
-    component (e.g., rushing_yards, rushing_tds for RB).  At prediction time,
-    predicts each component and multiplies by PPR scoring weights to get
-    total fantasy points.
+    For each position, trains a separate Ridge model for each stat component
+    (e.g., rushing_yards, rushing_tds for RB).  At prediction time, predicts
+    each component and multiplies by PPR scoring weights to get total fantasy
+    points.
 
-    GBR captures non-linear feature interactions (e.g., high game_total ×
-    high passing_attempts → scoring boom) that Ridge regression misses.
+    Ridge was chosen over GradientBoosting after backtest evidence showed GBT
+    produced negative R² for WR/TE/RB (worse than mean prediction), primarily
+    due to systematic underprediction. Ridge generalizes better with the
+    available training data sizes.
     """
 
     def __init__(self, position: str):
@@ -61,12 +62,7 @@ class ComponentPredictor:
         y_components: Dict[str, pd.Series],
         sample_weight: Optional[np.ndarray] = None,
     ) -> "ComponentPredictor":
-        """Train one model per stat component.
-
-        QB uses Ridge with symmetric augmentation (mixup + noise + mirror)
-        to synthetically expand training data and improve generalization.
-        Other positions use GBR.
-        """
+        """Train one Ridge model per stat component."""
         self.feature_names = list(X.columns)
         self.feature_medians = {c: float(X[c].median()) for c in X.columns
                                 if pd.api.types.is_numeric_dtype(X[c])}
@@ -94,14 +90,8 @@ class ComponentPredictor:
             scaler = StandardScaler()
             X_scaled = scaler.fit_transform(X_v)
 
-            if self.position == "QB":
-                from sklearn.linear_model import Ridge
-                model = Ridge(alpha=1.0)
-            else:
-                model = GradientBoostingRegressor(
-                    n_estimators=50, max_depth=2, learning_rate=0.1,
-                    subsample=0.8, min_samples_leaf=50, random_state=42,
-                )
+            from sklearn.linear_model import Ridge
+            model = Ridge(alpha=1.0)
             model.fit(X_scaled, y_v, sample_weight=sw)
 
             self.models[component] = model
