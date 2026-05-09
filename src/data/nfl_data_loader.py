@@ -57,6 +57,7 @@ from src.utils.helpers import calculate_fantasy_points
 from src.utils.nfl_calendar import get_current_nfl_season, get_current_nfl_week, current_season_has_weeks_played
 from src.data.schema_validator import validate_weekly_data, validate_schedule_data
 from src.data.lineage import persist_dataframe_artifact, set_artifact_id
+from src.data.entity_resolver import resolver
 
 
 # ---------------------------------------------------------------------------
