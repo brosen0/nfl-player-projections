@@ -86,7 +86,7 @@ def _run(test_seasons, positions=None, **kwargs):
 
 class TestLOYOSeasonRange:
     def test_default_range_respects_config(self):
-        assert LOYO_CONFIG["default_test_seasons_start"] == 2018
+        assert LOYO_CONFIG["default_test_seasons_start"] == 2020
         assert LOYO_CONFIG["min_train_seasons"] == 5
         assert LOYO_CONFIG["purge_gap"] == 1
 
