@@ -46,3 +46,6 @@ plotly>=5.18.0
 
 # NFL data source
 nfl-data-py>=0.3.0
+
+# ESPN Fantasy API
+espn-api==0.46.0

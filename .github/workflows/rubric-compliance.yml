@@ -37,7 +37,7 @@ jobs:
             torch --extra-index-url https://download.pytorch.org/whl/cpu
 
       - name: Install test dependencies
-        run: pip install pytest-cov fastapi httpx
+        run: pip install pytest-cov fastapi httpx espn-api==0.46.0
 
       - name: Run rubric compliance checker
         run: python scripts/check_rubric_compliance.py --json
