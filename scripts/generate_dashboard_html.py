@@ -1168,18 +1168,8 @@ body{{
 }}
 .header h1{{margin:0;font-size:1.2rem;font-weight:700;letter-spacing:0.5px}}
 .header .sub{{font-size:0.8rem;opacity:0.6;margin-top:2px}}
-.tabs{{
-  display:flex;background:#252547;padding:0 12px;gap:4px;
-  overflow-x:auto;scrollbar-width:none;
-}}
-.tabs::-webkit-scrollbar{{display:none}}
-.tab{{
-  flex-shrink:0;padding:12px 20px;background:none;border:none;
-  border-bottom:3px solid transparent;color:rgba(255,255,255,0.5);
-  font-size:0.9rem;font-weight:500;cursor:pointer;transition:0.15s;
-}}
-.tab:hover{{color:rgba(255,255,255,0.8)}}
-.tab.active{{color:#fff;border-bottom-color:#4fc3f7}}
+.my-pick td{{background:#e3f2fd!important}}
+tr.my-pick:hover td{{background:#bbdefb!important}}
 .main{{max-width:900px;margin:0 auto;padding:16px}}
 .card{{
   background:#fff;border-radius:12px;padding:16px;
@@ -1311,7 +1301,6 @@ tr.fade-strong td{{background:#ffebee}}
   <h1>Draft Advisor {season}</h1>
   <div class="sub">Model-powered draft rankings &amp; live companion</div>
 </div>
-<div class="tabs" id="tabs"></div>
 <div class="main" id="main"></div>
 <div class="footer">Projections generated from walk-forward ML models trained on 2006&ndash;{season - 1} NFL data. Not financial advice.</div>
 
@@ -1320,7 +1309,6 @@ const BOARD={players_json};
 const VONA={vona_json};
 const META={meta_json};
 
-let view="rankings";
 let posFilter="All";
 let sortCol="mr";
 let sortAsc=true;
@@ -1329,21 +1317,18 @@ let drafted=new Set();
 let myRoster=[];
 let searchQ="";
 
-// Tabs
-function renderTabs(){{
-  const t=document.getElementById("tabs");
-  t.innerHTML=[
-    ["rankings","Rankings"],
-    ["companion","Draft Companion"],
-  ].map(([k,l])=>`<button class="tab ${{view===k?"active":""}}" onclick="view='${{k}}';render()">${{l}}</button>`).join("");
-}}
-
 // Pills
 function renderPills(){{
   const positions=["All","QB","RB","WR","TE"];
-  return `<div class="pills">${{positions.map(p=>
-    `<button class="pill ${{posFilter===p?"active":""}}" onclick="posFilter='${{p}}';render()">${{p}}</button>`
-  ).join("")}}</div>`;
+  return `<div class="pills">${{positions.map(pos=>{{
+    const signals=pos==="All"
+      ?BOARD.filter(p=>Math.abs(p.sp)>=10).length
+      :BOARD.filter(p=>p.p===pos&&Math.abs(p.sp)>=10).length;
+    const label=signals
+      ?`${{pos}} <span style="font-size:0.75rem;opacity:0.75">(${{signals}})</span>`
+      :pos;
+    return`<button class="pill ${{posFilter===pos?"active":""}}" onclick="posFilter='${{pos}}';render()">${{label}}</button>`;
+  }}).join("")}}</div>`;
 }}
 
 // Sort
@@ -1370,38 +1355,146 @@ function filterPos(arr){{
 function renderRankings(){{
   let h="";
 
-  // Accuracy banner
-  const v=META.validation;
-  if(v.n>0){{
-    const cls=v.acc>=55?"banner-good":"banner-warn";
-    const label=META.has_actuals?"This season":"Historical";
-    h+=`<div class="banner ${{cls}}">
-      <span style="font-size:1.3rem;font-weight:700">${{v.acc}}%</span>
-      <span style="font-size:0.9rem;color:#555"> ${{label}} accuracy when model disagrees with ADP by 10+ ranks (${{v.wins}}/${{v.n}})</span>
+  // Slot picker
+  {{
+    let slotBtns="";
+    for(let s=1;s<=META.teams;s++){{
+      slotBtns+=`<button class="slot-btn ${{draftSlot===s?"active":""}}" onclick="draftSlot=${{s}};render()">${{s}}</button>`;
+    }}
+    h+=`<div class="card" style="padding:10px 16px;margin-bottom:12px">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <span style="font-size:0.8rem;font-weight:600;color:#666;white-space:nowrap">Your draft slot:</span>
+        <div class="slot-picker" style="margin:0">${{slotBtns}}</div>
+        ${{myRoster.length?`<span style="font-size:0.8rem;color:#888;margin-left:auto">${{myRoster.length}} picked</span>`:""}}
+      </div>
     </div>`;
   }}
 
-  // Data sources checklist
+  // VONA: next pick recommendation
+  {{
+    const currentRound=myRoster.length+1;
+    const vonaData=VONA[String(draftSlot)]||[];
+    const vonaPicks=vonaData.filter(v=>v.rd===currentRound&&!drafted.has(v.n)).slice(0,3);
+    if(vonaPicks.length){{
+      let pickRows="";
+      for(let i=0;i<vonaPicks.length;i++){{
+        const v=vonaPicks[i];
+        const netCls=v.net>0?"pos":"neg";
+        pickRows+=`<div class="pick-row ${{i===0?"top":""}}">
+          <span class="pos pos-${{v.p}}">${{v.p}}</span>
+          <span class="pick-name">${{v.n}}</span>
+          <span class="pick-stat">${{v.av}}% avail</span>
+          <span class="pick-stat">Proj ${{v.proj}}</span>
+          <span class="pick-stat pick-net ${{netCls}}">Net ${{v.net>0?"+":""}}${{v.net}}</span>
+          <button class="btn btn-pick" onclick="draftPlayer('${{v.n.replace("'","\\\\'")}}',${{v.rd}})">Draft</button>
+          <button class="btn btn-mark" onclick="markOther('${{v.n.replace("'","\\\\'")}}')" style="font-size:0.72rem;padding:6px 10px">Taken</button>
+        </div>`;
+      }}
+      h+=`<div class="round-card" style="margin-bottom:12px">
+        <div class="round-header">
+          <span style="color:#283593;font-weight:700">Round ${{currentRound}} — Best available</span>
+          <span style="color:#888;font-weight:400;font-size:0.8rem">slot ${{draftSlot}} · pick ${{vonaPicks[0].pk}}</span>
+        </div>
+        <div class="round-body">${{pickRows}}</div>
+      </div>`;
+    }}
+  }}
+
+  // Value signal stats strip
+  const v=META.validation;
+  const fadesAll=BOARD.filter(p=>p.sp<=-10).length;
+  const fadesStrong=BOARD.filter(p=>p.sp<=-25).length;
+  const sleepersAll=BOARD.filter(p=>p.sp>=10).length;
+  const sleepersStrong=BOARD.filter(p=>p.sp>=25).length;
+  {{
+    let sh="";
+    if(v.n>0){{
+      const good=v.acc>=55;
+      sh+=`<div style="flex:1;min-width:130px;background:${{good?"#e8f5e9":"#fff8e1"}};border:1px solid ${{good?"#c8e6c9":"#ffe082"}};border-radius:8px;padding:10px 14px;text-align:center">
+        <div style="font-size:1.4rem;font-weight:700">${{v.acc}}%</div>
+        <div style="font-size:0.72rem;color:#666;margin-top:3px">${{META.has_actuals?"This season":"Historical"}} accuracy vs ADP<br><span style="color:#999">10+ rank gap · ${{v.wins}}/${{v.n}} calls</span></div>
+      </div>`;
+    }}
+    sh+=`<div style="flex:1;min-width:110px;background:#fef3f2;border:1px solid #ffcdd2;border-radius:8px;padding:10px 14px;text-align:center">
+      <div style="font-size:1.4rem;font-weight:700;color:#c62828">${{fadesAll}}</div>
+      <div style="font-size:0.72rem;color:#666;margin-top:3px">Overvalued players<br><span style="color:#999">${{fadesStrong}} strong FADE</span></div>
+    </div>`;
+    sh+=`<div style="flex:1;min-width:110px;background:#e8f5e9;border:1px solid #c8e6c9;border-radius:8px;padding:10px 14px;text-align:center">
+      <div style="font-size:1.4rem;font-weight:700;color:#2e7d32">${{sleepersAll}}</div>
+      <div style="font-size:0.72rem;color:#666;margin-top:3px">Undervalued players<br><span style="color:#999">${{sleepersStrong}} strong Sleeper</span></div>
+    </div>`;
+    h+=`<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">${{sh}}</div>`;
+  }}
+
+  // Data sources (collapsible)
   const src=META.sources||[];
   if(src.length){{
-    h+=`<div style="display:flex;flex-wrap:wrap;gap:6px 14px;font-size:0.75rem;color:#888;margin-bottom:12px;padding:0 2px">`;
+    const avail=src.filter(s=>s.status==="available").length;
+    let dots="";
     for(const s of src){{
-      const icon=s.status==="available"?"\\u2705":s.status==="partial"?"\\u26A0\\uFE0F":"\\u2B1C";
-      h+=`<span>${{icon}} ${{s.name}}</span>`;
+      const dot=s.status==="available"?`<span style="color:#4caf50">●</span>`:s.status==="partial"?`<span style="color:#ff9800">●</span>`:`<span style="color:#ccc">●</span>`;
+      dots+=`<span style="margin-right:14px">${{dot}} ${{s.name}}</span>`;
     }}
-    h+=`</div>`;
+    h+=`<details style="margin-bottom:12px">
+      <summary style="font-size:0.75rem;color:#999;cursor:pointer;list-style:none;display:inline-flex;align-items:center;gap:5px">
+        <span style="font-size:0.65rem">▶</span> Data sources (${{avail}}/${{src.length}} available)
+      </summary>
+      <div style="display:flex;flex-wrap:wrap;gap:6px 0;font-size:0.75rem;color:#888;margin-top:6px;padding:0 2px">${{dots}}</div>
+    </details>`;
   }}
 
   h+=renderPills();
 
   // Search
-  h+=`<input class="search-box" id="searchInput" placeholder="Search players..." value="${{searchQ}}" oninput="searchQ=this.value;renderTable()">`;
+  h+=`<input class="search-box" id="searchInput" placeholder="Search players… just start typing" value="${{searchQ}}" oninput="searchQ=this.value;renderTable()" autofocus>`;
 
   // Table container — updated independently so search box keeps focus
   h+=`<div id="tableArea"></div>`;
 
+  // Roster / drafted footer
+  h+=`<div id="rosterArea"></div>`;
+
   return h;
 }}
+
+function renderRoster(){{
+  if(!myRoster.length&&!drafted.size)return"";
+  let h=`<div class="card" style="margin-top:4px">`;
+  if(myRoster.length){{
+    h+=`<div style="font-weight:600;margin-bottom:8px;font-size:0.85rem">My picks (${{myRoster.length}})</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px">`;
+    for(const p of myRoster){{
+      h+=`<div style="display:flex;align-items:center;gap:5px;background:#e3f2fd;border-radius:6px;padding:4px 8px;font-size:0.8rem">
+        <span class="pos pos-${{p.p}}">${{p.p}}</span>
+        <span style="font-weight:500">${{p.n}}</span>
+        <button class="btn btn-undo" style="padding:2px 6px;font-size:0.7rem" onclick="undoPick(${{p.id}})">✕</button>
+      </div>`;
+    }}
+    h+=`</div>`;
+  }}
+  const others=[...drafted].filter(n=>!myRoster.find(p=>p.n===n));
+  if(others.length){{
+    h+=`<div style="font-size:0.75rem;color:#888;margin-bottom:6px">Taken by others: ${{others.join(", ")}}</div>`;
+  }}
+  h+=`<button class="btn btn-undo" onclick="if(confirm('Reset all draft picks?')){{drafted.clear();myRoster=[];render();}}">Reset All</button>`;
+  h+=`</div>`;
+  return h;
+}}
+
+// Route any printable keypress to the search box
+document.addEventListener("keydown",function(e){{
+  const tag=document.activeElement&&document.activeElement.tagName;
+  if(tag==="INPUT"||tag==="TEXTAREA"||e.metaKey||e.ctrlKey||e.altKey)return;
+  if(e.key.length===1){{
+    const box=document.getElementById("searchInput");
+    if(box){{box.focus();}}
+  }}
+  if(e.key==="Escape"){{
+    searchQ="";
+    const box=document.getElementById("searchInput");
+    if(box){{box.value="";renderTable();}}
+  }}
+}});
 
 function buildTableHTML(){{
   let players=filterPos(BOARD);
@@ -1411,30 +1504,8 @@ function buildTableHTML(){{
   }}
   players=sorted(players);
 
-  const arrow=c=>sortCol===c?(sortAsc?"\\u25B2":"\\u25BC"):"";
-  const actH=META.has_actuals?`<th class="num" onclick="setSort('act')">Actual ${{arrow("act")}}</th><th onclick="setSort('w')">Hit? ${{arrow("w")}}</th>`:"";
-
-  let h=`<div class="card" style="padding:0;overflow-x:auto"><table>
-    <tr>
-      <th onclick="setSort('mr')">Rank ${{arrow("mr")}}</th>
-      <th>Player</th>
-      <th>Pos</th>
-      <th>Role</th>
-      <th>Team</th>
-      <th class="num" onclick="setSort('ecr')">ADP ${{arrow("ecr")}}</th>
-      <th class="num" onclick="setSort('sp')">Spread ${{arrow("sp")}}</th>
-      <th class="num" onclick="setSort('proj')">Proj ${{arrow("proj")}}</th>
-      <th class="num" onclick="setSort('adjPct')">Adj ${{arrow("adjPct")}}</th>
-      <th class="num" onclick="setSort('vorp')">VORP ${{arrow("vorp")}}</th>
-      ${{actH}}
-    </tr>`;
-
-  const usageCls=u=>u==="Bellcow"||u==="Alpha"?"usage-elite":u==="Lead back"||u==="Starter"?"usage-solid":"usage-other";
-  const tendCls=t=>t==="Run-heavy"?"tend-run":t==="Pass-heavy"?"tend-pass":"tend-bal";
-
-  // Signal strength: fades are high-confidence (71% historical), sleepers lower (58%)
+  // Signal tag (hoisted — used in top picks card and rows)
   function signalTag(sp){{
-    const abs_sp=Math.abs(sp);
     if(sp<=-25)return`<span class="signal signal-fade-strong">FADE</span>`;
     if(sp<=-10)return`<span class="signal signal-fade">Fade</span>`;
     if(sp>=25)return`<span class="signal signal-sleeper">Sleeper</span>`;
@@ -1442,16 +1513,74 @@ function buildTableHTML(){{
     return"";
   }}
 
+  // Top value plays card (sleepers only, top 5 by spread)
+  const topPicks=[...players].sort((a,b)=>b.sp-a.sp).filter(p=>p.sp>=10).slice(0,5);
+  let h="";
+  if(topPicks.length){{
+    h+=`<div class="card" style="margin-bottom:12px;padding:12px 16px;background:#f1f8e9;border:1px solid #c8e6c9">
+      <div style="font-size:0.75rem;font-weight:600;color:#2e7d32;margin-bottom:8px;text-transform:uppercase;letter-spacing:0.3px">Top value plays</div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px">`;
+    for(const p of topPicks){{
+      h+=`<div style="display:flex;align-items:center;gap:6px;background:#fff;border-radius:6px;padding:5px 10px;font-size:0.82rem">
+        <span class="pos pos-${{p.p}}">${{p.p}}</span>
+        <span style="font-weight:600">${{p.n}}</span>
+        <span style="color:#888">${{p.t}}</span>
+        <span class="spread-pos">+${{p.sp}}</span>
+        ${{signalTag(p.sp)}}
+      </div>`;
+    }}
+    h+=`</div></div>`;
+  }}
+
+  // Legend (above table so users understand signals before they see them)
+  h+=`<div style="font-size:0.75rem;color:#888;margin-bottom:8px">
+    <span class="signal signal-fade-strong" style="font-size:0.7rem">FADE</span> Overvalued (71% accurate)
+    &nbsp;&nbsp;
+    <span class="signal signal-fade" style="font-size:0.7rem">Fade</span> Likely overvalued
+    &nbsp;&nbsp;
+    <span class="signal signal-sleeper" style="font-size:0.7rem">Sleeper</span> Possible value (58% accurate)
+    &nbsp;&nbsp;
+    <span class="signal signal-sleeper-mild" style="font-size:0.7rem">Sleeper?</span> Mild signal
+  </div>`;
+
+  const arrow=c=>sortCol===c?(sortAsc?"\\u25B2":"\\u25BC"):"";
+  const actH=META.has_actuals?`<th class="num" onclick="setSort('act')">Actual ${{arrow("act")}}</th><th onclick="setSort('w')">Hit? ${{arrow("w")}}</th>`:"";
+
+  h+=`<div class="card" style="padding:0;overflow-x:auto"><table>
+    <tr>
+      <th onclick="setSort('mr')">Rank ${{arrow("mr")}}</th>
+      <th>Player</th>
+      <th>Pos</th>
+      <th>Role</th>
+      <th>Team</th>
+      <th class="num" onclick="setSort('ecr')">ADP ${{arrow("ecr")}}</th>
+      <th class="num" onclick="setSort('sp')">vs ADP ${{arrow("sp")}}</th>
+      <th class="num" onclick="setSort('proj')">Proj ${{arrow("proj")}}</th>
+      <th class="num" onclick="setSort('vorp')">VORP ${{arrow("vorp")}}</th>
+      ${{actH}}
+      <th></th>
+    </tr>`;
+
+  const usageCls=u=>u==="Bellcow"||u==="Alpha"?"usage-elite":u==="Lead back"||u==="Starter"?"usage-solid":"usage-other";
+  const tendCls=t=>t==="Run-heavy"?"tend-run":t==="Pass-heavy"?"tend-pass":"tend-bal";
+
   for(const p of players){{
+    const isDrafted=drafted.has(p.n);
+    const isMyPick=!!myRoster.find(r=>r.n===p.n);
     const spCls=p.sp>5?"spread-pos":p.sp<-5?"spread-neg":"";
     const spStr=p.sp>0?"+"+p.sp:String(p.sp);
-    const rowCls=p.sp<=-25?"fade-strong":p.sp<=-10?"fade":p.sp>=10?"sleeper":"";
+    const rowCls=isMyPick?"my-pick":isDrafted?"drafted":p.sp<=-25?"fade-strong":p.sp<=-10?"fade":p.sp>=10?"sleeper":"";
     let actCells="";
     if(META.has_actuals){{
       const hitCls=p.w?"spread-pos":"spread-neg";
       actCells=`<td class="num">${{p.act}}</td><td class="${{hitCls}}">${{p.w?"Yes":"No"}}</td>`;
     }}
     const shareStr=p.p==="RB"&&p.cs?p.cs+"% car":p.ts?p.ts+"% tgt":"";
+    const actionCell=isMyPick
+      ?`<button class="btn btn-undo" style="font-size:0.7rem;padding:3px 8px" onclick="undoPick(${{p.id}})">Undo</button>`
+      :isDrafted
+      ?`<span style="color:#ccc;font-size:0.75rem">taken</span>`
+      :`<button class="btn btn-pick" style="font-size:0.72rem;padding:4px 10px" onclick="draftPlayer('${{p.n.replace("'","\\\\'")}}',${{p.mr}})">Draft</button> <button class="btn btn-mark" style="font-size:0.7rem;padding:4px 8px" onclick="markOther('${{p.n.replace("'","\\\\'")}}')" title="Mark as taken">Taken</button>`;
     h+=`<tr class="${{rowCls}}">
       <td class="num">${{p.mr}}</td>
       <td style="font-weight:500">${{p.n}}</td>
@@ -1469,21 +1598,12 @@ function buildTableHTML(){{
       <td class="num">${{p.ecr}}</td>
       <td class="num ${{spCls}}">${{spStr}} ${{signalTag(p.sp)}}</td>
       <td class="num">${{p.proj}}</td>
-      <td class="num">${{p.adjPct?`<span class="${{p.adjPct>0?"spread-pos":"spread-neg"}}" title="${{p.adjR}}">${{p.adjPct>0?"+":""}}${{p.adjPct}}%</span>`:""}}${{p.adjR?`<span style="display:block;font-size:0.65rem;color:#999">${{p.adjR}}</span>`:""}}</td>
       <td class="num">${{p.vorp}}</td>
       ${{actCells}}
+      <td style="white-space:nowrap">${{actionCell}}</td>
     </tr>`;
   }}
   h+=`</table></div>`;
-
-  // Legend
-  h+=`<div style="font-size:0.75rem;color:#888;margin-top:8px">
-    <span class="signal signal-fade-strong" style="font-size:0.7rem">FADE</span> Overvalued by ADP (71% accurate)
-    &nbsp;&nbsp;
-    <span class="signal signal-fade" style="font-size:0.7rem">Fade</span> Likely overvalued
-    &nbsp;&nbsp;
-    <span class="signal signal-sleeper" style="font-size:0.7rem">Sleeper</span> Possible value (58% accurate)
-  </div>`;
 
   return h;
 }}
@@ -1491,106 +1611,10 @@ function buildTableHTML(){{
 function renderTable(){{
   const el=document.getElementById("tableArea");
   if(el)el.innerHTML=buildTableHTML();
+  const rl=document.getElementById("rosterArea");
+  if(rl)rl.innerHTML=renderRoster();
 }}
 
-// Draft companion
-function renderCompanion(){{
-  let h="";
-
-  // Slot picker
-  h+=`<div class="card">
-    <div style="font-weight:600;margin-bottom:8px">Your Draft Slot</div>
-    <div class="slot-picker">`;
-  for(let s=1;s<=META.teams;s++){{
-    h+=`<button class="slot-btn ${{draftSlot===s?"active":""}}" onclick="draftSlot=${{s}};render()">${{s}}</button>`;
-  }}
-  h+=`</div></div>`;
-
-  // My roster
-  const slots={{"QB":1,"RB":2,"WR":2,"TE":1,"FLEX":1}};
-  const filled={{}};
-  for(const p of myRoster){{
-    filled[p.p]=(filled[p.p]||0)+1;
-  }}
-
-  h+=`<div class="card">
-    <div style="font-weight:600;margin-bottom:8px">My Roster</div>
-    <div class="draft-state">`;
-  for(const[pos,count]of Object.entries(slots)){{
-    const have=pos==="FLEX"?Math.max(0,myRoster.length-7):filled[pos]||0;
-    const need=count;
-    const isFilled=have>=need;
-    h+=`<div class="roster-slot ${{isFilled?"filled":""}}">
-      <span class="label">${{pos}}</span><span>${{have}}/${{need}}</span>
-    </div>`;
-  }}
-  h+=`</div>`;
-
-  if(myRoster.length){{
-    h+=`<div style="margin-top:8px">`;
-    for(let i=myRoster.length-1;i>=0;i--){{
-      const p=myRoster[i];
-      h+=`<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;font-size:0.85rem">
-        <span><span class="pos pos-${{p.p}}">${{p.p}}</span> ${{p.n}} <span style="color:#888">(${{p.t}})</span></span>
-        <button class="btn btn-undo" onclick="undoPick(${{p.id}})">Undo</button>
-      </div>`;
-    }}
-    h+=`</div>`;
-  }}
-  h+=`</div>`;
-
-  // VONA recommendations
-  const vonaData=VONA[String(draftSlot)]||[];
-  if(!vonaData.length){{
-    h+=`<div class="card empty">No VONA data for slot ${{draftSlot}}.</div>`;
-    return h;
-  }}
-
-  const rounds=[...new Set(vonaData.map(v=>v.rd))].sort((a,b)=>a-b);
-
-  for(const rd of rounds){{
-    let picks=vonaData.filter(v=>v.rd===rd);
-    // Filter out drafted players
-    picks=picks.filter(v=>!drafted.has(v.n));
-    if(!picks.length)continue;
-
-    const pickNum=picks[0].pk;
-    h+=`<div class="round-card">
-      <div class="round-header">
-        <span>Round ${{rd}}</span><span style="color:#888;font-weight:400">Pick ${{pickNum}}</span>
-      </div>
-      <div class="round-body">`;
-
-    for(let i=0;i<picks.length;i++){{
-      const v=picks[i];
-      const netCls=v.net>0?"pos":"neg";
-      const isTop=i===0;
-      h+=`<div class="pick-row ${{isTop?"top":""}}">
-        <span class="pos pos-${{v.p}}">${{v.p}}</span>
-        <span class="pick-name">${{v.n}}</span>
-        <span class="pick-stat">${{v.av}}% avail</span>
-        <span class="pick-stat">Proj ${{v.proj}}</span>
-        <span class="pick-stat pick-net ${{netCls}}">Net ${{v.net>0?"+":""}}${{v.net}}</span>
-        <button class="btn btn-pick" onclick="draftPlayer('${{v.n.replace("'","\\\\'")}}',${{v.rd}})">Draft</button>
-        <button class="btn btn-mark" onclick="markOther('${{v.n.replace("'","\\\\'")}}')" title="Mark as taken by another team">X</button>
-      </div>`;
-    }}
-    h+=`</div></div>`;
-  }}
-
-  // Drafted by others
-  if(drafted.size){{
-    h+=`<div class="card">
-      <div style="font-weight:600;margin-bottom:6px">Drafted (${{drafted.size}})</div>
-      <div style="font-size:0.8rem;color:#888">`;
-    h+=[...drafted].join(", ");
-    h+=`</div>
-      <button class="btn btn-undo" style="margin-top:8px" onclick="drafted.clear();myRoster=[];render()">Reset All</button>
-    </div>`;
-  }}
-
-  return h;
-}}
 
 // Actions
 function draftPlayer(name,round){{
@@ -1619,13 +1643,9 @@ function undoPick(id){{
 
 // Render
 function render(){{
-  renderTabs();
   const el=document.getElementById("main");
-  if(view==="rankings"){{
-    el.innerHTML=renderRankings();
-    renderTable();
-  }}
-  else el.innerHTML=renderCompanion();
+  el.innerHTML=renderRankings();
+  renderTable();
 }}
 
 render();
