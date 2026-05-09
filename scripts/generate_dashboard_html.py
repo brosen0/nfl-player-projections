@@ -1480,7 +1480,9 @@ def main():
     season = args.season
     if season is None:
         from config.settings import CURRENT_NFL_SEASON
-        season = CURRENT_NFL_SEASON
+        # Draft advisor targets the upcoming season; nfl_calendar returns the
+        # last completed season (e.g. 2025 in May 2026), so default to +1.
+        season = CURRENT_NFL_SEASON + 1
 
     print(f"Building draft advisor for {season}...")
 
