@@ -16,8 +16,6 @@ body{
 }
 .header h1{margin:0;font-size:1.2rem;font-weight:700;letter-spacing:0.5px}
 .header .sub{font-size:0.8rem;opacity:0.6;margin-top:2px}
-.my-pick td{background:#e3f2fd!important}
-tr.my-pick:hover td{background:#bbdefb!important}
 .main{max-width:900px;margin:0 auto;padding:16px}
 .card{
   background:#fff;border-radius:12px;padding:16px;
@@ -81,64 +79,13 @@ tr.fade-strong td{background:#ffebee}
 .tend-run{background:#fff3e0;color:#e65100}
 .tend-pass{background:#e8eaf6;color:#283593}
 .tend-bal{background:#f5f5f5;color:#666}
-.slot-picker{
-  display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:14px;
-}
-.slot-btn{
-  width:40px;height:40px;border-radius:50%;border:2px solid #ddd;
-  background:#fff;font-weight:600;cursor:pointer;transition:0.15s;
-  display:flex;align-items:center;justify-content:center;
-}
-.slot-btn:hover{border-color:#4fc3f7}
-.slot-btn.active{background:#4fc3f7;color:#fff;border-color:#4fc3f7}
-.round-card{
-  background:#fff;border-radius:12px;margin-bottom:10px;
-  box-shadow:0 1px 4px rgba(0,0,0,0.06);overflow:hidden;
-}
-.round-header{
-  padding:12px 16px;font-weight:600;font-size:0.9rem;
-  background:#f8f9fa;border-bottom:1px solid #eee;
-  display:flex;justify-content:space-between;
-}
-.round-body{padding:8px}
-.pick-row{
-  display:flex;align-items:center;padding:8px 12px;gap:12px;
-  border-bottom:1px solid #f5f5f5;cursor:pointer;transition:0.1s;
-}
-.pick-row:hover{background:#f0f7ff}
-.pick-row:last-child{border-bottom:none}
-.pick-row.top{background:#e8f5e9}
-.pick-name{font-weight:600;flex:1}
-.pick-stat{font-size:0.8rem;color:#666;min-width:60px;text-align:right}
-.pick-net{font-weight:700}
-.pick-net.pos{color:#2e7d32}.pick-net.neg{color:#c62828}
-.draft-state{
-  display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px;
-}
-.roster-slot{
-  padding:8px 12px;border-radius:8px;background:#f8f9fa;
-  font-size:0.85rem;display:flex;justify-content:space-between;
-}
-.roster-slot.filled{background:#e8f5e9}
-.roster-slot .label{font-weight:600;color:#666}
 .search-box{
   width:100%;padding:10px 14px;border:1.5px solid #ddd;border-radius:8px;
   font-size:0.9rem;margin-bottom:12px;outline:none;
 }
 .search-box:focus{border-color:#4fc3f7}
-.drafted{opacity:0.3;text-decoration:line-through;pointer-events:none}
-.btn{
-  padding:6px 14px;border-radius:6px;border:none;font-size:0.8rem;
-  font-weight:500;cursor:pointer;transition:0.15s;
-}
-.btn-pick{background:#4fc3f7;color:#fff}.btn-pick:hover{background:#29b6f6}
-.btn-mark{background:#eee;color:#666}.btn-mark:hover{background:#ddd}
-.btn-undo{background:#ffebee;color:#c62828;font-size:0.75rem}
-.btn-undo:hover{background:#ffcdd2}
-.empty{text-align:center;color:#888;padding:24px;font-size:0.9rem}
 .footer{text-align:center;padding:24px 16px;color:#aaa;font-size:0.7rem}
 @media(max-width:600px){
-  .draft-state{grid-template-columns:1fr}
   table{font-size:0.8rem}
   th,td{padding:6px 4px}
 }
@@ -147,7 +94,7 @@ tr.fade-strong td{background:#ffebee}
 <body>
 <div class="header">
   <h1>Draft Advisor 2025</h1>
-  <div class="sub">Model-powered draft rankings &amp; live companion</div>
+  <div class="sub">Model-powered fantasy draft rankings</div>
 </div>
 <div class="main" id="main"></div>
 <div class="footer">Projections generated from walk-forward ML models trained on 2006&ndash;2024 NFL data. Not financial advice.</div>
@@ -160,9 +107,6 @@ const META={"season":2025,"validation":{"n":280,"wins":181,"acc":65},"has_actual
 let posFilter="All";
 let sortCol="mr";
 let sortAsc=true;
-let draftSlot=1;
-let drafted=new Set();
-let myRoster=[];
 let searchQ="";
 
 // Pills
@@ -202,51 +146,6 @@ function filterPos(arr){
 // Rankings view
 function renderRankings(){
   let h="";
-
-  // Slot picker
-  {
-    let slotBtns="";
-    for(let s=1;s<=META.teams;s++){
-      slotBtns+=`<button class="slot-btn ${draftSlot===s?"active":""}" onclick="draftSlot=${s};render()">${s}</button>`;
-    }
-    h+=`<div class="card" style="padding:10px 16px;margin-bottom:12px">
-      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-        <span style="font-size:0.8rem;font-weight:600;color:#666;white-space:nowrap">Your draft slot:</span>
-        <div class="slot-picker" style="margin:0">${slotBtns}</div>
-        ${myRoster.length?`<span style="font-size:0.8rem;color:#888;margin-left:auto">${myRoster.length} picked</span>`:""}
-      </div>
-    </div>`;
-  }
-
-  // VONA: next pick recommendation
-  {
-    const currentRound=myRoster.length+1;
-    const vonaData=VONA[String(draftSlot)]||[];
-    const vonaPicks=vonaData.filter(v=>v.rd===currentRound&&!drafted.has(v.n)).slice(0,3);
-    if(vonaPicks.length){
-      let pickRows="";
-      for(let i=0;i<vonaPicks.length;i++){
-        const v=vonaPicks[i];
-        const netCls=v.net>0?"pos":"neg";
-        pickRows+=`<div class="pick-row ${i===0?"top":""}">
-          <span class="pos pos-${v.p}">${v.p}</span>
-          <span class="pick-name">${v.n}</span>
-          <span class="pick-stat">${v.av}% avail</span>
-          <span class="pick-stat">Proj ${v.proj}</span>
-          <span class="pick-stat pick-net ${netCls}">Net ${v.net>0?"+":""}${v.net}</span>
-          <button class="btn btn-pick" onclick="draftPlayer('${v.n.replace("'","\\'")}',${v.rd})">Draft</button>
-          <button class="btn btn-mark" onclick="markOther('${v.n.replace("'","\\'")}')" style="font-size:0.72rem;padding:6px 10px">Taken</button>
-        </div>`;
-      }
-      h+=`<div class="round-card" style="margin-bottom:12px">
-        <div class="round-header">
-          <span style="color:#283593;font-weight:700">Round ${currentRound} — Best available</span>
-          <span style="color:#888;font-weight:400;font-size:0.8rem">slot ${draftSlot} · pick ${vonaPicks[0].pk}</span>
-        </div>
-        <div class="round-body">${pickRows}</div>
-      </div>`;
-    }
-  }
 
   // Value signal stats strip
   const v=META.validation;
@@ -299,33 +198,6 @@ function renderRankings(){
   // Table container — updated independently so search box keeps focus
   h+=`<div id="tableArea"></div>`;
 
-  // Roster / drafted footer
-  h+=`<div id="rosterArea"></div>`;
-
-  return h;
-}
-
-function renderRoster(){
-  if(!myRoster.length&&!drafted.size)return"";
-  let h=`<div class="card" style="margin-top:4px">`;
-  if(myRoster.length){
-    h+=`<div style="font-weight:600;margin-bottom:8px;font-size:0.85rem">My picks (${myRoster.length})</div>
-      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px">`;
-    for(const p of myRoster){
-      h+=`<div style="display:flex;align-items:center;gap:5px;background:#e3f2fd;border-radius:6px;padding:4px 8px;font-size:0.8rem">
-        <span class="pos pos-${p.p}">${p.p}</span>
-        <span style="font-weight:500">${p.n}</span>
-        <button class="btn btn-undo" style="padding:2px 6px;font-size:0.7rem" onclick="undoPick(${p.id})">✕</button>
-      </div>`;
-    }
-    h+=`</div>`;
-  }
-  const others=[...drafted].filter(n=>!myRoster.find(p=>p.n===n));
-  if(others.length){
-    h+=`<div style="font-size:0.75rem;color:#888;margin-bottom:6px">Taken by others: ${others.join(", ")}</div>`;
-  }
-  h+=`<button class="btn btn-undo" onclick="if(confirm('Reset all draft picks?')){drafted.clear();myRoster=[];render();}">Reset All</button>`;
-  h+=`</div>`;
   return h;
 }
 
@@ -361,26 +233,8 @@ function buildTableHTML(){
     return"";
   }
 
-  // Top value plays card (sleepers only, top 5 by spread)
-  const topPicks=[...players].sort((a,b)=>b.sp-a.sp).filter(p=>p.sp>=10).slice(0,5);
+  // Legend
   let h="";
-  if(topPicks.length){
-    h+=`<div class="card" style="margin-bottom:12px;padding:12px 16px;background:#f1f8e9;border:1px solid #c8e6c9">
-      <div style="font-size:0.75rem;font-weight:600;color:#2e7d32;margin-bottom:8px;text-transform:uppercase;letter-spacing:0.3px">Top value plays</div>
-      <div style="display:flex;flex-wrap:wrap;gap:8px">`;
-    for(const p of topPicks){
-      h+=`<div style="display:flex;align-items:center;gap:6px;background:#fff;border-radius:6px;padding:5px 10px;font-size:0.82rem">
-        <span class="pos pos-${p.p}">${p.p}</span>
-        <span style="font-weight:600">${p.n}</span>
-        <span style="color:#888">${p.t}</span>
-        <span class="spread-pos">+${p.sp}</span>
-        ${signalTag(p.sp)}
-      </div>`;
-    }
-    h+=`</div></div>`;
-  }
-
-  // Legend (above table so users understand signals before they see them)
   h+=`<div style="font-size:0.75rem;color:#888;margin-bottom:8px">
     <span class="signal signal-fade-strong" style="font-size:0.7rem">FADE</span> Overvalued (71% accurate)
     &nbsp;&nbsp;
@@ -406,29 +260,21 @@ function buildTableHTML(){
       <th class="num" onclick="setSort('proj')">Proj ${arrow("proj")}</th>
       <th class="num" onclick="setSort('vorp')">VORP ${arrow("vorp")}</th>
       ${actH}
-      <th></th>
     </tr>`;
 
   const usageCls=u=>u==="Bellcow"||u==="Alpha"?"usage-elite":u==="Lead back"||u==="Starter"?"usage-solid":"usage-other";
   const tendCls=t=>t==="Run-heavy"?"tend-run":t==="Pass-heavy"?"tend-pass":"tend-bal";
 
   for(const p of players){
-    const isDrafted=drafted.has(p.n);
-    const isMyPick=!!myRoster.find(r=>r.n===p.n);
     const spCls=p.sp>5?"spread-pos":p.sp<-5?"spread-neg":"";
     const spStr=p.sp>0?"+"+p.sp:String(p.sp);
-    const rowCls=isMyPick?"my-pick":isDrafted?"drafted":p.sp<=-25?"fade-strong":p.sp<=-10?"fade":p.sp>=10?"sleeper":"";
+    const rowCls=p.sp<=-25?"fade-strong":p.sp<=-10?"fade":p.sp>=10?"sleeper":"";
     let actCells="";
     if(META.has_actuals){
       const hitCls=p.w?"spread-pos":"spread-neg";
       actCells=`<td class="num">${p.act}</td><td class="${hitCls}">${p.w?"Yes":"No"}</td>`;
     }
     const shareStr=p.p==="RB"&&p.cs?p.cs+"% car":p.ts?p.ts+"% tgt":"";
-    const actionCell=isMyPick
-      ?`<button class="btn btn-undo" style="font-size:0.7rem;padding:3px 8px" onclick="undoPick(${p.id})">Undo</button>`
-      :isDrafted
-      ?`<span style="color:#ccc;font-size:0.75rem">taken</span>`
-      :`<button class="btn btn-pick" style="font-size:0.72rem;padding:4px 10px" onclick="draftPlayer('${p.n.replace("'","\\'")}',${p.mr})">Draft</button> <button class="btn btn-mark" style="font-size:0.7rem;padding:4px 8px" onclick="markOther('${p.n.replace("'","\\'")}')" title="Mark as taken">Taken</button>`;
     h+=`<tr class="${rowCls}">
       <td class="num">${p.mr}</td>
       <td style="font-weight:500">${p.n}</td>
@@ -448,7 +294,6 @@ function buildTableHTML(){
       <td class="num">${p.proj}</td>
       <td class="num">${p.vorp}</td>
       ${actCells}
-      <td style="white-space:nowrap">${actionCell}</td>
     </tr>`;
   }
   h+=`</table></div>`;
@@ -460,33 +305,6 @@ function renderTable(){
   const el=document.getElementById("tableArea");
   if(el)el.innerHTML=buildTableHTML();
   const rl=document.getElementById("rosterArea");
-  if(rl)rl.innerHTML=renderRoster();
-}
-
-
-// Actions
-function draftPlayer(name,round){
-  const p=BOARD.find(b=>b.n===name);
-  if(p){
-    myRoster.push(p);
-    drafted.add(name);
-    render();
-  }
-}
-
-function markOther(name){
-  drafted.add(name);
-  render();
-}
-
-function undoPick(id){
-  const idx=myRoster.findIndex(p=>p.id===id);
-  if(idx>=0){
-    const name=myRoster[idx].n;
-    myRoster.splice(idx,1);
-    drafted.delete(name);
-    render();
-  }
 }
 
 // Render
