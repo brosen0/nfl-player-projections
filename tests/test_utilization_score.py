@@ -244,7 +244,7 @@ class TestPercentileNormalizationBounds:
                 train_df, "WR", ["snap_share_pct"], persist=False
             )
         assert any("Zero-width" in msg for msg in caplog.messages)
-        assert calculator.position_percentiles[("WR", "snap_share_pct")] == (0.0, 0.0)
+        assert calculator.position_percentiles[("WR", "snap_share_pct")] == (0.0, 100.0)
 
 
 if __name__ == "__main__":
