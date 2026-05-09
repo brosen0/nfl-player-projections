@@ -531,32 +531,38 @@ class VegasLinesLoader:
         pass
     
     def load_vegas_lines(self, seasons: List[int]) -> pd.DataFrame:
-        """Load Vegas lines from nfl-data-py."""
+        """Load Vegas lines from nfl-data-py.
+
+        Prefers schedule data (has spread_line + total_line for all seasons)
+        over sc_lines (only has point spread, no totals, 2013-2020 only).
+        """
         print(f"Loading Vegas lines for seasons: {seasons}")
-        
+
+        # Schedules have spread_line + total_line with full season coverage
         try:
-            # Try to load spread lines
-            lines = nfl.import_sc_lines(seasons)
-            print(f"  Loaded {len(lines)} line records")
-            return lines
-        except Exception as e:
-            print(f"  Spread lines not available: {e}")
-            
-            # Fall back to schedule which may have spread info
+            schedules = nfl.import_schedules(seasons)
             try:
-                schedules = nfl.import_schedules(seasons)
-                try:
-                    from src.utils.leakage import sanitize_schedule_df
-                    schedules = sanitize_schedule_df(schedules)
-                except Exception:
-                    pass
-                if 'spread_line' in schedules.columns:
-                    print(f"  Using spread from schedules")
-                    return schedules
+                from src.utils.leakage import sanitize_schedule_df
+                schedules = sanitize_schedule_df(schedules)
             except Exception:
                 pass
-            
-            return pd.DataFrame()
+            if 'spread_line' in schedules.columns and 'total_line' in schedules.columns:
+                n_valid = schedules['spread_line'].notna().sum()
+                print(f"  Loaded {n_valid} line records from schedules")
+                return schedules
+        except Exception as e:
+            print(f"  Schedule Vegas data not available: {e}")
+
+        # Fallback: sc_lines (spread only, no totals, limited seasons)
+        try:
+            lines = nfl.import_sc_lines(seasons)
+            if not lines.empty:
+                print(f"  Loaded {len(lines)} sc_line records (spread only)")
+                return lines
+        except Exception:
+            pass
+
+        return pd.DataFrame()
     
     def calculate_implied_totals(self, lines_df: pd.DataFrame) -> pd.DataFrame:
         """

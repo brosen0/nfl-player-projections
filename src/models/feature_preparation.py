@@ -414,7 +414,7 @@ def _prepare_training_data(
     ]
     if converter_positions:
         try:
-            train_utilization_to_fp_per_position(train_data, positions=converter_positions)
+            train_utilization_to_fp_per_position(train_data, positions=converter_positions, fast=fast)
         except Exception as e:
             logger.warning("Utilization-to-FP conversion training skipped: %s", e)
 

@@ -459,7 +459,11 @@ def _run_backtest_after_training(trainer, test_data: pd.DataFrame,
     results["test_season"] = actual_test_season
     results["model_source"] = "production_ensemble"
     results["feature_counts"] = {
-        pos: len(getattr(m.models.get(1) or list(m.models.values())[0], "feature_names", []))
+        pos: (
+            len(getattr(trainer.component_predictors.get(pos), "feature_names", []))
+            if m is None
+            else len(getattr(m.models.get(1) or list(m.models.values())[0], "feature_names", []))
+        )
         for pos, m in trainer.trained_models.items()
     }
     baseline_comp = backtester.compare_to_baseline(
@@ -1031,7 +1035,7 @@ def train_models(positions: list = None,
     )
 
     # Data quality checks (train_models-only, not needed in walk-forward folds)
-    print("\n[3/5] Data quality checks...")
+    print("\n[3/5] Data quality checks...", flush=True)
     train_missing = _report_missingness(train_data, "train", threshold=0.05)
     test_missing = _report_missingness(test_data, "test", threshold=0.05)
     _validate_critical_missingness(train_data, "train", threshold=0.05)
@@ -1084,135 +1088,143 @@ def train_models(positions: list = None,
     _write_json_artifact(MODELS_DIR / "training_requirements_gate.json", requirement_gates, "requirements gate report")
 
     # Horizon-specific models: 4-week LSTM+ARIMA hybrid, 18-week deep (when enabled)
-    print("\n[4c/5] Training horizon-specific models (4w hybrid, 18w deep)...")
+    # Skip in fast mode: PyTorch/statsmodels horizon models trigger segfaults from
+    # native memory corruption when run after heavy XGBoost/RF component training.
     horizon_status: Dict[str, Dict[str, str]] = {pos: {} for pos in positions}
     target_semantics: Dict[str, Dict[str, str]] = {pos: {} for pos in positions}
-    try:
-        from src.models.horizon_models import (
-            Hybrid4WeekModel,
-            DeepSeasonLongModel,
-            HAS_TF,
-            HAS_ARIMA,
-        )
-        n_seasons = len(train_seasons)
-        if not HAS_TF:
-            print("  Horizon note: PyTorch unavailable; LSTM/deep components disabled.")
-        if not HAS_ARIMA:
-            print("  Horizon note: statsmodels unavailable; ARIMA component disabled.")
-        for position in positions:
-            if position not in trainer.trained_models:
-                horizon_status[position]["hybrid_4w"] = "base_model_missing"
-                horizon_status[position]["deep_18w"] = "base_model_missing"
-                target_semantics[position]["1w"] = "base_model_missing"
-                target_semantics[position]["4w"] = "base_model_missing"
-                target_semantics[position]["18w"] = "base_model_missing"
-                continue
-            multi = trainer.trained_models[position]
-            if multi is None:
-                # Component mode: use component predictor features for horizon models
-                comp = trainer.component_predictors.get(position)
-                feature_cols = getattr(comp, "feature_names", []) if comp else []
-                if not feature_cols:
-                    horizon_status[position]["hybrid_4w"] = "component_mode_no_features"
-                    horizon_status[position]["deep_18w"] = "component_mode_no_features"
-                    target_semantics[position]["1w"] = "component"
-                    target_semantics[position]["4w"] = "component"
-                    target_semantics[position]["18w"] = "component"
+    if fast:
+        print("\n[4c/5] Horizon-specific models skipped (fast mode)")
+        for pos in positions:
+            horizon_status[pos] = {"hybrid_4w": "skipped_fast_mode", "deep_18w": "skipped_fast_mode"}
+            target_semantics[pos] = {"1w": "component", "4w": "component", "18w": "component"}
+    else:
+        print("\n[4c/5] Training horizon-specific models (4w hybrid, 18w deep)...")
+        try:
+            from src.models.horizon_models import (
+                Hybrid4WeekModel,
+                DeepSeasonLongModel,
+                HAS_TF,
+                HAS_ARIMA,
+            )
+            n_seasons = len(train_seasons)
+            if not HAS_TF:
+                print("  Horizon note: PyTorch unavailable; LSTM/deep components disabled.")
+            if not HAS_ARIMA:
+                print("  Horizon note: statsmodels unavailable; ARIMA component disabled.")
+            for position in positions:
+                if position not in trainer.trained_models:
+                    horizon_status[position]["hybrid_4w"] = "base_model_missing"
+                    horizon_status[position]["deep_18w"] = "base_model_missing"
+                    target_semantics[position]["1w"] = "base_model_missing"
+                    target_semantics[position]["4w"] = "base_model_missing"
+                    target_semantics[position]["18w"] = "base_model_missing"
                     continue
-            else:
-                base = multi.models.get(1) or list(multi.models.values())[0]
-                feature_cols = getattr(base, "feature_names", [])
-            # Track semantically intended targets: QB may be fp/util; skill positions are utilization-first.
-            target_semantics[position]["1w"] = "target_1w_or_target_util_1w_trainer_selected"
-            target_semantics[position]["4w"] = "target_util_4w_preferred_over_target_4w"
-            target_semantics[position]["18w"] = "target_util_18w_preferred_over_target_18w"
-            if len(feature_cols) < 5:
-                horizon_status[position]["hybrid_4w"] = "insufficient_features"
-                horizon_status[position]["deep_18w"] = "insufficient_features"
-                continue
-            pos_data = train_data[train_data["position"] == position].copy()
-            pos_data = pos_data.sort_values(["player_id", "season", "week"]).reset_index(drop=True)
-            X_pos = pos_data[feature_cols].replace([np.inf, -np.inf], np.nan).fillna(0)
-            player_ids = pos_data["player_id"].values
-            seasons_arr = pos_data["season"].values if "season" in pos_data.columns else None
-
-            if MODEL_CONFIG.get("use_4w_hybrid", True) and n_seasons >= MIN_TRAINING_SEASONS_4W:
-                y_4w = pos_data.get("target_util_4w", pos_data.get("target_4w"))
-                if not HAS_TF or not HAS_ARIMA:
-                    reason = []
-                    if not HAS_TF:
-                        reason.append("tensorflow_missing")
-                    if not HAS_ARIMA:
-                        reason.append("statsmodels_missing")
-                    horizon_status[position]["hybrid_4w"] = "unavailable:" + ",".join(reason)
-                elif y_4w is not None and y_4w.notna().sum() >= 100:
-                    try:
-                        hybrid = Hybrid4WeekModel(position)
-                        hybrid.fit(pos_data, y_4w, player_ids, feature_cols,
-                                  epochs=MODEL_CONFIG.get("lstm_epochs", 80),
-                                  seasons=seasons_arr)
-                        if hybrid.is_fitted:
-                            hybrid.save()
-                            horizon_status[position]["hybrid_4w"] = "trained_and_saved"
-                            print(f"  {position}: 4-week hybrid model saved")
-                        else:
-                            horizon_status[position]["hybrid_4w"] = "fit_not_converged"
-                    except Exception as e:
-                        horizon_status[position]["hybrid_4w"] = f"fit_failed:{e}"
-                        print(f"  4-week hybrid skip for {position}: {e}")
+                multi = trainer.trained_models[position]
+                if multi is None:
+                    # Component mode: use component predictor features for horizon models
+                    comp = trainer.component_predictors.get(position)
+                    feature_cols = getattr(comp, "feature_names", []) if comp else []
+                    if not feature_cols:
+                        horizon_status[position]["hybrid_4w"] = "component_mode_no_features"
+                        horizon_status[position]["deep_18w"] = "component_mode_no_features"
+                        target_semantics[position]["1w"] = "component"
+                        target_semantics[position]["4w"] = "component"
+                        target_semantics[position]["18w"] = "component"
+                        continue
                 else:
-                    horizon_status[position]["hybrid_4w"] = "insufficient_targets"
-            elif not MODEL_CONFIG.get("use_4w_hybrid", True):
-                horizon_status[position]["hybrid_4w"] = "disabled_by_config"
-            else:
-                horizon_status[position]["hybrid_4w"] = "insufficient_training_seasons"
-
-            if MODEL_CONFIG.get("use_18w_deep", True) and n_seasons >= MIN_TRAINING_SEASONS_18W:
-                y_18w = pos_data.get("target_util_18w", pos_data.get("target_18w"))
-                if not HAS_TF:
-                    horizon_status[position]["deep_18w"] = "unavailable:tensorflow_missing"
-                elif y_18w is not None and y_18w.notna().sum() >= 80:
-                    try:
-                        deep = DeepSeasonLongModel(position, n_features=min(150, len(feature_cols)))
-                        X_arr = X_pos.values.astype(np.float64)
-                        y_arr = y_18w.values.astype(np.float64)
-                        valid = np.isfinite(y_arr) & np.all(np.isfinite(X_arr), axis=1)
-                        if valid.sum() >= 80:
-                            seasons_18w = seasons_arr[valid] if seasons_arr is not None else None
-                            deep.fit(
-                                X_arr[valid], y_arr[valid],
-                                feature_names=feature_cols,
-                                epochs=MODEL_CONFIG.get("deep_epochs", 100),
-                                batch_size=MODEL_CONFIG.get("deep_batch_size", 64),
-                                seasons=seasons_18w,
-                            )
-                            if deep.is_fitted:
-                                deep.save()
-                                horizon_status[position]["deep_18w"] = "trained_and_saved"
-                                print(f"  {position}: 18-week deep model saved")
+                    base = multi.models.get(1) or list(multi.models.values())[0]
+                    feature_cols = getattr(base, "feature_names", [])
+                # Track semantically intended targets: QB may be fp/util; skill positions are utilization-first.
+                target_semantics[position]["1w"] = "target_1w_or_target_util_1w_trainer_selected"
+                target_semantics[position]["4w"] = "target_util_4w_preferred_over_target_4w"
+                target_semantics[position]["18w"] = "target_util_18w_preferred_over_target_18w"
+                if len(feature_cols) < 5:
+                    horizon_status[position]["hybrid_4w"] = "insufficient_features"
+                    horizon_status[position]["deep_18w"] = "insufficient_features"
+                    continue
+                pos_data = train_data[train_data["position"] == position].copy()
+                pos_data = pos_data.sort_values(["player_id", "season", "week"]).reset_index(drop=True)
+                X_pos = pos_data[feature_cols].replace([np.inf, -np.inf], np.nan).fillna(0)
+                player_ids = pos_data["player_id"].values
+                seasons_arr = pos_data["season"].values if "season" in pos_data.columns else None
+    
+                if MODEL_CONFIG.get("use_4w_hybrid", True) and n_seasons >= MIN_TRAINING_SEASONS_4W:
+                    y_4w = pos_data.get("target_util_4w", pos_data.get("target_4w"))
+                    if not HAS_TF or not HAS_ARIMA:
+                        reason = []
+                        if not HAS_TF:
+                            reason.append("tensorflow_missing")
+                        if not HAS_ARIMA:
+                            reason.append("statsmodels_missing")
+                        horizon_status[position]["hybrid_4w"] = "unavailable:" + ",".join(reason)
+                    elif y_4w is not None and y_4w.notna().sum() >= 100:
+                        try:
+                            hybrid = Hybrid4WeekModel(position)
+                            hybrid.fit(pos_data, y_4w, player_ids, feature_cols,
+                                      epochs=MODEL_CONFIG.get("lstm_epochs", 80),
+                                      seasons=seasons_arr)
+                            if hybrid.is_fitted:
+                                hybrid.save()
+                                horizon_status[position]["hybrid_4w"] = "trained_and_saved"
+                                print(f"  {position}: 4-week hybrid model saved")
                             else:
-                                horizon_status[position]["deep_18w"] = "fit_not_converged"
-                        else:
-                            horizon_status[position]["deep_18w"] = "insufficient_valid_rows"
-                    except Exception as e:
-                        horizon_status[position]["deep_18w"] = f"fit_failed:{e}"
-                        print(f"  18-week deep skip for {position}: {e}")
+                                horizon_status[position]["hybrid_4w"] = "fit_not_converged"
+                        except Exception as e:
+                            horizon_status[position]["hybrid_4w"] = f"fit_failed:{e}"
+                            print(f"  4-week hybrid skip for {position}: {e}")
+                    else:
+                        horizon_status[position]["hybrid_4w"] = "insufficient_targets"
+                elif not MODEL_CONFIG.get("use_4w_hybrid", True):
+                    horizon_status[position]["hybrid_4w"] = "disabled_by_config"
                 else:
-                    horizon_status[position]["deep_18w"] = "insufficient_targets"
-            elif not MODEL_CONFIG.get("use_18w_deep", True):
-                horizon_status[position]["deep_18w"] = "disabled_by_config"
-            else:
-                horizon_status[position]["deep_18w"] = "insufficient_training_seasons"
-    except ImportError:
-        print("  Horizon models skipped (TensorFlow not available).")
-        for position in positions:
-            horizon_status[position]["hybrid_4w"] = "unavailable:horizon_module_import_error"
-            horizon_status[position]["deep_18w"] = "unavailable:horizon_module_import_error"
-    except Exception as e:
-        print(f"  Horizon-specific training skipped: {e}")
-        for position in positions:
-            horizon_status[position]["hybrid_4w"] = f"unexpected_error:{e}"
-            horizon_status[position]["deep_18w"] = f"unexpected_error:{e}"
+                    horizon_status[position]["hybrid_4w"] = "insufficient_training_seasons"
+    
+                if MODEL_CONFIG.get("use_18w_deep", True) and n_seasons >= MIN_TRAINING_SEASONS_18W:
+                    y_18w = pos_data.get("target_util_18w", pos_data.get("target_18w"))
+                    if not HAS_TF:
+                        horizon_status[position]["deep_18w"] = "unavailable:tensorflow_missing"
+                    elif y_18w is not None and y_18w.notna().sum() >= 80:
+                        try:
+                            deep = DeepSeasonLongModel(position, n_features=min(150, len(feature_cols)))
+                            X_arr = X_pos.values.astype(np.float64)
+                            y_arr = y_18w.values.astype(np.float64)
+                            valid = np.isfinite(y_arr) & np.all(np.isfinite(X_arr), axis=1)
+                            if valid.sum() >= 80:
+                                seasons_18w = seasons_arr[valid] if seasons_arr is not None else None
+                                deep.fit(
+                                    X_arr[valid], y_arr[valid],
+                                    feature_names=feature_cols,
+                                    epochs=MODEL_CONFIG.get("deep_epochs", 100),
+                                    batch_size=MODEL_CONFIG.get("deep_batch_size", 64),
+                                    seasons=seasons_18w,
+                                )
+                                if deep.is_fitted:
+                                    deep.save()
+                                    horizon_status[position]["deep_18w"] = "trained_and_saved"
+                                    print(f"  {position}: 18-week deep model saved")
+                                else:
+                                    horizon_status[position]["deep_18w"] = "fit_not_converged"
+                            else:
+                                horizon_status[position]["deep_18w"] = "insufficient_valid_rows"
+                        except Exception as e:
+                            horizon_status[position]["deep_18w"] = f"fit_failed:{e}"
+                            print(f"  18-week deep skip for {position}: {e}")
+                    else:
+                        horizon_status[position]["deep_18w"] = "insufficient_targets"
+                elif not MODEL_CONFIG.get("use_18w_deep", True):
+                    horizon_status[position]["deep_18w"] = "disabled_by_config"
+                else:
+                    horizon_status[position]["deep_18w"] = "insufficient_training_seasons"
+        except ImportError:
+            print("  Horizon models skipped (TensorFlow not available).")
+            for position in positions:
+                horizon_status[position]["hybrid_4w"] = "unavailable:horizon_module_import_error"
+                horizon_status[position]["deep_18w"] = "unavailable:horizon_module_import_error"
+        except Exception as e:
+            print(f"  Horizon-specific training skipped: {e}")
+            for position in positions:
+                horizon_status[position]["hybrid_4w"] = f"unexpected_error:{e}"
+                horizon_status[position]["deep_18w"] = f"unexpected_error:{e}"
     try:
         with open(MODELS_DIR / "horizon_model_status.json", "w", encoding="utf-8") as f:
             json.dump(

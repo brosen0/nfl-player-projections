@@ -380,12 +380,14 @@ def _generate_oof_utilization(subset: pd.DataFrame) -> Optional[np.ndarray]:
 
 
 def train_utilization_to_fp_per_position(
-    train_data: pd.DataFrame, positions: Optional[List[str]] = None
+    train_data: pd.DataFrame, positions: Optional[List[str]] = None,
+    fast: bool = False,
 ) -> Dict[str, UtilizationToFPConverter]:
     """Train conversion model for requested positions (default RB/WR/TE).
 
     Uses OOF-predicted utilization scores to train the converter, reducing
     the train/serve distribution mismatch from cascaded prediction error.
+    In fast mode, skips OOF generation to avoid OOM on large datasets.
     """
     converters = {}
     for pos in (positions or ["RB", "WR", "TE"]):
@@ -393,7 +395,10 @@ def train_utilization_to_fp_per_position(
         if "utilization_score" not in subset.columns or "fantasy_points" not in subset.columns:
             continue
         # Generate OOF utilization predictions for this position
-        oof_util = _generate_oof_utilization(subset)
+        # Skip in fast mode: 5-fold RF+XGBoost on all features can OOM
+        oof_util = None
+        if not fast:
+            oof_util = _generate_oof_utilization(subset)
         if oof_util is not None:
             # Drop rows without OOF predictions (early folds)
             has_oof = ~np.isnan(oof_util)

@@ -37,16 +37,14 @@ except ImportError:
 
 
 def _get_device(model_type: str = "feedforward") -> "torch.device":
-    """Select best available device: CUDA > MPS (Apple GPU, PyTorch >=2.4) > CPU.
+    """Select best available device: CUDA > MPS (feedforward only) > CPU.
 
-    PyTorch MPS backend has known stability issues with LSTM and very deep
-    networks in versions < 2.4. On those versions we fall back to CPU, which
-    still benefits from Apple Accelerate / multi-core BLAS on Apple Silicon.
+    MPS LSTM remains unstable (segfaults) even in PyTorch 2.11+.
+    Only use MPS for feedforward models; LSTM always runs on CPU.
     """
-    _ver = tuple(int(x) for x in torch.__version__.split(".")[:2])
     if torch.cuda.is_available():
         return torch.device("cuda")
-    if torch.backends.mps.is_available() and _ver >= (2, 4):
+    if model_type == "feedforward" and torch.backends.mps.is_available():
         return torch.device("mps")
     return torch.device("cpu")
 
