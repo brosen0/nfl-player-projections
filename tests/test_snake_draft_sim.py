@@ -151,28 +151,28 @@ def test_build_draft_board_matches_last_name_and_position():
 
 
 def test_vorp_subtracts_position_replacement_level():
-    """VORP for the top QB = QB1_proj - QB14_proj;
-       VORP for the top RB = RB1_proj - RB35_proj.
+    """VORP for the top QB = QB1_proj - QB12_proj;
+       VORP for the top RB = RB1_proj - RB30_proj.
        Cross-position ordering should favor RB scarcity."""
     import pandas as pd
     rows = []
-    # 20 QBs: 30, 29, 28, ..., 11 (QB14 = 30 - 13 = 17)
+    # 20 QBs: 30, 29, 28, ..., 11 (QB12 = 30 - 11 = 19)
     for i in range(20):
         rows.append({"player_id": f"QB{i}", "name": f"QB{i}", "position": "QB",
                      "team": "X", "pred_total": 30 - i,
                      "actual_total": 0.0, "weeks": 17})
-    # 40 RBs: 25, 24.5, 24, ..., 5.5 (RB35 = 25 - 0.5*34 = 8)
+    # 40 RBs: 25, 24.5, 24, ..., 5.5 (RB30 = 25 - 0.5*29 = 10.5)
     for i in range(40):
         rows.append({"player_id": f"RB{i}", "name": f"RB{i}", "position": "RB",
                      "team": "X", "pred_total": 25 - 0.5 * i,
                      "actual_total": 0.0, "weeks": 17})
     agg = pd.DataFrame(rows)
     vorp = sd._apply_vorp(agg, basis_col="pred_total")
-    # QB1 (proj 30) replacement QB14 (proj 17) -> VORP 13
-    assert abs(vorp.iloc[0] - 13.0) < 1e-6, f"QB1 VORP = {vorp.iloc[0]}"
-    # RB1 (proj 25) replacement RB35 (proj 8) -> VORP 17
+    # QB1 (proj 30) replacement QB12 (proj 19) -> VORP 11
+    assert abs(vorp.iloc[0] - 11.0) < 1e-6, f"QB1 VORP = {vorp.iloc[0]}"
+    # RB1 (proj 25) replacement RB30 (proj 10.5) -> VORP 14.5
     rb1_idx = agg.index[agg["player_id"] == "RB0"][0]
-    assert abs(vorp.iloc[rb1_idx] - 17.0) < 1e-6, f"RB1 VORP = {vorp.iloc[rb1_idx]}"
+    assert abs(vorp.iloc[rb1_idx] - 14.5) < 1e-6, f"RB1 VORP = {vorp.iloc[rb1_idx]}"
     # RB has higher VORP than QB despite lower raw projection.
     assert vorp.iloc[rb1_idx] > vorp.iloc[0]
 
