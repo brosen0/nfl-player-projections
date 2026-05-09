@@ -356,3 +356,56 @@ class TestWalkForwardBiasRegression:
             + "\n\nThis is the regression the calibration gate was deleted "
             "to replace — see council-transcript-20260414-034617.md."
         )
+
+
+# ---------------------------------------------------------------------------
+# Quality gate — CI-enforceable, uses committed data/models/backtest_metrics.json
+# ---------------------------------------------------------------------------
+# This gate runs in CI (no live data required). It enforces regression floors
+# against the committed measured metrics. Thresholds are conservative now;
+# tighten them as model quality improves and backtest_metrics.json is updated.
+
+QUALITY_GATE_PATH = DATA_DIR / "models" / "backtest_metrics.json"
+
+
+class TestQualityGate:
+    """Enforce model quality floors using committed backtest_metrics.json.
+
+    Unlike TestPredictionBias (which skips in CI because backtest data is
+    gitignored), this class always runs — the metrics file is committed.
+    Thresholds are regression guards, not quality targets. Update
+    backtest_metrics.json and tighten thresholds after each retrain.
+    """
+
+    @pytest.fixture()
+    def gate(self):
+        if not QUALITY_GATE_PATH.exists():
+            pytest.skip("data/models/backtest_metrics.json not found")
+        return json.loads(QUALITY_GATE_PATH.read_text())
+
+    def test_overall_r2_above_floor(self, gate):
+        r2 = gate["measured"]["overall"]["r2"]
+        floor = gate["thresholds"]["min_overall_r2"]
+        assert r2 >= floor, (
+            f"Overall R² = {r2:.3f} is below regression floor {floor}. "
+            f"Update data/models/backtest_metrics.json after retraining."
+        )
+
+    def test_per_position_r2_above_floor(self, gate):
+        floor = gate["thresholds"]["min_position_r2"]
+        bad = [
+            (pos, m["r2"])
+            for pos, m in gate["measured"]["by_position"].items()
+            if m["r2"] < floor
+        ]
+        assert bad == [], (
+            f"Positions below R² floor {floor}: "
+            + ", ".join(f"{pos}={r2:.3f}" for pos, r2 in bad)
+        )
+
+    def test_overall_correlation_above_floor(self, gate):
+        corr = gate["measured"]["overall"]["correlation"]
+        floor = gate["thresholds"]["min_overall_correlation"]
+        assert corr >= floor, (
+            f"Overall correlation = {corr:.3f} is below floor {floor}."
+        )

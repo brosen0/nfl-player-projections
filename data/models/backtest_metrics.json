@@ -1,0 +1,30 @@
+{
+  "__meta__": {
+    "generated_at": "2026-05-09",
+    "source_file": "backtest_2025_20260506.json",
+    "description": "Latest measured backtest metrics and minimum acceptable thresholds. Update after each retrain. Thresholds are regression guards — tighten them as model quality improves."
+  },
+  "measured": {
+    "overall": {
+      "r2": -0.046,
+      "correlation": 0.387,
+      "mae": 5.38,
+      "rmse": 7.3,
+      "directional_accuracy_pct": 68.9,
+      "avg_predicted": 7.74,
+      "avg_actual": 8.27
+    },
+    "by_position": {
+      "QB": {"r2": 0.092, "correlation": 0.355, "mae": 5.85},
+      "WR": {"r2": -0.137, "correlation": 0.382, "mae": 5.13},
+      "TE": {"r2": -0.236, "correlation": 0.312, "mae": 4.72},
+      "RB": {"r2": -0.110, "correlation": 0.411, "mae": 6.06}
+    }
+  },
+  "thresholds": {
+    "min_overall_r2": -0.2,
+    "min_position_r2": -0.4,
+    "min_overall_correlation": 0.2,
+    "max_bias_pct": 40
+  }
+}
