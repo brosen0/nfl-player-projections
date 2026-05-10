@@ -75,20 +75,20 @@ function renderCard(p) {
   <div class="player-name" title="${p.n}">${p.n}</div>
   <div class="player-team">${p.t}${roleTag}</div>
   <div class="card-stats">
-    <div class="stat-item">
-      <span class="stat-label">Proj</span>
+    <div class="stat-item" title="Projected fantasy points this season">
+      <span class="stat-label">Proj Pts</span>
       <span class="stat-value">${p.proj}</span>
     </div>
-    <div class="stat-item">
-      <span class="stat-label">ADP</span>
+    <div class="stat-item" title="Average draft position (expert consensus rank)">
+      <span class="stat-label">ADP Rank</span>
       <span class="stat-value">${p.ecr}</span>
     </div>
-    <div class="stat-item">
-      <span class="stat-label">VORP</span>
+    <div class="stat-item" title="Points above a freely available replacement player at this position">
+      <span class="stat-label">Above Repl.</span>
       <span class="stat-value">${p.vorp}</span>
     </div>
-    <div class="stat-item">
-      <span class="stat-label">vs ADP</span>
+    <div class="stat-item" title="How many spots our model ranks them vs expert consensus — positive means undervalued">
+      <span class="stat-label">vs Experts</span>
       <span class="stat-value ${spCls}">${spStr}</span>
     </div>
   </div>

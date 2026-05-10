@@ -202,6 +202,22 @@ details summary::-webkit-details-marker { display: none; }
 }
 
 /* ============================================================
+   Glossary strip
+   ============================================================ */
+.glossary {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 20px 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 20px;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+.gl-value { color: var(--value); font-weight: 600; }
+.gl-avoid { color: var(--avoid); font-weight: 600; }
+
+/* ============================================================
    Player card
    ============================================================ */
 .player-card {
@@ -381,6 +397,13 @@ details summary::-webkit-details-marker { display: none; }
 
 <div class="stats-strip" id="statsStrip"></div>
 
+<div class="glossary">
+  <span><span class="gl-value">▲ Sleeper</span> — model projects more value than their draft rank suggests</span>
+  <span><span class="gl-avoid">▼ FADE</span> — model projects less value than their draft rank suggests</span>
+  <span><b>vs Experts</b> — positive = undervalued, negative = overvalued</span>
+  <span><b>Above Repl.</b> — points above a freely available player at same position</span>
+</div>
+
 <div class="card-grid" id="cardGrid"></div>
 
 <div class="footer">
@@ -470,20 +493,20 @@ function renderCard(p) {
   <div class="player-name" title="${p.n}">${p.n}</div>
   <div class="player-team">${p.t}${roleTag}</div>
   <div class="card-stats">
-    <div class="stat-item">
-      <span class="stat-label">Proj</span>
+    <div class="stat-item" title="Projected fantasy points this season">
+      <span class="stat-label">Proj Pts</span>
       <span class="stat-value">${p.proj}</span>
     </div>
-    <div class="stat-item">
-      <span class="stat-label">ADP</span>
+    <div class="stat-item" title="Average draft position (expert consensus rank)">
+      <span class="stat-label">ADP Rank</span>
       <span class="stat-value">${p.ecr}</span>
     </div>
-    <div class="stat-item">
-      <span class="stat-label">VORP</span>
+    <div class="stat-item" title="Points above a freely available replacement player at this position">
+      <span class="stat-label">Above Repl.</span>
       <span class="stat-value">${p.vorp}</span>
     </div>
-    <div class="stat-item">
-      <span class="stat-label">vs ADP</span>
+    <div class="stat-item" title="How many spots our model ranks them vs expert consensus — positive means undervalued">
+      <span class="stat-label">vs Experts</span>
       <span class="stat-value ${spCls}">${spStr}</span>
     </div>
   </div>

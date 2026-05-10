@@ -195,6 +195,22 @@ details summary::-webkit-details-marker { display: none; }
 }
 
 /* ============================================================
+   Glossary strip
+   ============================================================ */
+.glossary {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 20px 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 20px;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+.gl-value { color: var(--value); font-weight: 600; }
+.gl-avoid { color: var(--avoid); font-weight: 600; }
+
+/* ============================================================
    Player card
    ============================================================ */
 .player-card {
