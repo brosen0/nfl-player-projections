@@ -64,7 +64,10 @@ function renderCard(p) {
   const spCls  = p.sp > 5 ? "pos" : p.sp < -5 ? "neg" : "neu";
   const cardCls = p.sp >= 10 ? "signal-value" : p.sp <= -10 ? "signal-avoid" : "";
 
-  const roleTag   = p.role  ? `<span class="role-tag">${p.role}</span>` : "";
+  const roleDepthCap = { QB: 2, RB: 3, WR: 3, TE: 2 };
+  const roleNum = p.role ? parseInt(p.role.replace(/\D/g, ""), 10) : 99;
+  const showRole = p.role && roleNum <= (roleDepthCap[p.p] || 3);
+  const roleTag  = showRole ? `<span class="role-tag">${p.role}</span>` : "";
   const usageNote = p.usage ? `<span style="font-size:0.6rem;color:var(--text-dim)">${p.usage}</span>` : "";
 
   return `<div class="player-card ${cardCls}">
