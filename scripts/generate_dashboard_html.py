@@ -979,6 +979,14 @@ def build_board_data(season: int):
     breakout_adj = compute_breakout_candidates(season)
     def_rankings = compute_defense_rankings(season)
 
+    # Load manual adjustments (offseason moves, scheme changes, etc.)
+    manual_adj_path = PROJECT_ROOT / "data" / f"manual_adjustments_{season}.json"
+    manual_adjs = {}
+    if manual_adj_path.exists():
+        for entry in json.load(manual_adj_path.open()):
+            key = _norm_key(entry["player"])
+            manual_adjs[key] = {"mult": entry.get("mult", 1.0), "note": entry.get("note", "")}
+
     # Serialize board for JS
     players = []
     for i, sr in enumerate(spread_results):
@@ -1061,6 +1069,11 @@ def build_board_data(season: int):
         if sos_label:
             adj_reasons.append(sos_label)
 
+        # Manual override (offseason moves, known roster changes)
+        manual = manual_adjs.get(_norm_key(sr.name))
+        if manual:
+            adj_mult *= manual["mult"]
+
         adjusted_proj = round(raw_proj * adj_mult, 1)
         adj_pct = round((adj_mult - 1.0) * 100)
 
@@ -1087,6 +1100,7 @@ def build_board_data(season: int):
             "tpp": tt.get("pass_pct", 0),
             "act": round(sr.actual_total, 1) if has_actuals else None,
             "w": sr.model_wins if has_actuals else None,
+            "adj_note": manual["note"] if manual else "",
         })
 
     return {

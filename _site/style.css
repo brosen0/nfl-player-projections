@@ -210,6 +210,14 @@ details summary::-webkit-details-marker { display: none; }
 .gl-value { color: var(--value); font-weight: 600; }
 .gl-avoid { color: var(--avoid); font-weight: 600; }
 
+/* Manual adjustment note on card */
+.adj-badge {
+  margin-top: 6px;
+  font-size: 0.6rem;
+  font-style: italic;
+  color: var(--text-dim);
+}
+
 /* ============================================================
    Player card
    ============================================================ */

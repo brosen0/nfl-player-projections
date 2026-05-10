@@ -69,6 +69,7 @@ function renderCard(p) {
   const showRole = p.role && roleNum <= (roleDepthCap[p.p] || 3);
   const roleTag  = showRole ? `<span class="role-tag">${p.role}</span>` : "";
   const usageNote = p.usage ? `<span style="font-size:0.6rem;color:var(--text-dim)">${p.usage}</span>` : "";
+  const adjBadge  = p.adj_note ? `<div class="adj-badge" title="Manual adjustment">✎ ${p.adj_note}</div>` : "";
 
   return `<div class="player-card ${cardCls}">
   <div class="card-top">
@@ -99,6 +100,7 @@ function renderCard(p) {
     <span class="signal-badge ${sig.cls}">${sig.label}</span>
     ${usageNote}
   </div>
+  ${adjBadge}
 </div>`;
 }
 
