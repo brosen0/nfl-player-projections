@@ -38,6 +38,7 @@ from scripts.draft_advisor import (
 )
 
 SITE_DIR = PROJECT_ROOT / "_site"
+DOCS_DIR = PROJECT_ROOT / "docs"  # GitHub Pages serves from here
 DRAFT_PICKS_PATH = PROJECT_ROOT / "data" / "draft_picks.parquet"
 
 # PFR team codes → standard codes used in the rest of the system
@@ -1197,8 +1198,8 @@ def main():
     print("  Generating HTML...")
     html = generate_html(board_data, vona_data, data_sources)
 
-    SITE_DIR.mkdir(parents=True, exist_ok=True)
-    out_path = SITE_DIR / "index.html"
+    DOCS_DIR.mkdir(parents=True, exist_ok=True)
+    out_path = DOCS_DIR / "index.html"
     out_path.write_text(html, encoding="utf-8")
 
     size_kb = out_path.stat().st_size / 1024

@@ -99,9 +99,7 @@ config/__pycache__/
 # Walk-forward validation artifact (generated, uploaded as workflow artifact)
 walk-forward-validation.md
 
-# Dashboard: generated HTML is gitignored in main — lives in gh-pages branch.
+# Dashboard: regenerate locally (nfl_data.db too large for CI), then push.
 # Regenerate: python scripts/generate_dashboard_html.py
-# Deploy:     bash scripts/deploy.sh
-_site/index.html
 
 data/nfl_data.db
