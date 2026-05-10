@@ -1213,9 +1213,11 @@ def load_all_historical_data(seasons: List[int] = None):
                             'season': int(row['season']),
                             'week': int(row['week']),
                             'utilization_score': float(row['utilization_score']),
-                            'snap_share': float(row.get('snap_share', 0)),
-                            'target_share': float(row.get('target_share', 0)),
-                            'rush_share': float(row.get('rush_share', 0)),
+                            'snap_share': float(row.get('snap_share_pct', 0)),
+                            'target_share': float(row.get('target_share_pct', 0)),
+                            'rush_share': float(row.get('rush_share_pct', 0)),
+                            'redzone_share': float(row.get('redzone_share_pct', 0)),
+                            'air_yards_share': float(row.get('air_yards_share_pct', 0)),
                         })
                         count += 1
                     except Exception:

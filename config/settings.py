@@ -210,11 +210,11 @@ MODEL_CONFIG = {
     "correlation_threshold": 0.92,  # Drop one of pair if correlation exceeds this
     "vif_threshold": 10,  # Iteratively drop features with VIF above this
     "adaptive_feature_count": True,  # Scale n_features_per_position by sqrt(n_samples)
-    "recency_decay_halflife": 2.0,  # Seasons: weight halves every 2 seasons (None = no weighting)
+    "recency_decay_halflife": 1.5,  # Seasons: weight halves every 1.5 seasons (tightened from 2.0 for 2027 focus)
     # Horizon-aware recency: longer horizons should decay more slowly.
-    # Defaults: 1w=2 seasons, 4w=3 seasons, 18w=4 seasons.
+    # Defaults: 1w=1.5 seasons, 4w=2.5 seasons, 18w=3.5 seasons.
     # If a horizon is missing, falls back to recency_decay_halflife.
-    "horizon_recency_halflife": {1: 2.0, 4: 3.0, 18: 4.0},
+    "horizon_recency_halflife": {1: 1.5, 4: 2.5, 18: 3.5},
     "cv_gap_seasons": 1,  # Gap between train and val for purged CV (1 = purge last season before test)
     # Per-position target override: "fp" trains directly on fantasy points (no util conversion),
     # "util" trains on utilization score then converts to FP (original two-stage approach).
@@ -306,6 +306,7 @@ CAUSAL_FEATURES = {
         # PBP efficiency (2018+) — EPA captures play value in context
         "rush_epa_per_play_roll3_mean",
         "opp_fpts_allowed", "implied_team_total", "spread",
+        "team_prior_season_wins",
         "injury_score", "prev_season_ppg", "preseason_ecr",
         "age_curve", "team_changed", "availability_3yr",
         "career_year_flag", "bayesian_prior_ppg",
@@ -314,13 +315,18 @@ CAUSAL_FEATURES = {
         "speed_score", "team_motion_rate", "team_play_action_rate",
     ],
     "WR": [
+        "snap_share_pct_roll3_mean",
         "target_share_pct_roll3_mean", "air_yards_share_pct_roll3_mean",
         "targets_roll3_mean", "receptions_roll3_mean",
         "receiving_tds_roll3_mean", "yards_per_target_roll3_mean",
         "ngs_avg_separation_roll3_mean",
+        # NGS target depth + YAC ability (2018+) — route type and elusiveness signal
+        "ngs_avg_intended_air_yards_roll3_mean",
+        "ngs_avg_yac_above_expectation_roll3_mean",
         # PBP efficiency (2018+) — receiving EPA per target
         "recv_epa_per_target_roll3_mean",
         "opp_fpts_allowed", "implied_team_total", "spread",
+        "team_prior_season_wins",
         "injury_score", "prev_season_ppg", "preseason_ecr",
         "age_curve", "team_changed", "availability_3yr",
         "career_year_flag", "bayesian_prior_ppg",
@@ -334,9 +340,13 @@ CAUSAL_FEATURES = {
         "targets_roll3_mean", "receptions_roll3_mean",
         "receiving_tds_roll3_mean", "yards_per_target_roll3_mean",
         "ngs_avg_separation_roll3_mean",
+        # NGS target depth + YAC ability (2018+) — route type and elusiveness signal
+        "ngs_avg_intended_air_yards_roll3_mean",
+        "ngs_avg_yac_above_expectation_roll3_mean",
         # PBP efficiency (2018+) — receiving EPA per target
         "recv_epa_per_target_roll3_mean",
         "opp_fpts_allowed", "implied_team_total", "spread",
+        "team_prior_season_wins",
         "injury_score", "prev_season_ppg", "preseason_ecr",
         "age_curve", "team_changed", "availability_3yr",
         "career_year_flag", "bayesian_prior_ppg",
@@ -358,6 +368,7 @@ CAUSAL_FEATURES = {
         "ngs_avg_time_to_throw_roll3_mean",
         # Game context
         "opp_fpts_allowed", "implied_team_total", "spread",
+        "team_prior_season_wins",
         # Player context
         "injury_score", "prev_season_ppg", "preseason_ecr",
         "age_curve", "team_changed", "availability_3yr",

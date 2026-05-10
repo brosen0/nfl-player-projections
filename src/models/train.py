@@ -1402,6 +1402,21 @@ def train_models(positions: list = None,
     summary = trainer.get_training_summary()
     print(summary.to_string(index=False))
 
+    # Train preseason projector (season-total model for draft tool)
+    print("\nTraining preseason projector (season-total model)...")
+    try:
+        from src.models.preseason_projector import PreseasonProjector
+        proj, pairs_df = PreseasonProjector.train(seasons=train_seasons + [actual_test_season])
+        projector_path = MODELS_DIR / "preseason_projector.json"
+        proj.save(projector_path)
+        for pos, model in proj.models.items():
+            n = int((pairs_df["position"] == pos).sum())
+            coef_top = sorted(zip(proj.feature_names[pos], model.coef_.tolist()), key=lambda x: abs(x[1]), reverse=True)[:3]
+            print(f"  {pos}: {n} samples, top features: {coef_top}")
+        print(f"  Preseason projector saved to {projector_path}")
+    except Exception as e:
+        print(f"  WARNING: Preseason projector training failed: {e}")
+
     print("\nModels saved to:", MODELS_DIR)
     # Persist feature version so prediction path can detect stale (old-feature) models
     version_path = MODELS_DIR / FEATURE_VERSION_FILENAME

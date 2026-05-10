@@ -9,7 +9,7 @@ import pandas as pd
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from config.settings import DATA_DIR, SEASONS_TO_SCRAPE
+from config.settings import DATA_DIR, SEASONS_TO_SCRAPE, TRAINING_START_YEAR_DEFAULT
 from src.utils.database import DatabaseManager
 
 
@@ -165,9 +165,11 @@ class DataManager:
             if test_season not in available:
                 test_season = max(available)
         
-        # Get training seasons: all seasons before test
-        train_seasons = [s for s in available if s < test_season]
-        
+        # Get training seasons: all seasons before test, enforcing hard 2018+ cutoff.
+        # Pre-2018 data lacks NGS, snap counts, and modern play-calling norms — it's
+        # noise for current projections (TRAINING_START_YEAR_DEFAULT = 2018 is now hard).
+        train_seasons = [s for s in available if s < test_season and s >= TRAINING_START_YEAR_DEFAULT]
+
         # Optionally limit training window
         if n_train_seasons is not None and n_train_seasons > 0:
             train_seasons = sorted(train_seasons)[-n_train_seasons:]

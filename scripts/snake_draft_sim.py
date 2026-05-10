@@ -266,9 +266,35 @@ def load_preseason_projections(season: int, adp_df: pd.DataFrame = None) -> pd.D
         return prior_df
 
     if not prior_df.empty:
-        prior_df["model_rank_value"] = prior_df["ppg"] * 17
-        prior_df["pred_total"] = prior_df["model_rank_value"]
-        prior_df = prior_df.drop(columns=["ppg"])
+        # Try ML season-total projector first; fall back to PPG × 17 heuristic
+        try:
+            from pathlib import Path as _Path
+            _projector_path = _Path(__file__).resolve().parent.parent / "data" / "models" / "preseason_projector.json"
+            if _projector_path.exists():
+                from src.models.preseason_projector import PreseasonProjector
+                _proj = PreseasonProjector.load(_projector_path)
+                _ml_preds = []
+                for pos in ("QB", "RB", "WR", "TE"):
+                    pos_mask = prior_df["position"] == pos
+                    if pos_mask.any() and pos in _proj.models:
+                        pos_df = prior_df[pos_mask].copy()
+                        preds = _proj.predict(pos_df, pos)
+                        _ml_preds.extend(zip(pos_df.index, preds))
+                if _ml_preds:
+                    ml_series = {idx: val for idx, val in _ml_preds}
+                    prior_df["model_rank_value"] = prior_df.index.map(
+                        lambda i: ml_series.get(i, prior_df.loc[i, "ppg"] * 17)
+                    )
+                    prior_df["pred_total"] = prior_df["model_rank_value"]
+                    prior_df = prior_df.drop(columns=["ppg"])
+                else:
+                    raise ValueError("No ML predictions produced")
+            else:
+                raise FileNotFoundError("preseason_projector.json not found")
+        except Exception:
+            prior_df["model_rank_value"] = prior_df["ppg"] * 17
+            prior_df["pred_total"] = prior_df["model_rank_value"]
+            prior_df = prior_df.drop(columns=["ppg"])
 
     # Add rookies/unmatched ADP players
     if adp_df is not None and not adp_df.empty:

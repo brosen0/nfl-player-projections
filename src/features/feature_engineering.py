@@ -107,6 +107,9 @@ class FeatureEngineer:
         # Vegas game script predictors (spread, over/under, implied team total)
         df = self._create_vegas_game_script_features(df)
 
+        # Team quality: prior-season wins (causal — known before season starts)
+        df = self._add_prior_season_wins(df)
+
         # Advanced analytics: sentiment, coaching changes, suspensions,
         # trade deadline, and playoff context features.
         df = self._create_advanced_analytics_features(df)
@@ -180,6 +183,9 @@ class FeatureEngineer:
 
         # Vegas features (creates implied_team_total)
         df = self._create_vegas_game_script_features(df)
+
+        # Team quality: prior-season wins (causal — known before season starts)
+        df = self._add_prior_season_wins(df)
 
         # NGS stats (CPOE, separation, RYOE) — merged + rolled for causal features
         df = self._merge_ngs_data(df)
@@ -2617,6 +2623,51 @@ class FeatureEngineer:
         except Exception as e:
             print(f"  WARNING: Could not merge draft capital: {e}")
             df["draft_capital_value"] = 0.05
+        return df
+
+    def _add_prior_season_wins(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Add team_prior_season_wins: the team's actual wins in the prior season.
+
+        Computed from the schedule table (count wins per team-season) and lagged
+        by 1 season so it's strictly causal — known before the current season starts.
+        Defaults to 8.5 (half of 17, league average) when unavailable.
+        """
+        if "team" not in df.columns or "season" not in df.columns:
+            df["team_prior_season_wins"] = 8.5
+            return df
+        try:
+            import sqlite3
+            from config.settings import DB_PATH
+            conn = sqlite3.connect(str(DB_PATH))
+            rows = conn.execute("""
+                SELECT
+                    home_team AS team, season,
+                    SUM(CASE WHEN home_score > away_score THEN 1 ELSE 0 END) AS wins
+                FROM schedule
+                WHERE home_score IS NOT NULL AND away_score IS NOT NULL AND week <= 18
+                GROUP BY home_team, season
+                UNION ALL
+                SELECT
+                    away_team AS team, season,
+                    SUM(CASE WHEN away_score > home_score THEN 1 ELSE 0 END) AS wins
+                FROM schedule
+                WHERE home_score IS NOT NULL AND away_score IS NOT NULL AND week <= 18
+                GROUP BY away_team, season
+            """).fetchall()
+            conn.close()
+        except Exception:
+            df["team_prior_season_wins"] = 8.5
+            return df
+
+        import pandas as pd
+        wins_df = pd.DataFrame(rows, columns=["team", "season", "wins"])
+        wins_df = wins_df.groupby(["team", "season"], as_index=False)["wins"].sum()
+        # Lag by 1 season: prior_season_wins for season S comes from season S-1
+        wins_df["season"] = wins_df["season"] + 1
+        wins_df = wins_df.rename(columns={"wins": "team_prior_season_wins"})
+
+        df = df.merge(wins_df, on=["team", "season"], how="left")
+        df["team_prior_season_wins"] = df["team_prior_season_wins"].fillna(8.5)
         return df
 
     def _create_advanced_analytics_features(self, df: pd.DataFrame) -> pd.DataFrame:
