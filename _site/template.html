@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Draft Advisor {{SEASON}}</title>
+<style>
+{{STYLE_CSS}}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div>
+    <div class="header-title">Draft Advisor {{SEASON}}</div>
+    <div class="header-sub">Model-powered fantasy draft rankings</div>
+  </div>
+  <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+    <input
+      class="search-box"
+      id="searchInput"
+      placeholder="Search players…"
+      oninput="setSearch(this.value)"
+      autocomplete="off"
+    >
+    <select class="sort-select" onchange="setSort(this.value)">
+      <option value="mr">Sort: Value Rank</option>
+      <option value="proj">Sort: Proj Pts</option>
+      <option value="ecr">Sort: ADP</option>
+      <option value="sp">Sort: vs ADP</option>
+      <option value="vorp">Sort: VORP</option>
+    </select>
+  </div>
+</div>
+
+<div class="controls">
+  <div class="pills" id="pills"></div>
+</div>
+
+<div class="stats-strip" id="statsStrip"></div>
+
+<div id="sourcesRow"></div>
+
+<div class="card-grid" id="cardGrid"></div>
+
+<div class="footer">
+  Projections from walk-forward ML models trained on 2006&ndash;{{PREV_SEASON}} NFL data.
+  Not financial advice.
+</div>
+
+<script>
+const BOARD = {{BOARD_JSON}};
+const VONA  = {{VONA_JSON}};
+const META  = {{META_JSON}};
+
+{{APP_JS}}
+</script>
+</body>
+</html>
