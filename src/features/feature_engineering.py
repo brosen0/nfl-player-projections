@@ -109,6 +109,8 @@ class FeatureEngineer:
 
         # Team quality: prior-season wins (causal — known before season starts)
         df = self._add_prior_season_wins(df)
+        # Prior-season QB efficiency (benefits WR/TE predictions)
+        df = self._add_team_qb_efficiency(df)
 
         # Advanced analytics: sentiment, coaching changes, suspensions,
         # trade deadline, and playoff context features.
@@ -186,6 +188,8 @@ class FeatureEngineer:
 
         # Team quality: prior-season wins (causal — known before season starts)
         df = self._add_prior_season_wins(df)
+        # Prior-season QB efficiency (benefits WR/TE predictions)
+        df = self._add_team_qb_efficiency(df)
 
         # NGS stats (CPOE, separation, RYOE) — merged + rolled for causal features
         df = self._merge_ngs_data(df)
@@ -2668,6 +2672,47 @@ class FeatureEngineer:
 
         df = df.merge(wins_df, on=["team", "season"], how="left")
         df["team_prior_season_wins"] = df["team_prior_season_wins"].fillna(8.5)
+        return df
+
+    def _add_team_qb_efficiency(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Add team_qb_pass_epa_per_att: prior-season QB passing EPA per attempt.
+
+        A WR/TE on a high-EPA QB team should project higher controlling for
+        target share. Lagged by 1 season so it's strictly causal.
+        Defaults to 0.0 (league average) when unavailable.
+        """
+        if "team" not in df.columns or "season" not in df.columns:
+            df["team_qb_pass_epa_per_att"] = 0.0
+            return df
+        try:
+            import sqlite3
+            from config.settings import DB_PATH
+            conn = sqlite3.connect(str(DB_PATH))
+            rows = conn.execute("""
+                SELECT pws.team, pws.season,
+                       SUM(pws.pass_epa) AS total_epa,
+                       SUM(pws.passing_attempts) AS total_att
+                FROM player_weekly_stats pws
+                JOIN players p ON pws.player_id = p.player_id
+                WHERE p.position = 'QB'
+                  AND pws.passing_attempts > 0
+                GROUP BY pws.team, pws.season
+                HAVING SUM(pws.passing_attempts) > 50
+            """).fetchall()
+            conn.close()
+        except Exception:
+            df["team_qb_pass_epa_per_att"] = 0.0
+            return df
+
+        import pandas as pd
+        qb_df = pd.DataFrame(rows, columns=["team", "season", "total_epa", "total_att"])
+        qb_df["team_qb_pass_epa_per_att"] = qb_df["total_epa"] / qb_df["total_att"]
+        qb_df = qb_df[["team", "season", "team_qb_pass_epa_per_att"]]
+        # Lag by 1 season: prior QB quality predicts this season's WR/TE output
+        qb_df["season"] = qb_df["season"] + 1
+
+        df = df.merge(qb_df, on=["team", "season"], how="left")
+        df["team_qb_pass_epa_per_att"] = df["team_qb_pass_epa_per_att"].fillna(0.0)
         return df
 
     def _create_advanced_analytics_features(self, df: pd.DataFrame) -> pd.DataFrame:

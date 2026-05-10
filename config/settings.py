@@ -327,6 +327,8 @@ CAUSAL_FEATURES = {
         "recv_epa_per_target_roll3_mean",
         "opp_fpts_allowed", "implied_team_total", "spread",
         "team_prior_season_wins",
+        # Prior-season QB efficiency: high-EPA QB elevates WR output (2006+)
+        "team_qb_pass_epa_per_att",
         "injury_score", "prev_season_ppg", "preseason_ecr",
         "age_curve", "team_changed", "availability_3yr",
         "career_year_flag", "bayesian_prior_ppg",
@@ -347,6 +349,8 @@ CAUSAL_FEATURES = {
         "recv_epa_per_target_roll3_mean",
         "opp_fpts_allowed", "implied_team_total", "spread",
         "team_prior_season_wins",
+        # Prior-season QB efficiency: high-EPA QB elevates TE output (2006+)
+        "team_qb_pass_epa_per_att",
         "injury_score", "prev_season_ppg", "preseason_ecr",
         "age_curve", "team_changed", "availability_3yr",
         "career_year_flag", "bayesian_prior_ppg",
@@ -515,7 +519,7 @@ QB_TARGET_CHOICE_FILENAME = "qb_target_choice.json"
 
 # Feature set version: bump when feature_engineering adds/removes/renames model features.
 # Saved when training; checked when loading models. Mismatch triggers a retrain warning.
-FEATURE_VERSION = "14"  # v14: PBP EPA, late momentum, contracts, depth charts
+FEATURE_VERSION = "15"  # v15: team_qb_pass_epa_per_att for WR/TE
 FEATURE_VERSION_FILENAME = "feature_version.txt"
 
 # =============================================================================

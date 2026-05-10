@@ -1,10 +1,10 @@
 {
-  "generated_at": "2026-05-09T23:04:07.054228",
-  "feature_version": "14",
+  "generated_at": "2026-05-10T00:43:52.394321",
+  "feature_version": "15",
   "metadata_file": "/Users/benrosen/nfl-player-projections/data/models/model_metadata.json",
   "training_metadata": {
-    "training_date": "2026-05-09T23:04:07.053924",
-    "feature_version": "14",
+    "training_date": "2026-05-10T00:43:52.394057",
+    "feature_version": "15",
     "train_seasons": [
       2018,
       2019,
@@ -49,36 +49,36 @@
       },
       "WR": {
         "FP (component)": {
-          "rmse": 5.8753434936088285,
-          "mae": 4.230186409800586,
-          "r2": 0.20231947914451798,
+          "rmse": 5.8728555294495015,
+          "mae": 4.229178548088007,
+          "r2": 0.20299490530492947,
           "within_7pt_pct": 83.27261687917425,
-          "within_10pt_pct": 91.22647237401335,
+          "within_10pt_pct": 91.2568306010929,
           "n_samples": 3294,
-          "mape": 63.637542425276614,
-          "spearman_rho": 0.4656083478557098
+          "mape": 63.70621519212663,
+          "spearman_rho": 0.4657255445314128
         }
       },
       "TE": {
         "FP (component)": {
-          "rmse": 5.566778410150156,
-          "mae": 3.9874841871103035,
-          "r2": 0.11389382680815696,
+          "rmse": 5.567819993531059,
+          "mae": 3.9876091455419256,
+          "r2": 0.1135622023958861,
           "within_7pt_pct": 85.42199488491049,
           "within_10pt_pct": 91.81585677749361,
           "n_samples": 391,
-          "mape": 66.08851459067027,
-          "spearman_rho": 0.4004103585271349
+          "mape": 66.04674092462623,
+          "spearman_rho": 0.4001125379617421
         }
       }
     },
     "n_features_per_position": {
       "QB": 30,
       "RB": 28,
-      "WR": 29,
-      "TE": 28
+      "WR": 30,
+      "TE": 29
     },
-    "previous_training_date": "2026-05-09T22:59:21.200676",
+    "previous_training_date": "2026-05-09T23:04:07.053924",
     "previous_feature_version": "14",
     "rollback_available": true,
     "n_rollback_versions": 5,
