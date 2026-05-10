@@ -980,12 +980,25 @@ def build_board_data(season: int):
     def_rankings = compute_defense_rankings(season)
 
     # Load manual adjustments (offseason moves, scheme changes, etc.)
+    # Matched by case-insensitive full-name substring to avoid norm_key collisions
+    # (e.g. "Bijan Robinson" vs "Brian Robinson Jr." share the same norm key).
     manual_adj_path = PROJECT_ROOT / "data" / f"manual_adjustments_{season}.json"
-    manual_adjs = {}
+    manual_adjs_raw = []
     if manual_adj_path.exists():
         for entry in json.load(manual_adj_path.open()):
-            key = _norm_key(entry["player"])
-            manual_adjs[key] = {"mult": entry.get("mult", 1.0), "note": entry.get("note", "")}
+            manual_adjs_raw.append({
+                "player": entry["player"].lower(),
+                "mult": entry.get("mult", 1.0),
+                "note": entry.get("note", ""),
+            })
+
+    def _find_manual_adj(name: str):
+        name_lower = name.lower()
+        for entry in manual_adjs_raw:
+            # Match if the entry name appears in the player name or vice versa
+            if entry["player"] in name_lower or name_lower in entry["player"]:
+                return entry
+        return None
 
     # Serialize board for JS
     players = []
@@ -1070,7 +1083,7 @@ def build_board_data(season: int):
             adj_reasons.append(sos_label)
 
         # Manual override (offseason moves, known roster changes)
-        manual = manual_adjs.get(_norm_key(sr.name))
+        manual = _find_manual_adj(sr.name)
         if manual:
             adj_mult *= manual["mult"]
 
