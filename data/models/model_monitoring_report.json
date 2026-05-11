@@ -1,10 +1,10 @@
 {
-  "generated_at": "2026-05-10T00:43:52.394321",
-  "feature_version": "15",
+  "generated_at": "2026-05-10T23:09:28.787726",
+  "feature_version": "17",
   "metadata_file": "/Users/benrosen/nfl-player-projections/data/models/model_metadata.json",
   "training_metadata": {
-    "training_date": "2026-05-10T00:43:52.394057",
-    "feature_version": "15",
+    "training_date": "2026-05-10T23:09:28.787369",
+    "feature_version": "17",
     "train_seasons": [
       2018,
       2019,
@@ -25,61 +25,61 @@
     "test_metrics": {
       "QB": {
         "FP (component)": {
-          "rmse": 6.895130718280949,
-          "mae": 5.6628263091736315,
-          "r2": 0.13868745460211018,
-          "within_7pt_pct": 66.98113207547169,
-          "within_10pt_pct": 85.84905660377359,
+          "rmse": 6.885964115974171,
+          "mae": 5.649239980558094,
+          "r2": 0.14097604397110286,
+          "within_7pt_pct": 66.66666666666666,
+          "within_10pt_pct": 86.63522012578616,
           "n_samples": 636,
-          "mape": 83.51451195849694,
-          "spearman_rho": 0.4076015331273759
+          "mape": 82.42065786311369,
+          "spearman_rho": 0.40628829741657685
         }
       },
       "RB": {
         "FP (component)": {
-          "rmse": 6.951231884997958,
-          "mae": 5.26525513280334,
-          "r2": 0.23224043027919983,
-          "within_7pt_pct": 74.82698961937716,
+          "rmse": 6.951459434497859,
+          "mae": 5.266957152750823,
+          "r2": 0.23219016403330495,
+          "within_7pt_pct": 74.65397923875432,
           "within_10pt_pct": 87.37024221453287,
           "n_samples": 1156,
-          "mape": 74.02323882046973,
-          "spearman_rho": 0.5044588261996488
+          "mape": 74.10078141803518,
+          "spearman_rho": 0.504124011963038
         }
       },
       "WR": {
         "FP (component)": {
-          "rmse": 5.8728555294495015,
-          "mae": 4.229178548088007,
-          "r2": 0.20299490530492947,
-          "within_7pt_pct": 83.27261687917425,
+          "rmse": 5.8732419713834645,
+          "mae": 4.228508746520061,
+          "r2": 0.20289001380132854,
+          "within_7pt_pct": 83.33333333333334,
           "within_10pt_pct": 91.2568306010929,
           "n_samples": 3294,
-          "mape": 63.70621519212663,
-          "spearman_rho": 0.4657255445314128
+          "mape": 63.66160356356482,
+          "spearman_rho": 0.4659106265173895
         }
       },
       "TE": {
         "FP (component)": {
-          "rmse": 5.567819993531059,
-          "mae": 3.9876091455419256,
-          "r2": 0.1135622023958861,
+          "rmse": 5.519138913382969,
+          "mae": 4.060505836600343,
+          "r2": 0.1289952088367251,
           "within_7pt_pct": 85.42199488491049,
-          "within_10pt_pct": 91.81585677749361,
+          "within_10pt_pct": 92.32736572890026,
           "n_samples": 391,
-          "mape": 66.04674092462623,
-          "spearman_rho": 0.4001125379617421
+          "mape": 71.84352573789124,
+          "spearman_rho": 0.40014317380405073
         }
       }
     },
     "n_features_per_position": {
-      "QB": 30,
-      "RB": 28,
-      "WR": 30,
-      "TE": 29
+      "QB": 33,
+      "RB": 31,
+      "WR": 32,
+      "TE": 31
     },
-    "previous_training_date": "2026-05-09T23:04:07.053924",
-    "previous_feature_version": "14",
+    "previous_training_date": "2026-05-10T23:05:12.102771",
+    "previous_feature_version": "17",
     "rollback_available": true,
     "n_rollback_versions": 5,
     "horizon_status_file": "/Users/benrosen/nfl-player-projections/data/models/horizon_model_status.json",

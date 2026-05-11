@@ -236,6 +236,12 @@ class FeatureEngineer:
         df = self._add_depth_chart_rank(df)
         df = self._add_late_season_momentum(df)
 
+        # v16: weekly PFR advanced stats (pressure rate, contact quality, drop rate)
+        df = self._add_weekly_pfr_features(df)
+
+        # v17: seasonal PFR prior-season stats (bad throw %, pocket time, broken tackles, drop rate)
+        df = self._add_seasonal_pfr_features(df)
+
         # Impute NaN/inf
         df = self._impute_missing(df)
 
@@ -601,6 +607,163 @@ class FeatureEngineer:
 
         df["is_contract_year"] = is_cy
         df["contract_apy_rank"] = apy_rank
+        return df
+
+    def _add_weekly_pfr_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Add rolling weekly PFR advanced stats: QB pressure rate, RB contact quality, WR/TE drop rate."""
+        output_cols = [
+            "qb_pressure_pct_roll3_mean",
+            "rb_ybc_avg_roll3_mean",
+            "rb_yac_avg_roll3_mean",
+            "recv_drop_pct_roll3_mean",
+        ]
+        if "player_id" not in df.columns or "season" not in df.columns:
+            for col in output_cols:
+                df[col] = 0.0
+            return df
+
+        try:
+            import sqlite3
+            import logging
+            from config.settings import DB_PATH
+            from src.data.nfl_data_loader import get_pfr_to_gsis_map
+
+            logger = logging.getLogger(__name__)
+            pfr_map = get_pfr_to_gsis_map()
+
+            c = sqlite3.connect(str(DB_PATH))
+            pfr = pd.read_sql("""
+                SELECT pfr_player_id, season, week, stat_type,
+                       times_pressured_pct,
+                       rushing_yards_before_contact_avg,
+                       rushing_yards_after_contact_avg,
+                       receiving_drop_pct
+                FROM weekly_pfr
+            """, c)
+            c.close()
+
+            pfr["player_id"] = pfr["pfr_player_id"].map(pfr_map)
+            pfr = pfr.dropna(subset=["player_id"])
+
+            pass_pfr = pfr[pfr["stat_type"] == "pass"][
+                ["player_id", "season", "week", "times_pressured_pct"]
+            ]
+            rush_pfr = pfr[pfr["stat_type"] == "rush"][
+                ["player_id", "season", "week",
+                 "rushing_yards_before_contact_avg", "rushing_yards_after_contact_avg"]
+            ]
+            recv_pfr = pfr[pfr["stat_type"] == "rec"][
+                ["player_id", "season", "week", "receiving_drop_pct"]
+            ]
+
+            df = df.merge(pass_pfr, on=["player_id", "season", "week"], how="left")
+            df = df.merge(rush_pfr, on=["player_id", "season", "week"], how="left")
+            df = df.merge(recv_pfr, on=["player_id", "season", "week"], how="left")
+
+            df = df.sort_values(["player_id", "season", "week"])
+            roll_map = {
+                "times_pressured_pct":              "qb_pressure_pct_roll3_mean",
+                "rushing_yards_before_contact_avg": "rb_ybc_avg_roll3_mean",
+                "rushing_yards_after_contact_avg":  "rb_yac_avg_roll3_mean",
+                "receiving_drop_pct":               "recv_drop_pct_roll3_mean",
+            }
+            for src, dst in roll_map.items():
+                if src in df.columns:
+                    df[dst] = (
+                        df.groupby("player_id")[src]
+                        .transform(lambda x: x.shift(1).rolling(3, min_periods=1).mean())
+                    )
+
+            # Fill NaN with positional median per season
+            pos_col = "position" if "position" in df.columns else None
+            for dst in output_cols:
+                if dst not in df.columns:
+                    df[dst] = 0.0
+                elif pos_col:
+                    df[dst] = df.groupby([pos_col, "season"])[dst].transform(
+                        lambda x: x.fillna(x.median())
+                    )
+                df[dst] = df[dst].fillna(0.0)
+
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning(f"weekly_pfr features skipped: {e}")
+            for col in output_cols:
+                if col not in df.columns:
+                    df[col] = 0.0
+
+        return df
+
+    def _add_seasonal_pfr_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Add prior-season PFR advanced stats: QB bad-throw/pocket-time, RB broken tackles, WR/TE drop rate."""
+        output_cols = [
+            "qb_bad_throw_pct_prior",
+            "qb_pocket_time_prior",
+            "rb_broken_tackles_prior",
+            "recv_drop_pct_season_prior",
+        ]
+        if "player_id" not in df.columns or "season" not in df.columns:
+            for col in output_cols:
+                df[col] = 0.0
+            return df
+
+        try:
+            import sqlite3
+            from config.settings import DB_PATH
+            from src.data.nfl_data_loader import get_pfr_to_gsis_map
+
+            pfr_map = get_pfr_to_gsis_map()
+
+            c = sqlite3.connect(str(DB_PATH))
+            pfr = pd.read_sql("""
+                SELECT pfr_player_id, season, stat_type,
+                       bad_throw_pct, pocket_time,
+                       broken_tackles_per_att,
+                       rec_drop_pct
+                FROM seasonal_pfr
+            """, c)
+            c.close()
+
+            pfr["player_id"] = pfr["pfr_player_id"].map(pfr_map)
+            pfr = pfr.dropna(subset=["player_id"])
+            # Shift by 1 season: season N stats predict season N+1
+            pfr["season"] = pfr["season"] + 1
+
+            pass_pfr = pfr[pfr["stat_type"] == "pass"][
+                ["player_id", "season", "bad_throw_pct", "pocket_time"]
+            ].rename(columns={
+                "bad_throw_pct": "qb_bad_throw_pct_prior",
+                "pocket_time":   "qb_pocket_time_prior",
+            })
+            rush_pfr = pfr[pfr["stat_type"] == "rush"][
+                ["player_id", "season", "broken_tackles_per_att"]
+            ].rename(columns={"broken_tackles_per_att": "rb_broken_tackles_prior"})
+            recv_pfr = pfr[pfr["stat_type"] == "rec"][
+                ["player_id", "season", "rec_drop_pct"]
+            ].rename(columns={"rec_drop_pct": "recv_drop_pct_season_prior"})
+
+            df = df.merge(pass_pfr, on=["player_id", "season"], how="left")
+            df = df.merge(rush_pfr, on=["player_id", "season"], how="left")
+            df = df.merge(recv_pfr, on=["player_id", "season"], how="left")
+
+            # Fill NaN with positional median per season
+            pos_col = "position" if "position" in df.columns else None
+            for col in output_cols:
+                if col not in df.columns:
+                    df[col] = 0.0
+                elif pos_col:
+                    df[col] = df.groupby([pos_col, "season"])[col].transform(
+                        lambda x: x.fillna(x.median())
+                    )
+                df[col] = df[col].fillna(0.0)
+
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning(f"seasonal_pfr features skipped: {e}")
+            for col in output_cols:
+                if col not in df.columns:
+                    df[col] = 0.0
+
         return df
 
     def _add_late_season_momentum(self, df: pd.DataFrame) -> pd.DataFrame:

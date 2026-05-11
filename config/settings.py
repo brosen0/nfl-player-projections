@@ -313,6 +313,10 @@ CAUSAL_FEATURES = {
         "fp_late6_vs_season",
         "is_contract_year", "contract_apy_rank", "depth_chart_rank",
         "speed_score", "team_motion_rate", "team_play_action_rate",
+        # PFR contact quality (2018+) — OL quality vs individual elusiveness
+        "rb_ybc_avg_roll3_mean", "rb_yac_avg_roll3_mean",
+        # Seasonal PFR prior-season broken tackles — individual elusiveness baseline
+        "rb_broken_tackles_prior",
     ],
     "WR": [
         "snap_share_pct_roll3_mean",
@@ -335,6 +339,10 @@ CAUSAL_FEATURES = {
         "fp_late6_vs_season",
         "is_contract_year", "contract_apy_rank", "depth_chart_rank",
         "speed_score", "team_motion_rate", "team_play_action_rate",
+        # PFR drop rate (2018+) — target quality / hands reliability
+        "recv_drop_pct_roll3_mean",
+        # Seasonal PFR prior-season drop rate — full-season hands baseline
+        "recv_drop_pct_season_prior",
     ],
     "TE": [
         "snap_share_pct_roll3_mean",
@@ -357,6 +365,10 @@ CAUSAL_FEATURES = {
         "fp_late6_vs_season",
         "is_contract_year", "contract_apy_rank", "depth_chart_rank",
         "speed_score", "team_motion_rate", "team_play_action_rate",
+        # PFR drop rate (2018+) — target quality / hands reliability
+        "recv_drop_pct_roll3_mean",
+        # Seasonal PFR prior-season drop rate — full-season hands baseline
+        "recv_drop_pct_season_prior",
     ],
     "QB": [
         # Volume (3-week rolling)
@@ -380,6 +392,10 @@ CAUSAL_FEATURES = {
         "fp_late6_vs_season",
         "is_contract_year", "contract_apy_rank", "depth_chart_rank",
         "speed_score", "team_motion_rate", "team_play_action_rate",
+        # PFR pressure rate (2018+) — QB performance under pressure
+        "qb_pressure_pct_roll3_mean",
+        # Seasonal PFR prior-season accuracy + pocket time — decision quality baseline
+        "qb_bad_throw_pct_prior", "qb_pocket_time_prior",
     ],
 }
 
@@ -519,7 +535,7 @@ QB_TARGET_CHOICE_FILENAME = "qb_target_choice.json"
 
 # Feature set version: bump when feature_engineering adds/removes/renames model features.
 # Saved when training; checked when loading models. Mismatch triggers a retrain warning.
-FEATURE_VERSION = "15"  # v15: team_qb_pass_epa_per_att for WR/TE
+FEATURE_VERSION = "17"  # v17: seasonal_pfr prior-season features (qb_bad_throw_pct, qb_pocket_time, rb_broken_tackles, recv_drop_pct_season)
 FEATURE_VERSION_FILENAME = "feature_version.txt"
 
 # =============================================================================
