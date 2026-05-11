@@ -545,7 +545,7 @@ class EnsemblePredictor:
                 should_convert = (
                     position in self.util_to_fp
                     and self.util_to_fp[position].is_fitted
-                    and _ptc.get(position, "util") != "fp"
+                    and _ptc.get(position, "util") == "util"
                     and (position != "QB" or self.qb_target == "util")
                 )
                 if should_convert:
@@ -619,7 +619,7 @@ class EnsemblePredictor:
                 should_convert = (
                     position in self.util_to_fp
                     and self.util_to_fp[position].is_fitted
-                    and _ptc2.get(position, "util") != "fp"
+                    and _ptc2.get(position, "util") == "util"
                     and (position != "QB" or self.qb_target == "util")
                 )
                 if should_convert:
@@ -938,7 +938,17 @@ class ModelTrainer:
                       f"component models on {len(X)} rows with {len(feature_cols)} features",
                       flush=True)
 
-                comp_pred.fit(X, y_comp_valid, sample_weight=sample_weight)
+                comp_seasons = (
+                    pos_data.loc[valid_mask, "season"].values
+                    if "season" in pos_data.columns
+                    else None
+                )
+                comp_pred.fit(
+                    X,
+                    y_comp_valid,
+                    sample_weight=sample_weight,
+                    seasons=comp_seasons,
+                )
 
                 if comp_pred.is_fitted:
                     self.component_predictors[position] = comp_pred

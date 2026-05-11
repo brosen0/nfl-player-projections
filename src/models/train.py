@@ -5,7 +5,7 @@ import logging
 import warnings
 from pathlib import Path
 from datetime import datetime
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 # Suppress SciPy/NumPy version mismatch warning (env may have numpy>=1.23 with older scipy)
 warnings.filterwarnings(
@@ -115,6 +115,62 @@ def _safe_mape(y_true, y_pred):
         return None
     denom = np.maximum(np.abs(y_true[mask]), denom_floor)
     return float(np.mean(np.abs(y_true[mask] - y_pred[mask]) / denom) * 100)
+
+
+def _predictions_are_fantasy_points(position: str, converters: dict, qb_target: str) -> bool:
+    """Return whether 1-week predictions for this position are in fantasy-point units."""
+    pos_target_cfg = MODEL_CONFIG.get("position_target_type", {})
+    target_type = pos_target_cfg.get(position, "util")
+    if target_type in {"fp", "component"}:
+        return True
+    if position == "QB" and qb_target == "fp":
+        return True
+    return (
+        position in converters
+        and target_type != "fp"
+        and (position != "QB" or qb_target == "util")
+    )
+
+
+def _select_backtest_actual_series(
+    df: pd.DataFrame,
+    position: str,
+    converters: dict,
+    qb_target: str,
+) -> Optional[pd.Series]:
+    """Choose the correct evaluation target without mixing FP and utilization units."""
+    if _predictions_are_fantasy_points(position, converters, qb_target):
+        if "target_1w" in df.columns:
+            return df["target_1w"]
+        return None
+
+    if "target_util_1w" in df.columns:
+        return df["target_util_1w"]
+    return None
+
+
+def _populate_actual_for_backtest(
+    df: pd.DataFrame,
+    converters: dict,
+    qb_target: str,
+) -> pd.DataFrame:
+    """Populate `actual_for_backtest` using unit-consistent targets per position."""
+    df = df.copy()
+    df["actual_for_backtest"] = np.nan
+    for position in df["position"].dropna().unique():
+        pos_mask = df["position"] == position
+        pos_actual = _select_backtest_actual_series(df.loc[pos_mask], position, converters, qb_target)
+        if pos_actual is not None:
+            df.loc[pos_mask, "actual_for_backtest"] = pos_actual
+
+    if df["actual_for_backtest"].isna().all():
+        if "target_1w" in df.columns:
+            df["actual_for_backtest"] = df["target_1w"]
+        elif "target_util_1w" in df.columns:
+            df["actual_for_backtest"] = df["target_util_1w"]
+        else:
+            df["actual_for_backtest"] = df.get("fantasy_points", np.nan)
+    return df
 
 
 
@@ -330,7 +386,7 @@ def _run_backtest_after_training(trainer, test_data: pd.DataFrame,
         pos_target_cfg = MODEL_CONFIG.get("position_target_type", {})
         pos_target_type = pos_target_cfg.get(position, "util")
         should_convert = (position in converters
-                          and pos_target_type != "fp"
+                          and pos_target_type == "util"
                           and (position != "QB" or qb_target == "util"))
         if should_convert:
             eff_df = pos_test.copy()
@@ -349,26 +405,7 @@ def _run_backtest_after_training(trainer, test_data: pd.DataFrame,
     valid_preds = test_data["predicted_points"].notna()
     if valid_preds.sum() < 10:
         return
-    # Combined actual column:
-    # - QB: owner-facing FP when available (fallback to util only when converter is unavailable)
-    # - RB/WR/TE: future FP (fallback util if FP target missing)
-    test_data["actual_for_backtest"] = np.nan
-    non_qb_mask = test_data["position"] != "QB"
-    if "target_1w" in test_data.columns:
-        test_data.loc[non_qb_mask, "actual_for_backtest"] = test_data.loc[non_qb_mask, "target_1w"]
-    if "target_util_1w" in test_data.columns:
-        test_data.loc[non_qb_mask, "actual_for_backtest"] = test_data.loc[non_qb_mask, "actual_for_backtest"].fillna(
-            test_data.loc[non_qb_mask, "target_util_1w"]
-        )
-    qb_mask = test_data["position"] == "QB"
-    if "target_1w" in test_data.columns:
-        test_data.loc[qb_mask, "actual_for_backtest"] = test_data.loc[qb_mask, "target_1w"]
-    if qb_target == "util" and "QB" not in converters and "target_util_1w" in test_data.columns:
-        test_data.loc[qb_mask, "actual_for_backtest"] = test_data.loc[qb_mask, "actual_for_backtest"].fillna(
-            test_data.loc[qb_mask, "target_util_1w"]
-        )
-    if test_data["actual_for_backtest"].isna().all():
-        test_data["actual_for_backtest"] = test_data.get("fantasy_points", np.nan)
+    test_data = _populate_actual_for_backtest(test_data, converters, qb_target)
     backtester = ModelBacktester()
     pred_col = "predicted_points"
     actual_col = "actual_for_backtest"
@@ -384,32 +421,27 @@ def _run_backtest_after_training(trainer, test_data: pd.DataFrame,
                 pos_train = train_data[train_data["position"] == position].copy()
                 if len(pos_train) < 20:
                     continue
-                model = multi_model.models.get(1) or list(multi_model.models.values())[0]
-                fnames = getattr(model, "feature_names", [])
-                medians = getattr(model, "feature_medians", {})
-                for fn in fnames:
-                    if fn not in pos_train.columns:
-                        pos_train[fn] = medians.get(fn, 0)
-                train_preds = multi_model.predict(pos_train, n_weeks=1)
-                # Get actual values from training data
-                train_actual = None
-                if position != "QB":
-                    if "target_1w" in pos_train.columns:
-                        train_actual = pos_train["target_1w"]
-                    elif "target_util_1w" in pos_train.columns:
-                        train_actual = pos_train["target_util_1w"]
+                if multi_model is None:
+                    comp = trainer.component_predictors.get(position)
+                    if comp is None:
+                        continue
+                    train_preds = comp.predict(pos_train)
+                    train_actual = _select_backtest_actual_series(pos_train, position, converters, qb_target)
+                    preds_for_cal = train_preds
                 else:
-                    if "target_1w" in pos_train.columns:
-                        train_actual = pos_train["target_1w"]
-                    elif "target_util_1w" in pos_train.columns:
-                        train_actual = pos_train["target_util_1w"]
-                if train_actual is not None:
-                    # Apply same util->FP conversion for consistency (skip for FP-trained positions)
+                    model = multi_model.models.get(1) or list(multi_model.models.values())[0]
+                    fnames = getattr(model, "feature_names", [])
+                    medians = getattr(model, "feature_medians", {})
+                    for fn in fnames:
+                        if fn not in pos_train.columns:
+                            pos_train[fn] = medians.get(fn, 0)
+                    train_preds = multi_model.predict(pos_train, n_weeks=1)
+                    train_actual = _select_backtest_actual_series(pos_train, position, converters, qb_target)
+                    preds_for_cal = train_preds
                     _ptc = MODEL_CONFIG.get("position_target_type", {})
                     should_convert = (position in converters
-                                      and _ptc.get(position, "util") != "fp"
+                                      and _ptc.get(position, "util") == "util"
                                       and (position != "QB" or qb_target == "util"))
-                    preds_for_cal = train_preds
                     if should_convert:
                         eff_df = pos_train.copy()
                         eff_df["utilization_score"] = train_preds
@@ -417,6 +449,8 @@ def _run_backtest_after_training(trainer, test_data: pd.DataFrame,
                             preds_for_cal = converters[position].predict(train_preds, efficiency_df=eff_df)
                         except Exception:
                             pass
+
+                if train_actual is not None:
                     residuals = (train_actual.values - np.asarray(preds_for_cal, dtype=float))
                     valid_resid = residuals[np.isfinite(residuals)]
                     if len(valid_resid) >= 20:
@@ -601,29 +635,35 @@ def _run_backtest_after_training(trainer, test_data: pd.DataFrame,
         for position in trainer.trained_models:
             try:
                 multi_model = trainer.trained_models[position]
-                base = multi_model.models.get(1) or list(multi_model.models.values())[0]
-                fnames = getattr(base, "feature_names", [])
+                if multi_model is None:
+                    comp = trainer.component_predictors.get(position)
+                    fnames = getattr(comp, "feature_names", []) if comp else []
+                else:
+                    base = multi_model.models.get(1) or list(multi_model.models.values())[0]
+                    fnames = getattr(base, "feature_names", [])
                 if len(fnames) < 5:
                     continue
                 pos_train = train_data[train_data["position"] == position].copy()
                 pos_test = test_data[test_data["position"] == position].copy()
                 if len(pos_train) < 50 or len(pos_test) < 10:
                     continue
-                # Get target
-                target_col = "target_util_1w" if "target_util_1w" in pos_train.columns else "target_1w"
-                if target_col not in pos_train.columns:
+                train_target = _select_backtest_actual_series(pos_train, position, converters, qb_target)
+                test_target = _select_backtest_actual_series(pos_test, position, converters, qb_target)
+                if train_target is None or test_target is None:
                     continue
-                valid_train = pos_train.dropna(subset=[target_col])
-                valid_test = pos_test.dropna(subset=[target_col])
+                pos_train["_comparison_target"] = train_target
+                pos_test["_comparison_target"] = test_target
+                valid_train = pos_train.dropna(subset=["_comparison_target"])
+                valid_test = pos_test.dropna(subset=["_comparison_target"])
                 if len(valid_train) < 50 or len(valid_test) < 10:
                     continue
                 avail_feats = [f for f in fnames if f in valid_train.columns and f in valid_test.columns]
                 if len(avail_feats) < 5:
                     continue
                 X_tr = valid_train[avail_feats].fillna(0)
-                y_tr = valid_train[target_col]
+                y_tr = valid_train["_comparison_target"]
                 X_te = valid_test[avail_feats].fillna(0)
-                y_te = valid_test[target_col]
+                y_te = valid_test["_comparison_target"]
                 # Simple Ridge
                 ridge = Ridge(alpha=1.0)
                 ridge.fit(X_tr, y_tr)
@@ -631,7 +671,11 @@ def _run_backtest_after_training(trainer, test_data: pd.DataFrame,
                 from sklearn.metrics import mean_squared_error as _mse
                 ridge_rmse = float(np.sqrt(_mse(y_te, ridge_preds)))
                 # Ensemble
-                ensemble_preds = multi_model.predict(valid_test, n_weeks=1)
+                if multi_model is None:
+                    comp = trainer.component_predictors.get(position)
+                    ensemble_preds = comp.predict(valid_test) if comp is not None else np.full(len(valid_test), np.nan)
+                else:
+                    ensemble_preds = multi_model.predict(valid_test, n_weeks=1)
                 ensemble_rmse = float(np.sqrt(_mse(y_te, ensemble_preds)))
                 improvement = ((ridge_rmse - ensemble_rmse) / ridge_rmse * 100) if ridge_rmse > 0 else 0
                 status = "JUSTIFIED" if improvement > 0 else "NOT JUSTIFIED"
@@ -796,18 +840,25 @@ def _run_one_fold(
         pos_test = test_data.loc[pos_mask]
         if len(pos_test) < 5:
             continue
-        base = multi_model.models.get(1) or list(multi_model.models.values())[0]
-        medians = getattr(base, "feature_medians", {})
-        for fn in getattr(base, "feature_names", []):
-            if fn not in pos_test.columns:
-                test_data.loc[pos_mask, fn] = medians.get(fn, 0)
-        pos_test = test_data.loc[pos_mask].copy()
-        preds = multi_model.predict(pos_test, n_weeks=1)
+        if multi_model is None:
+            comp = trainer.component_predictors.get(position)
+            if comp is None:
+                continue
+            pos_test = test_data.loc[pos_mask].copy()
+            preds = comp.predict(pos_test)
+        else:
+            base = multi_model.models.get(1) or list(multi_model.models.values())[0]
+            medians = getattr(base, "feature_medians", {})
+            for fn in getattr(base, "feature_names", []):
+                if fn not in pos_test.columns:
+                    test_data.loc[pos_mask, fn] = medians.get(fn, 0)
+            pos_test = test_data.loc[pos_mask].copy()
+            preds = multi_model.predict(pos_test, n_weeks=1)
         test_data.loc[pos_mask, "predicted_utilization"] = preds
         test_data.loc[pos_mask, "predicted_points"] = preds
         _ptc2 = MODEL_CONFIG.get("position_target_type", {})
         should_convert = (position in converters
-                          and _ptc2.get(position, "util") != "fp"
+                          and _ptc2.get(position, "util") == "util"
                           and (position != "QB" or qb_target == "util"))
         if should_convert:
             eff_df = pos_test.copy()
@@ -817,24 +868,7 @@ def _run_one_fold(
                 test_data.loc[pos_mask, "predicted_points"] = fp_pred
             except Exception as e:
                 logger.warning("FP conversion for %s skipped: %s", position, e)
-    test_data["actual_for_backtest"] = np.nan
-    if "target_1w" in test_data.columns:
-        test_data.loc[test_data["position"] != "QB", "actual_for_backtest"] = test_data.loc[
-            test_data["position"] != "QB", "target_1w"
-        ]
-    if "target_util_1w" in test_data.columns:
-        test_data.loc[test_data["position"] != "QB", "actual_for_backtest"] = test_data.loc[
-            test_data["position"] != "QB", "actual_for_backtest"
-        ].fillna(test_data.loc[test_data["position"] != "QB", "target_util_1w"])
-    qb_mask = test_data["position"] == "QB"
-    if "target_1w" in test_data.columns:
-        test_data.loc[qb_mask, "actual_for_backtest"] = test_data.loc[qb_mask, "target_1w"]
-    if qb_target == "util" and "QB" not in converters and "target_util_1w" in test_data.columns:
-        test_data.loc[qb_mask, "actual_for_backtest"] = test_data.loc[qb_mask, "actual_for_backtest"].fillna(
-            test_data.loc[qb_mask, "target_util_1w"]
-        )
-    if test_data["actual_for_backtest"].isna().all():
-        test_data["actual_for_backtest"] = test_data.get("fantasy_points", np.nan)
+    test_data = _populate_actual_for_backtest(test_data, converters, qb_target)
     results = _run_backtest_after_training(trainer, test_data, train_seasons, actual_test_season,
                                                train_data=train_data)
     return trainer, results

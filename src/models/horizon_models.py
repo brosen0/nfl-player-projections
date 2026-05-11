@@ -6,11 +6,14 @@ Horizon-specific models: 4-week LSTM+ARIMA hybrid, 18-week deep residual feedfor
 
 Uses PyTorch with MPS (Apple Silicon GPU) acceleration when available.
 """
+import os
+import platform
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Any
 import numpy as np
 import pandas as pd
 import joblib
+from sklearn.linear_model import Ridge
 
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
@@ -47,6 +50,40 @@ def _get_device(model_type: str = "feedforward") -> "torch.device":
     if model_type == "feedforward" and torch.backends.mps.is_available():
         return torch.device("mps")
     return torch.device("cpu")
+
+
+def _torch_backend_is_safe(model_type: str) -> bool:
+    """Return whether horizon-model torch execution is safe in this runtime.
+
+    PyTorch imports successfully on some Apple Silicon CPU-only environments
+    but recurrent and batchnorm-heavy training still segfaults. Default to the
+    deterministic sklearn fallback there unless explicitly overridden.
+    """
+    if not HAS_TORCH:
+        return False
+
+    if os.getenv("NFP_DISABLE_TORCH_HORIZON_MODELS", "").lower() in {"1", "true", "yes"}:
+        return False
+    if os.getenv("NFP_FORCE_TORCH_HORIZON_MODELS", "").lower() in {"1", "true", "yes"}:
+        return True
+
+    is_apple_silicon = platform.system() == "Darwin" and platform.machine() == "arm64"
+    has_accelerator = bool(torch.cuda.is_available()) or bool(torch.backends.mps.is_available())
+
+    # In this environment, both the LSTM path and feedforward residual network
+    # have been observed to segfault during training. Keep torch opt-in.
+    if is_apple_silicon and not torch.cuda.is_available():
+        return False
+
+    # Conservative default for CPU-only torch runtimes.
+    if not has_accelerator and model_type in {"lstm", "feedforward"}:
+        return False
+
+    return True
+
+
+def _is_torch_module(model: Any) -> bool:
+    return HAS_TORCH and isinstance(model, nn.Module)
 
 
 def _season_split(
@@ -133,8 +170,6 @@ class LSTM4WeekModel:
                  lstm_units: int = None,
                  dropout: float = None,
                  learning_rate: float = None):
-        if not HAS_TORCH:
-            raise ImportError("PyTorch required for 4-week LSTM. pip install torch")
         self.sequence_length = sequence_length or MODEL_CONFIG.get("lstm_sequence_length", 10)
         self.lstm_units = lstm_units or MODEL_CONFIG.get("lstm_units", 256)
         self.dropout = dropout if dropout is not None else MODEL_CONFIG.get("lstm_dropout", 0.25)
@@ -144,12 +179,17 @@ class LSTM4WeekModel:
         self.feature_names = []
         self.is_fitted = False
         self.device = _get_device("lstm")
+        self.backend = "torch" if _torch_backend_is_safe("lstm") else "ridge"
+        self._fallback_model = None
 
     @staticmethod
     def tune_hyperparameters(X: np.ndarray, y: np.ndarray, player_ids: np.ndarray,
                              feature_names: List[str], n_trials: int = 20,
                              seasons: Optional[np.ndarray] = None) -> Dict:
         """Tune LSTM hyperparameters with Optuna using season-aware splits."""
+        if not _torch_backend_is_safe("lstm"):
+            print("  Torch LSTM backend disabled in this runtime; using deterministic fallback backend")
+            return {}
         try:
             import optuna
             from optuna.samplers import TPESampler
@@ -234,6 +274,9 @@ class LSTM4WeekModel:
     def _build(self, n_features: int):
         return _LSTMNet(n_features, self.lstm_units, self.dropout).to(self.device)
 
+    def _build_fallback_model(self) -> Ridge:
+        return Ridge(alpha=1.0)
+
     def _sequences(
         self,
         X: np.ndarray,
@@ -261,6 +304,33 @@ class LSTM4WeekModel:
         seq_seasons = np.array(s_seq) if s_seq else None
         return np.array(X_seq), np.array(y_seq), seq_seasons
 
+    def _fit_fallback(self, X_seq: np.ndarray, y_seq: np.ndarray) -> None:
+        self._fallback_model = self._build_fallback_model()
+        self._fallback_model.fit(X_seq.reshape(len(X_seq), -1), y_seq)
+        self.model = self._fallback_model
+
+    def _predict_fallback(self, Xs: np.ndarray, player_ids: np.ndarray) -> np.ndarray:
+        out = np.full(Xs.shape[0], np.nan)
+        if self._fallback_model is None:
+            return out
+        for pid in np.unique(player_ids):
+            mask = player_ids == pid
+            Xi = Xs[mask]
+            n = mask.sum()
+            indices = np.where(mask)[0]
+            if n < self.sequence_length:
+                pad_len = self.sequence_length - n
+                Xi_padded = np.vstack([np.zeros((pad_len, Xi.shape[1])), Xi])
+                seq = Xi_padded[-self.sequence_length:].reshape(1, -1)
+                out[indices[-1]] = float(self._fallback_model.predict(seq)[0])
+                continue
+            seqs = np.array([Xi[i:i + self.sequence_length] for i in range(n - self.sequence_length + 1)])
+            preds = self._fallback_model.predict(seqs.reshape(len(seqs), -1))
+            for j, pred_val in enumerate(preds):
+                target_idx = indices[j + self.sequence_length - 1]
+                out[target_idx] = float(pred_val)
+        return out
+
     def fit(self, X: np.ndarray, y: np.ndarray, player_ids: np.ndarray,
             feature_names: List[str],
             epochs: int = None,
@@ -268,9 +338,10 @@ class LSTM4WeekModel:
             seasons: Optional[np.ndarray] = None) -> "LSTM4WeekModel":
         epochs = epochs or MODEL_CONFIG.get("lstm_epochs", 80)
         batch_size = batch_size or MODEL_CONFIG.get("lstm_batch_size", 32)
-        torch.manual_seed(42)
-        if torch.cuda.is_available():
-            torch.cuda.manual_seed_all(42)
+        if HAS_TORCH:
+            torch.manual_seed(42)
+            if torch.cuda.is_available():
+                torch.cuda.manual_seed_all(42)
         from sklearn.preprocessing import StandardScaler
         self.feature_names = list(feature_names)
         self.scaler = StandardScaler()
@@ -278,6 +349,10 @@ class LSTM4WeekModel:
         X_seq, y_seq, seq_seasons = self._sequences(Xs, y, player_ids, seasons=seasons)
         if len(X_seq) < 50:
             self.is_fitted = False
+            return self
+        if self.backend != "torch":
+            self._fit_fallback(X_seq, y_seq)
+            self.is_fitted = True
             return self
         n_features = X_seq.shape[2]
         self.model = self._build(n_features)
@@ -342,6 +417,8 @@ class LSTM4WeekModel:
         if not self.is_fitted or self.model is None:
             return np.full(X.shape[0], np.nan)
         Xs = self.scaler.transform(X)
+        if self.backend != "torch":
+            return self._predict_fallback(Xs, player_ids)
         out = np.full(X.shape[0], np.nan)
         self.model.eval()
         with torch.no_grad():
@@ -614,12 +691,12 @@ class Hybrid4WeekModel:
     def save(self, path: Path = None):
         path = path or MODELS_DIR / f"hybrid_4w_{self.position.lower()}.joblib"
         # Move LSTM model to CPU before saving for portability
-        if self.lstm and self.lstm.model is not None:
+        if self.lstm and _is_torch_module(self.lstm.model):
             self.lstm.model.cpu()
         joblib.dump({"position": self.position, "lstm_weight": self.lstm_weight, "arima_weight": self.arima_weight,
                      "lstm": self.lstm, "arima": self.arima, "is_fitted": self.is_fitted}, path)
         # Move back to device
-        if self.lstm and self.lstm.model is not None:
+        if self.lstm and _is_torch_module(self.lstm.model):
             self.lstm.model.to(self.lstm.device)
 
     @classmethod
@@ -634,9 +711,16 @@ class Hybrid4WeekModel:
         m.lstm_weight = d.get("lstm_weight", 0.6)
         m.arima_weight = d.get("arima_weight", 0.4)
         m.is_fitted = d.get("is_fitted", False)
+        if m.lstm is not None:
+            if not hasattr(m.lstm, "backend"):
+                m.lstm.backend = "torch" if _is_torch_module(getattr(m.lstm, "model", None)) else "ridge"
+            if not hasattr(m.lstm, "_fallback_model"):
+                m.lstm._fallback_model = None
+            if m.lstm.backend != "torch" and m.lstm._fallback_model is None:
+                m.lstm._fallback_model = getattr(m.lstm, "model", None)
         # Move LSTM back to device after loading
-        if m.lstm and m.lstm.model is not None and HAS_TORCH:
-            m.lstm.device = _get_device()
+        if m.lstm and _is_torch_module(m.lstm.model):
+            m.lstm.device = _get_device("lstm")
             m.lstm.model.to(m.lstm.device)
         # Backward-compat: ensure ARIMA has new attributes from old pickles
         if m.arima is not None:
@@ -725,8 +809,6 @@ class DeepSeasonLongModel:
     """Residual feedforward for 18-week horizon; blend 70% deep + 30% traditional."""
     def __init__(self, position: str, n_features: int = None,
                  dropout: float = None, learning_rate: float = None):
-        if not HAS_TORCH:
-            raise ImportError("PyTorch required for 18-week deep model. pip install torch")
         self.position = position
         self.n_features = n_features or MODEL_CONFIG.get("deep_n_features", 150)
         self.model = None
@@ -737,11 +819,16 @@ class DeepSeasonLongModel:
         self.learning_rate = learning_rate or MODEL_CONFIG.get("deep_learning_rate", 0.0005)
         self.device = _get_device()
         self.regression_to_mean_scale = 0.95
+        self.backend = "torch" if _torch_backend_is_safe("feedforward") else "ridge"
+        self._fallback_model = None
 
     @staticmethod
     def tune_hyperparameters(X: np.ndarray, y: np.ndarray, n_trials: int = 15,
                              seasons: Optional[np.ndarray] = None) -> Dict:
         """Tune deep feedforward hyperparameters with Optuna using season-aware splits."""
+        if not _torch_backend_is_safe("feedforward"):
+            print("  Torch deep backend disabled in this runtime; using deterministic fallback backend")
+            return {}
         try:
             import optuna
             from optuna.samplers import TPESampler
@@ -814,19 +901,32 @@ class DeepSeasonLongModel:
         hidden_units = MODEL_CONFIG.get("deep_hidden_units", None)
         return _DeepFeedforwardNet(self.n_features, hidden_units=hidden_units, dropout=self.dropout).to(self.device)
 
+    def _build_fallback_model(self) -> Ridge:
+        return Ridge(alpha=1.0)
+
+    def _fit_fallback(self, Xs: np.ndarray, y: np.ndarray) -> None:
+        self._fallback_model = self._build_fallback_model()
+        self._fallback_model.fit(Xs, y)
+        self.model = self._fallback_model
+
     def fit(self, X: np.ndarray, y: np.ndarray, feature_names: List[str],
             epochs: int = None, batch_size: int = None,
             seasons: Optional[np.ndarray] = None) -> "DeepSeasonLongModel":
         epochs = epochs or MODEL_CONFIG.get("deep_epochs", 100)
         batch_size = batch_size or MODEL_CONFIG.get("deep_batch_size", 64)
-        torch.manual_seed(42)
-        if torch.cuda.is_available():
-            torch.cuda.manual_seed_all(42)
+        if HAS_TORCH:
+            torch.manual_seed(42)
+            if torch.cuda.is_available():
+                torch.cuda.manual_seed_all(42)
         from sklearn.preprocessing import StandardScaler
         self.feature_names = list(feature_names)
         self.scaler = StandardScaler()
         Xs = self.scaler.fit_transform(X)
         self.n_features = Xs.shape[1]
+        if self.backend != "torch":
+            self._fit_fallback(Xs, y)
+            self.is_fitted = True
+            return self
         self.model = self._build()
 
         # Season-aware train/val split (falls back to last 20% if no season data)
@@ -893,10 +993,13 @@ class DeepSeasonLongModel:
             )
         X_in = X[:, :self.n_features] if X.shape[1] >= self.n_features else np.hstack([X, np.zeros((X.shape[0], self.n_features - X.shape[1]))])
         Xs = self.scaler.transform(X_in)
-        self.model.eval()
-        with torch.no_grad():
-            t = torch.tensor(Xs, dtype=torch.float32).to(self.device)
-            deep_pred = self.model(t).cpu().numpy()
+        if self.backend != "torch":
+            deep_pred = self._fallback_model.predict(Xs)
+        else:
+            self.model.eval()
+            with torch.no_grad():
+                t = torch.tensor(Xs, dtype=torch.float32).to(self.device)
+                deep_pred = self.model(t).cpu().numpy()
         blended = (1 - blend_traditional) * deep_pred + blend_traditional * traditional_pred
         # Apply regression to mean: shrink extreme predictions toward global mean
         rtm = getattr(self, 'regression_to_mean_scale', 0.95)
@@ -916,10 +1019,13 @@ class DeepSeasonLongModel:
         try:
             X_in = X[:, :self.n_features] if X.shape[1] >= self.n_features else np.hstack([X, np.zeros((X.shape[0], self.n_features - X.shape[1]))])
             Xs = self.scaler.transform(X_in)
-            self.model.eval()
-            with torch.no_grad():
-                t = torch.tensor(Xs, dtype=torch.float32).to(self.device)
-                deep_pred = self.model(t).cpu().numpy()
+            if self.backend != "torch":
+                deep_pred = self._fallback_model.predict(Xs)
+            else:
+                self.model.eval()
+                with torch.no_grad():
+                    t = torch.tensor(Xs, dtype=torch.float32).to(self.device)
+                    deep_pred = self.model(t).cpu().numpy()
             valid = np.isfinite(deep_pred) & np.isfinite(traditional_pred) & np.isfinite(y)
             if valid.sum() < 10:
                 return
@@ -937,13 +1043,16 @@ class DeepSeasonLongModel:
         path = path or MODELS_DIR / f"deep_18w_{self.position.lower()}"
         path = Path(path)
         path.mkdir(parents=True, exist_ok=True)
-        if self.model is not None:
+        if _is_torch_module(self.model):
             self.model.cpu()
             torch.save(self.model.state_dict(), path / "model.pt")
             self.model.to(self.device)
+        elif self._fallback_model is not None:
+            joblib.dump(self._fallback_model, path / "model.pt")
         joblib.dump({"scaler": self.scaler, "feature_names": self.feature_names, "n_features": self.n_features,
                      "is_fitted": self.is_fitted, "position": self.position,
                      "dropout": self.dropout,
+                     "backend": self.backend,
                      "hidden_units": MODEL_CONFIG.get("deep_hidden_units", None),
                      "regression_to_mean_scale": self.regression_to_mean_scale,
                      "_learned_blend_traditional": getattr(self, "_learned_blend_traditional", None)}, path / "config.joblib")
@@ -961,10 +1070,20 @@ class DeepSeasonLongModel:
         m.n_features = cfg.get("n_features", 150)
         m.is_fitted = cfg.get("is_fitted", False)
         m.regression_to_mean_scale = cfg.get("regression_to_mean_scale", 0.95)
+        m.backend = cfg.get("backend", m.backend)
+        if not hasattr(m, "_fallback_model"):
+            m._fallback_model = None
         learned_blend = cfg.get("_learned_blend_traditional")
         if learned_blend is not None:
             m._learned_blend_traditional = learned_blend
-        if (path / "model.pt").exists() and HAS_TORCH:
+        if m.backend != "torch" and (path / "model.pt").exists():
+            m._fallback_model = joblib.load(path / "model.pt")
+            m.model = m._fallback_model
+        elif m.backend != "torch" and (path / "fallback_model.joblib").exists():
+            # Backward compatibility with earlier fallback artifact naming.
+            m._fallback_model = joblib.load(path / "fallback_model.joblib")
+            m.model = m._fallback_model
+        elif (path / "model.pt").exists() and HAS_TORCH:
             saved_hidden = cfg.get("hidden_units", None)
             saved_dropout = cfg.get("dropout", 0.35)
             m.model = _DeepFeedforwardNet(m.n_features, hidden_units=saved_hidden, dropout=saved_dropout).to(m.device)
