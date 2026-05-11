@@ -392,10 +392,12 @@ CAUSAL_FEATURES = {
         "fp_late6_vs_season",
         "is_contract_year", "contract_apy_rank", "depth_chart_rank",
         "speed_score", "team_motion_rate", "team_play_action_rate",
-        # PFR pressure rate (2018+) — QB performance under pressure
+        # PFR pressure rate (2018+) — pressured pct as true rate (causal, not count-based)
         "qb_pressure_pct_roll3_mean",
         # Seasonal PFR prior-season accuracy + pocket time — decision quality baseline
         "qb_bad_throw_pct_prior", "qb_pocket_time_prior",
+        # NGS decision quality (2018+) — aggressiveness and depth of target
+        "ngs_aggressiveness_roll3_mean", "ngs_avg_air_yards_to_sticks_roll3_mean",
     ],
 }
 
@@ -535,7 +537,7 @@ QB_TARGET_CHOICE_FILENAME = "qb_target_choice.json"
 
 # Feature set version: bump when feature_engineering adds/removes/renames model features.
 # Saved when training; checked when loading models. Mismatch triggers a retrain warning.
-FEATURE_VERSION = "17"  # v17: seasonal_pfr prior-season features (qb_bad_throw_pct, qb_pocket_time, rb_broken_tackles, recv_drop_pct_season)
+FEATURE_VERSION = "18"  # v18: QB-specific model — blitz/hurry/hit/sack rates + NGS aggressiveness + air_yards_to_sticks
 FEATURE_VERSION_FILENAME = "feature_version.txt"
 
 # =============================================================================

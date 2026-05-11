@@ -16,54 +16,6 @@
       "trend": "decreasing",
       "latest_mean": 13.78,
       "training_window_mean": 14.19
-    },
-    "RB": {
-      "season_means": {
-        "2018": 9.59,
-        "2019": 9.45,
-        "2020": 8.93,
-        "2021": 9.06,
-        "2022": 8.78,
-        "2023": 8.81,
-        "2024": 9.22
-      },
-      "shifts": [],
-      "trend_pct": -3.8,
-      "trend": "stable",
-      "latest_mean": 9.22,
-      "training_window_mean": 9.12
-    },
-    "WR": {
-      "season_means": {
-        "2018": 9.08,
-        "2019": 8.76,
-        "2020": 9.03,
-        "2021": 8.41,
-        "2022": 7.94,
-        "2023": 7.75,
-        "2024": 7.76
-      },
-      "shifts": [],
-      "trend_pct": -11.1,
-      "trend": "decreasing",
-      "latest_mean": 7.76,
-      "training_window_mean": 8.39
-    },
-    "TE": {
-      "season_means": {
-        "2018": 6.03,
-        "2019": 6.27,
-        "2020": 6.62,
-        "2021": 6.59,
-        "2022": 6.32,
-        "2023": 6.57,
-        "2024": 7.09
-      },
-      "shifts": [],
-      "trend_pct": 5.3,
-      "trend": "increasing",
-      "latest_mean": 7.09,
-      "training_window_mean": 6.5
     }
   },
   "overall_trend": "decreasing",

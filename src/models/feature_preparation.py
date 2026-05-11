@@ -216,6 +216,13 @@ def _apply_bounded_scaling(
     if not cols:
         return artifact
     scaler = MinMaxScaler()
+    # Cast to float first — some bounded columns may be int64 (e.g., count-based
+    # rate columns from SQLite) and pandas will reject float assignment into int cols.
+    for col in cols:
+        if pd.api.types.is_integer_dtype(train_df[col]):
+            train_df[col] = train_df[col].astype(float)
+        if not test_df.empty and pd.api.types.is_integer_dtype(test_df[col]):
+            test_df[col] = test_df[col].astype(float)
     train_vals = train_df[cols].replace([np.inf, -np.inf], np.nan).fillna(0.0).values
     test_vals = test_df[cols].replace([np.inf, -np.inf], np.nan).fillna(0.0).values
     train_df.loc[:, cols] = scaler.fit_transform(train_vals)

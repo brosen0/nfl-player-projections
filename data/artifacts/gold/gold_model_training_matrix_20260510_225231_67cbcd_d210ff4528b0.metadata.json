@@ -1,0 +1,32 @@
+{
+  "artifact_id": "gold_model_training_matrix_20260510_225231_67cbcd_d210ff4528b0",
+  "layer": "gold",
+  "table": "model_training_matrix",
+  "run_id": "20260510_225231_67cbcd",
+  "created_at": "2026-05-11T03:55:12+00:00",
+  "row_count": 37233,
+  "column_count": 390,
+  "schema_hash": "f7c85f8107b1bf6f5e3c2f5da8a9e35c0792d03a431aa1fb0677d5068a42be91",
+  "dataset_hash": "d210ff4528b0e6e2205d3ac12548f48109e5c0b0c9a1b29ab10aa0c5744def1d",
+  "parent_artifact_ids": [
+    "silver_training_features_trainprep_20260510_225419_6d4c2690a3ee"
+  ],
+  "parquet_path": "data/artifacts/gold/gold_model_training_matrix_20260510_225231_67cbcd_d210ff4528b0.parquet",
+  "source": "src.models.train.train_models",
+  "seasons": [
+    2018,
+    2019,
+    2020,
+    2021,
+    2022,
+    2023,
+    2024
+  ],
+  "feature_version": "16",
+  "target_definition": {
+    "1w": "target_util_1w for non-QB; QB trainer-selected util/fp",
+    "4w": "target_util_4w preferred over target_4w",
+    "18w": "target_util_18w preferred over target_18w"
+  },
+  "pulled_at": "2026-05-11T03:55:11+00:00"
+}

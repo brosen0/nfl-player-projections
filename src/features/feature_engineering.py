@@ -610,9 +610,13 @@ class FeatureEngineer:
         return df
 
     def _add_weekly_pfr_features(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Add rolling weekly PFR advanced stats: QB pressure rate, RB contact quality, WR/TE drop rate."""
+        """Add rolling weekly PFR advanced stats: QB pressure/blitz/sack rates, RB contact quality, WR/TE drop rate."""
         output_cols = [
             "qb_pressure_pct_roll3_mean",
+            "qb_blitz_rate_roll3_mean",
+            "qb_hurry_rate_roll3_mean",
+            "qb_hit_rate_roll3_mean",
+            "qb_sack_rate_roll3_mean",
             "rb_ybc_avg_roll3_mean",
             "rb_yac_avg_roll3_mean",
             "recv_drop_pct_roll3_mean",
@@ -635,6 +639,7 @@ class FeatureEngineer:
             pfr = pd.read_sql("""
                 SELECT pfr_player_id, season, week, stat_type,
                        times_pressured_pct,
+                       times_blitzed, times_hurried, times_hit, times_sacked,
                        rushing_yards_before_contact_avg,
                        rushing_yards_after_contact_avg,
                        receiving_drop_pct
@@ -646,7 +651,8 @@ class FeatureEngineer:
             pfr = pfr.dropna(subset=["player_id"])
 
             pass_pfr = pfr[pfr["stat_type"] == "pass"][
-                ["player_id", "season", "week", "times_pressured_pct"]
+                ["player_id", "season", "week", "times_pressured_pct",
+                 "times_blitzed", "times_hurried", "times_hit", "times_sacked"]
             ]
             rush_pfr = pfr[pfr["stat_type"] == "rush"][
                 ["player_id", "season", "week",
@@ -660,9 +666,20 @@ class FeatureEngineer:
             df = df.merge(rush_pfr, on=["player_id", "season", "week"], how="left")
             df = df.merge(recv_pfr, on=["player_id", "season", "week"], how="left")
 
+            # Cast all merged PFR columns to float to avoid LossySetitemError
+            # when assigning rolling means back to int64 columns
+            int_pfr_cols = ["times_blitzed", "times_hurried", "times_hit", "times_sacked"]
+            for col in int_pfr_cols:
+                if col in df.columns:
+                    df[col] = df[col].astype(float)
+
             df = df.sort_values(["player_id", "season", "week"])
             roll_map = {
                 "times_pressured_pct":              "qb_pressure_pct_roll3_mean",
+                "times_blitzed":                    "qb_blitz_rate_roll3_mean",
+                "times_hurried":                    "qb_hurry_rate_roll3_mean",
+                "times_hit":                        "qb_hit_rate_roll3_mean",
+                "times_sacked":                     "qb_sack_rate_roll3_mean",
                 "rushing_yards_before_contact_avg": "rb_ybc_avg_roll3_mean",
                 "rushing_yards_after_contact_avg":  "rb_yac_avg_roll3_mean",
                 "receiving_drop_pct":               "recv_drop_pct_roll3_mean",
@@ -671,8 +688,12 @@ class FeatureEngineer:
                 if src in df.columns:
                     df[dst] = (
                         df.groupby("player_id")[src]
-                        .transform(lambda x: x.shift(1).rolling(3, min_periods=1).mean())
+                        .transform(lambda x: x.astype(float).shift(1).rolling(3, min_periods=1).mean())
                     )
+
+            # Drop intermediate raw columns — only keep the _roll3_mean outputs
+            raw_cols = list(roll_map.keys())
+            df = df.drop(columns=[c for c in raw_cols if c in df.columns], errors="ignore")
 
             # Fill NaN with positional median per season
             pos_col = "position" if "position" in df.columns else None

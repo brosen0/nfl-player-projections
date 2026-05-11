@@ -242,21 +242,44 @@ def load_preseason_projections(season: int, adp_df: pd.DataFrame = None) -> pd.D
     from src.utils.database import DatabaseManager
     prior = season - 1
     with DatabaseManager()._get_connection() as conn:
+        # Full feature query — matches PreseasonProjector._build_season_pairs() so
+        # that predict() receives all the features it was trained on (not just ppg).
+        # Missing features in a minimal query get filled with 0, which after
+        # StandardScaler centering produces severely under-estimated projections.
         prior_df = pd.read_sql(
             """
             SELECT pws.player_id,
                    p.name,
                    p.position,
                    pws.team,
+                   COUNT(*) AS games_played,
+                   AVG(pws.fantasy_points) AS ppg,
                    SUM(pws.fantasy_points) AS pred_total,
                    SUM(pws.fantasy_points) AS actual_total,
                    COUNT(*) AS weeks,
-                   AVG(pws.fantasy_points) AS ppg
+                   AVG(COALESCE(pws.passing_yards, 0))  AS passing_yards_pg,
+                   AVG(COALESCE(pws.passing_tds, 0))    AS passing_tds_pg,
+                   AVG(COALESCE(pws.interceptions, 0))  AS interceptions_pg,
+                   AVG(COALESCE(pws.rushing_yards, 0))  AS rushing_yards_pg,
+                   AVG(COALESCE(pws.rushing_attempts, 0)) AS carries_pg,
+                   AVG(COALESCE(pws.targets, 0))        AS targets_pg,
+                   AVG(COALESCE(pws.receptions, 0))     AS receptions_pg,
+                   AVG(COALESCE(pws.receiving_yards, 0)) AS receiving_yards_pg,
+                   AVG(COALESCE(pws.air_yards, 0))      AS air_yards_pg,
+                   AVG(CASE WHEN COALESCE(pws.passing_attempts, 0) > 0
+                       THEN 100.0 * pws.passing_completions / pws.passing_attempts
+                       ELSE 0 END) AS completion_pct,
+                   AVG(COALESCE(us.snap_share, 0))   AS snap_share,
+                   AVG(COALESCE(us.target_share, 0)) AS target_share,
+                   AVG(COALESCE(us.rush_share, 0))   AS rush_share
               FROM player_weekly_stats pws
               JOIN players p ON pws.player_id = p.player_id
+              LEFT JOIN utilization_scores us
+                ON pws.player_id = us.player_id
+               AND pws.season = us.season
+               AND pws.week = us.week
              WHERE pws.season = ?
                AND p.position IN ('QB', 'RB', 'WR', 'TE')
-               AND pws.fantasy_points > 0
              GROUP BY pws.player_id
             """,
             conn,

@@ -1,125 +1,5 @@
 [
   {
-    "date": "2026-05-09T22:41:09.141486",
-    "feature_version": "14",
-    "train_seasons": [
-      2018,
-      2019,
-      2020,
-      2021,
-      2022,
-      2023,
-      2024
-    ],
-    "top10": {},
-    "stability": {
-      "QB": {
-        "overlap_pct": null,
-        "stable": true,
-        "new_features": [],
-        "dropped_features": []
-      },
-      "RB": {
-        "overlap_pct": null,
-        "stable": true,
-        "new_features": [],
-        "dropped_features": []
-      },
-      "WR": {
-        "overlap_pct": null,
-        "stable": true,
-        "new_features": [],
-        "dropped_features": []
-      },
-      "TE": {
-        "overlap_pct": null,
-        "stable": true,
-        "new_features": [],
-        "dropped_features": []
-      }
-    }
-  },
-  {
-    "date": "2026-05-09T22:59:19.109926",
-    "feature_version": "14",
-    "train_seasons": [
-      2018,
-      2019,
-      2020,
-      2021,
-      2022,
-      2023,
-      2024
-    ],
-    "top10": {},
-    "stability": {
-      "QB": {
-        "overlap_pct": null,
-        "stable": true,
-        "new_features": [],
-        "dropped_features": []
-      },
-      "RB": {
-        "overlap_pct": null,
-        "stable": true,
-        "new_features": [],
-        "dropped_features": []
-      },
-      "WR": {
-        "overlap_pct": null,
-        "stable": true,
-        "new_features": [],
-        "dropped_features": []
-      },
-      "TE": {
-        "overlap_pct": null,
-        "stable": true,
-        "new_features": [],
-        "dropped_features": []
-      }
-    }
-  },
-  {
-    "date": "2026-05-09T23:04:05.009105",
-    "feature_version": "14",
-    "train_seasons": [
-      2018,
-      2019,
-      2020,
-      2021,
-      2022,
-      2023,
-      2024
-    ],
-    "top10": {},
-    "stability": {
-      "QB": {
-        "overlap_pct": null,
-        "stable": true,
-        "new_features": [],
-        "dropped_features": []
-      },
-      "RB": {
-        "overlap_pct": null,
-        "stable": true,
-        "new_features": [],
-        "dropped_features": []
-      },
-      "WR": {
-        "overlap_pct": null,
-        "stable": true,
-        "new_features": [],
-        "dropped_features": []
-      },
-      "TE": {
-        "overlap_pct": null,
-        "stable": true,
-        "new_features": [],
-        "dropped_features": []
-      }
-    }
-  },
-  {
     "date": "2026-05-10T00:43:50.192994",
     "feature_version": "15",
     "train_seasons": [
@@ -372,6 +252,169 @@
       2024
     ],
     "top10": {},
+    "stability": {
+      "QB": {
+        "overlap_pct": null,
+        "stable": true,
+        "new_features": [],
+        "dropped_features": []
+      },
+      "RB": {
+        "overlap_pct": null,
+        "stable": true,
+        "new_features": [],
+        "dropped_features": []
+      },
+      "WR": {
+        "overlap_pct": null,
+        "stable": true,
+        "new_features": [],
+        "dropped_features": []
+      },
+      "TE": {
+        "overlap_pct": null,
+        "stable": true,
+        "new_features": [],
+        "dropped_features": []
+      }
+    }
+  },
+  {
+    "date": "2026-05-10T23:42:08.389821",
+    "feature_version": "18",
+    "train_seasons": [
+      2018,
+      2019,
+      2020,
+      2021,
+      2022,
+      2023,
+      2024
+    ],
+    "top10": {},
+    "stability": {
+      "QB": {
+        "overlap_pct": null,
+        "stable": true,
+        "new_features": [],
+        "dropped_features": []
+      },
+      "RB": {
+        "overlap_pct": null,
+        "stable": true,
+        "new_features": [],
+        "dropped_features": []
+      },
+      "WR": {
+        "overlap_pct": null,
+        "stable": true,
+        "new_features": [],
+        "dropped_features": []
+      },
+      "TE": {
+        "overlap_pct": null,
+        "stable": true,
+        "new_features": [],
+        "dropped_features": []
+      }
+    }
+  },
+  {
+    "date": "2026-05-10T23:47:34.067713",
+    "feature_version": "18",
+    "train_seasons": [
+      2018,
+      2019,
+      2020,
+      2021,
+      2022,
+      2023,
+      2024
+    ],
+    "top10": {},
+    "stability": {
+      "QB": {
+        "overlap_pct": null,
+        "stable": true,
+        "new_features": [],
+        "dropped_features": []
+      },
+      "RB": {
+        "overlap_pct": null,
+        "stable": true,
+        "new_features": [],
+        "dropped_features": []
+      },
+      "WR": {
+        "overlap_pct": null,
+        "stable": true,
+        "new_features": [],
+        "dropped_features": []
+      },
+      "TE": {
+        "overlap_pct": null,
+        "stable": true,
+        "new_features": [],
+        "dropped_features": []
+      }
+    }
+  },
+  {
+    "date": "2026-05-11T00:34:36.501086",
+    "feature_version": "18",
+    "train_seasons": [
+      2018,
+      2019,
+      2020,
+      2021,
+      2022,
+      2023,
+      2024
+    ],
+    "top10": {
+      "QB": [
+        {
+          "feature": "player_emb_0",
+          "importance": 34.271099368405245
+        },
+        {
+          "feature": "int_rate_roll3_mean",
+          "importance": 27.253025454480834
+        },
+        {
+          "feature": "ngs_avg_air_yards_to_sticks_roll3_mean",
+          "importance": 19.753395960198358
+        },
+        {
+          "feature": "opp_fpts_allowed_s2d_lag1",
+          "importance": 18.00275689917923
+        },
+        {
+          "feature": "opp_defense_week",
+          "importance": 17.00331953188651
+        },
+        {
+          "feature": "position_rank",
+          "importance": 15.254929320288799
+        },
+        {
+          "feature": "ngs_avg_time_to_throw",
+          "importance": 15.002290236713627
+        },
+        {
+          "feature": "offensive_momentum_score",
+          "importance": 14.75282783116535
+        },
+        {
+          "feature": "team_a_points_allowed",
+          "importance": 14.752583898957315
+        },
+        {
+          "feature": "team_a_points_scored",
+          "importance": 14.253017043201373
+        }
+      ]
+    },
     "stability": {
       "QB": {
         "overlap_pct": null,
