@@ -79,8 +79,8 @@ function renderCard(p) {
   <div class="player-name" title="${p.n}">${p.n}</div>
   <div class="player-team">${p.t}${roleTag}</div>
   <div class="card-stats">
-    <div class="stat-item" title="Adjusted full-season PPR fantasy points shown on the draft board">
-      <span class="stat-label">Adj Season PPR</span>
+    <div class="stat-item" title="Projected full-season PPR fantasy points">
+      <span class="stat-label">Season PPR</span>
       <span class="stat-value">${p.proj}</span>
     </div>
     <div class="stat-item" title="Average draft position (expert consensus rank)">
