@@ -52,6 +52,7 @@ def test_build_board_data_uses_season_total_projection_for_ui(monkeypatch):
         "compute_spread",
         lambda board: [
             SimpleNamespace(
+                player_id="p1",
                 name="Player A",
                 position="WR",
                 team="KC",
@@ -73,6 +74,7 @@ def test_build_board_data_uses_season_total_projection_for_ui(monkeypatch):
     assert player["rawProj"] == 240.0
     assert player["proj"] == 192.0
     assert player["blendProj"] == 90.0
+    assert player["vorp"] == 12.3
 
 
 def test_build_board_data_dedupes_fallback_rows_when_ml_artifact_already_has_player(monkeypatch):
@@ -125,6 +127,7 @@ def test_build_board_data_dedupes_fallback_rows_when_ml_artifact_already_has_pla
         "compute_spread",
         lambda board: [
             SimpleNamespace(
+                player_id="p1",
                 name="Trey McBride",
                 position="TE",
                 team="ARI",

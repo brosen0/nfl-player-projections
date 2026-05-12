@@ -954,7 +954,10 @@ def build_board_data(season: int):
     # Build VORP values
     if not projections.empty:
         vorp_series = _apply_vorp(projections, basis_col="pred_total")
-        vorp_map = dict(zip(projections["name"], vorp_series))
+        if "player_id" in projections.columns:
+            vorp_map = dict(zip(projections["player_id"].astype(str), vorp_series))
+        else:
+            vorp_map = dict(zip(projections["name"], vorp_series))
     else:
         vorp_map = {}
 
@@ -1147,7 +1150,10 @@ def build_board_data(season: int):
             "adjPct": adj_pct,
             "adjR": ", ".join(adj_reasons) if adj_reasons else "",
             "age": player_age,
-            "vorp": round(vorp_map.get(sr.name, 0), 1),
+            "vorp": round(
+                vorp_map.get(str(getattr(sr, "player_id", "")), vorp_map.get(sr.name, 0)),
+                1,
+            ),
             "role": team_role,
             "usage": usage_note,
             "ts": tgt_share,

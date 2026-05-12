@@ -96,6 +96,7 @@ def _adp_implied_total(ecr: float, yield_curve: Dict[int, float]) -> float:
 
 @dataclass
 class SpreadResult:
+    player_id: str
     name: str
     position: str
     team: str
@@ -152,6 +153,7 @@ def compute_spread(board: List[DraftPlayer]) -> List[SpreadResult]:
         blended_wins = blended_error < adp_error
 
         results.append(SpreadResult(
+            player_id=p.player_id,
             name=p.name,
             position=p.position,
             team=p.team,

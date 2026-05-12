@@ -21,6 +21,7 @@ spec.loader.exec_module(sd)
 
 def _player(name, pos, ecr=100.0, pred=0.0, actual=0.0, modelable=True):
     return sd.DraftPlayer(
+        player_id=f"{name}:{pos}",
         name=name,
         position=pos,
         team="X",

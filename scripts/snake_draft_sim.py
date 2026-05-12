@@ -508,6 +508,7 @@ def _apply_vorp(agg: pd.DataFrame, basis_col: str = "pred_total") -> pd.Series:
 
 @dataclass
 class DraftPlayer:
+    player_id: str
     name: str
     position: str
     team: str
@@ -573,6 +574,7 @@ def build_draft_board(
                 _normalize(_last_token(r["name"])),
             ))
         board.append(DraftPlayer(
+            player_id=str(pred.get("player_id")) if pred else "",
             name=r["name"],
             position=r["position"],
             team=r.get("team") or "",
