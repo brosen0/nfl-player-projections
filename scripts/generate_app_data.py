@@ -18,6 +18,26 @@ import pandas as pd
 import numpy as np
 
 
+def _load_authoritative_position_map():
+    try:
+        from src.utils.database import DatabaseManager
+        return DatabaseManager().get_authoritative_player_positions()
+    except Exception:
+        return {}
+
+
+def _apply_authoritative_positions(df: pd.DataFrame, pos_map: dict) -> pd.DataFrame:
+    if df.empty or not pos_map or "player_id" not in df.columns:
+        return df
+    out = df.copy()
+    authoritative = out["player_id"].astype(str).map(pos_map)
+    if "position" in out.columns:
+        out["position"] = authoritative.where(authoritative.notna(), out["position"])
+    else:
+        out["position"] = authoritative
+    return out
+
+
 def generate_app_data(save_daily: bool = False) -> bool:
     """
     Generate feature data with ML predictions for the web app.
@@ -50,6 +70,10 @@ def generate_app_data(save_daily: bool = False) -> bool:
     # Schedule available for prediction week: if not, we will not store matchup (opponent/home_away) so UI and data stay aligned
     from src.utils.database import DatabaseManager
     _db = DatabaseManager()
+    corrected_positions = _db.reconcile_player_positions_from_rosters()
+    if corrected_positions:
+        print(f"  Reconciled {corrected_positions} player positions from roster snapshots")
+    authoritative_pos_map = _db.get_authoritative_player_positions()
     schedule_available_for_pred = _db.has_schedule_for_season(pred_season)
 
     # Decide whether to use cache or rebuild from DB (use DB when cache is behind prediction target)
@@ -97,6 +121,7 @@ def generate_app_data(save_daily: bool = False) -> bool:
         try:
             df = predictor.predict(n_weeks=n_weeks, top_n=2000)
             if not df.empty:
+                df = _apply_authoritative_positions(df, authoritative_pos_map)
                 cols = ["player_id", "name", "position", "team", "predicted_points"]
                 if "opponent" in df.columns:
                     cols.append("opponent")
@@ -122,6 +147,7 @@ def generate_app_data(save_daily: bool = False) -> bool:
             for n_weeks in horizons:
                 kd_pred = kd_predictor.predict_all(kd_history, n_weeks=n_weeks, schedule_map=kd_schedule)
                 if not kd_pred.empty:
+                    kd_pred = _apply_authoritative_positions(kd_pred, authoritative_pos_map)
                     cols = ["player_id", "name", "position", "team", f"projection_{n_weeks}w"]
                     if "opponent" in kd_pred.columns:
                         cols.append("opponent")
@@ -155,9 +181,12 @@ def generate_app_data(save_daily: bool = False) -> bool:
         # Filter to eligible (active) players only for the prediction rows
         from src.data.nfl_data_loader import filter_to_eligible_players
         full_df = filter_to_eligible_players(full_df)
+        full_df = _apply_authoritative_positions(full_df, authoritative_pos_map)
         full_df = engineer_all_features(full_df)
         full_df = add_qb_features(full_df)
         print(f"  Computed features for {len(full_df)} rows from DB")
+    else:
+        full_df = _apply_authoritative_positions(full_df, authoritative_pos_map)
     
     # Add projection columns (initially NaN)
     horizons = list(pred_dfs.keys())

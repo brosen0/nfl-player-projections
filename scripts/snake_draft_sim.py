@@ -76,10 +76,15 @@ def _normalize(name: str) -> str:
     return "".join(ch for ch in name.lower() if ch.isalnum())
 
 
+_NAME_SUFFIXES = {"jr", "sr", "ii", "iii", "iv", "v"}
+
+
 def _last_token(name: str) -> str:
-    if "." in name:
+    if "." in name and " " not in name:
         return name.split(".")[-1]
     parts = name.split()
+    while parts and parts[-1].lower().rstrip(".") in _NAME_SUFFIXES:
+        parts.pop()
     return parts[-1] if parts else name
 
 
@@ -116,6 +121,66 @@ def _build_pred_index(predictions: pd.DataFrame) -> Dict[Tuple[str, str, str], D
                 and float(r.get("pred_total", 0) or 0) > float(existing.get("pred_total", 0) or 0)
             ):
                 idx[key] = r.to_dict()
+    return idx
+
+
+def _build_pred_team_fallback_index(
+    predictions: pd.DataFrame,
+) -> Dict[Tuple[str, str, str], Dict]:
+    """Build a secondary index that ignores source position but keeps team.
+
+    This rescues players whose predictions artifact has a bad position label
+    while still requiring the same team and normalized identity.
+    """
+    idx: Dict[Tuple[str, str, str], Dict] = {}
+    for _, r in predictions.iterrows():
+        key = (
+            _first_initial(r["name"]),
+            _normalize(_last_token(r["name"])),
+            str(r.get("team") or ""),
+        )
+        existing = idx.get(key)
+        if existing is None:
+            idx[key] = r.to_dict()
+        else:
+            new_weeks = int(r.get("weeks", 0) or 0)
+            old_weeks = int(existing.get("weeks", 0) or 0)
+            if new_weeks > old_weeks or (
+                new_weeks == old_weeks
+                and float(r.get("pred_total", 0) or 0) > float(existing.get("pred_total", 0) or 0)
+            ):
+                idx[key] = r.to_dict()
+    return idx
+
+
+def _build_pred_name_fallback_index(
+    predictions: pd.DataFrame,
+) -> Dict[Tuple[str, str], Dict]:
+    """Build a last-resort index on normalized identity only.
+
+    We only keep keys that resolve to a single underlying player record;
+    ambiguous identities are discarded instead of guessing.
+    """
+    grouped: Dict[Tuple[str, str], List[Dict]] = {}
+    for _, r in predictions.iterrows():
+        key = (
+            _first_initial(r["name"]),
+            _normalize(_last_token(r["name"])),
+        )
+        grouped.setdefault(key, []).append(r.to_dict())
+
+    idx: Dict[Tuple[str, str], Dict] = {}
+    for key, rows in grouped.items():
+        teams = {str(r.get("team") or "") for r in rows}
+        positions = {str(r.get("position") or "") for r in rows}
+        if len(rows) == 1 or (len(teams) == 1 and len(positions) == 1):
+            idx[key] = max(
+                rows,
+                key=lambda r: (
+                    int(r.get("weeks", 0) or 0),
+                    float(r.get("pred_total", 0) or 0.0),
+                ),
+            )
     return idx
 
 
@@ -485,6 +550,8 @@ def build_draft_board(
     normalized last name, position).  Returns the draft board sorted
     by ADP (lowest first)."""
     pred_idx = _build_pred_index(projections)
+    pred_team_fallback_idx = _build_pred_team_fallback_index(projections)
+    pred_name_fallback_idx = _build_pred_name_fallback_index(projections)
     board: List[DraftPlayer] = []
     for _, r in adp.iterrows():
         key = (
@@ -493,6 +560,18 @@ def build_draft_board(
             r["position"],
         )
         pred = pred_idx.get(key)
+        if pred is None:
+            fallback_key = (
+                _first_initial(r["name"]),
+                _normalize(_last_token(r["name"])),
+                str(r.get("team") or ""),
+            )
+            pred = pred_team_fallback_idx.get(fallback_key)
+        if pred is None:
+            pred = pred_name_fallback_idx.get((
+                _first_initial(r["name"]),
+                _normalize(_last_token(r["name"])),
+            ))
         board.append(DraftPlayer(
             name=r["name"],
             position=r["position"],

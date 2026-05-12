@@ -32,6 +32,28 @@ MODELS_DIR = DATA_DIR / "models"
 BACKTEST_DIR = DATA_DIR / "backtest_results"
 
 
+def _load_authoritative_position_map():
+    """Load authoritative position labels from roster snapshots."""
+    try:
+        from src.utils.database import DatabaseManager
+        return DatabaseManager().get_authoritative_player_positions()
+    except Exception:
+        return {}
+
+
+def _apply_authoritative_positions(df: pd.DataFrame, pos_map: dict) -> pd.DataFrame:
+    """Overwrite noisy position labels with authoritative roster labels."""
+    if df.empty or not pos_map or "player_id" not in df.columns:
+        return df
+    out = df.copy()
+    authoritative = out["player_id"].astype(str).map(pos_map)
+    if "position" in out.columns:
+        out["position"] = authoritative.where(authoritative.notna(), out["position"])
+    else:
+        out["position"] = authoritative
+    return out
+
+
 # ---------------------------------------------------------------------------
 # 1. Model Performance: previous season out-of-sample predictions vs actuals
 # ---------------------------------------------------------------------------
@@ -119,6 +141,9 @@ def generate_model_performance():
         ts_preds = _load_ts_backtest_predictions(prev_season - 1)
         if ts_preds is not None:
             prev_season = prev_season - 1
+    pos_map = _load_authoritative_position_map()
+    if ts_preds is not None and not ts_preds.empty:
+        ts_preds = _apply_authoritative_positions(ts_preds, pos_map)
 
     # Also load aggregate backtest metrics — prefer ts_backtest JSON over generic backtest
     backtest_json = None
@@ -221,6 +246,7 @@ def load_season_data(season: int):
     if not parquet_path.exists():
         return pd.DataFrame()
     df = pd.read_parquet(parquet_path)
+    df = _apply_authoritative_positions(df, _load_authoritative_position_map())
     mask = (
         (df["season"] == season)
         & (df["week"] <= 18)
@@ -345,6 +371,7 @@ def _load_ml_predictions(upcoming_season: int):
         return None
     try:
         df = pd.read_parquet(parquet_path)
+        df = _apply_authoritative_positions(df, _load_authoritative_position_map())
         upcoming = df[
             (df["season"] == upcoming_season)
             & (df["position"].isin(["QB", "RB", "WR", "TE"]))
@@ -621,6 +648,7 @@ def schedule_transition_check(upcoming_season: int, schedule_available: bool):
 
 def main():
     from src.utils.nfl_calendar import get_current_nfl_season, is_offseason
+    from src.utils.database import DatabaseManager
 
     current_season = get_current_nfl_season()
     prev_season = current_season
@@ -630,6 +658,11 @@ def main():
     print(f"Previous completed season: {prev_season}")
     print(f"Upcoming season: {upcoming_season}")
     print()
+
+    corrected = DatabaseManager().reconcile_player_positions_from_rosters()
+    if corrected:
+        print(f"Reconciled {corrected} player positions from authoritative roster snapshots.")
+        print()
 
     # 1. Model Performance (previous season OOS predictions vs actuals)
     print("Generating model performance data...")

@@ -2,7 +2,7 @@
 import re
 import sqlite3
 from pathlib import Path
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Tuple
 import pandas as pd
 from contextlib import contextmanager
 
@@ -1027,6 +1027,96 @@ class DatabaseManager:
             count = cursor.rowcount
             conn.commit()
             return count
+
+    def get_authoritative_player_positions(self) -> Dict[str, str]:
+        """Return authoritative skill-position labels keyed by ``player_id``.
+
+        Priority order:
+        1. ``weekly_rosters_v2`` latest (season, week) snapshot
+        2. ``weekly_rosters`` latest (season, week) snapshot
+        3. ``rosters`` latest season snapshot
+        """
+        def _table_exists(conn: sqlite3.Connection, table_name: str) -> bool:
+            row = conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+                (table_name,),
+            ).fetchone()
+            return row is not None
+
+        def _latest_rows(
+            conn: sqlite3.Connection,
+            table_name: str,
+            *,
+            season_col: str = "season",
+            week_col: Optional[str] = "week",
+        ) -> List[Tuple[str, str]]:
+            if not _table_exists(conn, table_name):
+                return []
+            order_by = f"{season_col} DESC"
+            if week_col is not None:
+                order_by += f", {week_col} DESC"
+            query = f"""
+                SELECT player_id, position
+                FROM (
+                    SELECT player_id,
+                           position,
+                           ROW_NUMBER() OVER (
+                               PARTITION BY player_id
+                               ORDER BY {order_by}
+                           ) AS rn
+                    FROM {table_name}
+                    WHERE position IN ('QB','RB','WR','TE')
+                      AND player_id IS NOT NULL
+                      AND TRIM(player_id) != ''
+                )
+                WHERE rn = 1
+            """
+            return conn.execute(query).fetchall()
+
+        pos_map: Dict[str, str] = {}
+        with self._get_connection() as conn:
+            for table_name, week_col in [
+                ("weekly_rosters_v2", "week"),
+                ("weekly_rosters", "week"),
+                ("rosters", None),
+            ]:
+                for player_id, position in _latest_rows(
+                    conn,
+                    table_name,
+                    week_col=week_col,
+                ):
+                    pos_map.setdefault(player_id, position)
+        return pos_map
+
+    def reconcile_player_positions_from_rosters(self) -> int:
+        """Update ``players.position`` from authoritative roster snapshots."""
+        pos_map = self.get_authoritative_player_positions()
+        if not pos_map:
+            return 0
+
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                "SELECT player_id, position FROM players"
+            ).fetchall()
+            updates = [
+                (authoritative_pos, player_id)
+                for player_id, current_pos in rows
+                if (authoritative_pos := pos_map.get(player_id))
+                and authoritative_pos != current_pos
+            ]
+            if not updates:
+                return 0
+            conn.executemany(
+                """
+                UPDATE players
+                   SET position = ?,
+                       updated_at = CURRENT_TIMESTAMP
+                 WHERE player_id = ?
+                """,
+                updates,
+            )
+            conn.commit()
+            return len(updates)
 
     def get_player_stats(self, player_id: str = None, season: int = None,
                          position: str = None) -> pd.DataFrame:

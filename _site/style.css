@@ -297,10 +297,10 @@ details summary::-webkit-details-marker { display: none; }
   color: var(--text-muted);
 }
 
-/* 2×2 stat grid on each card */
+/* compact stat grid on each card */
 .card-stats {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 6px 4px;
   margin-bottom: 10px;
 }

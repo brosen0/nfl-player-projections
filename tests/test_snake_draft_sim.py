@@ -63,6 +63,75 @@ def test_adp_bot_prefers_lowest_ecr():
     assert pick.name == "B"  # lowest ECR, regardless of pred
 
 
+def test_build_draft_board_handles_suffix_names():
+    adp = sd.pd.DataFrame([
+        {"name": "James Cook III", "position": "RB", "team": "BUF", "ecr": 20},
+    ])
+    projections = sd.pd.DataFrame([
+        {
+            "name": "J.Cook",
+            "position": "RB",
+            "team": "BUF",
+            "pred_total": 244.2,
+            "actual_total": 0.0,
+            "weeks": 17,
+            "model_rank_value": 244.2,
+        }
+    ])
+
+    board = sd.build_draft_board(adp, projections)
+
+    assert len(board) == 1
+    assert board[0].is_modelable is True
+    assert board[0].pred_total == 244.2
+
+
+def test_build_draft_board_handles_suffix_names_with_period():
+    adp = sd.pd.DataFrame([
+        {"name": "Brian Thomas Jr.", "position": "WR", "team": "JAC", "ecr": 12},
+    ])
+    projections = sd.pd.DataFrame([
+        {
+            "name": "B.Thomas",
+            "position": "WR",
+            "team": "JAX",
+            "pred_total": 162.4,
+            "actual_total": 0.0,
+            "weeks": 15,
+            "model_rank_value": 162.4,
+        }
+    ])
+
+    board = sd.build_draft_board(adp, projections)
+
+    assert len(board) == 1
+    assert board[0].is_modelable is True
+    assert board[0].pred_total == 162.4
+
+
+def test_build_draft_board_falls_back_to_team_match_when_projection_position_is_wrong():
+    adp = sd.pd.DataFrame([
+        {"name": "Trey McBride", "position": "TE", "team": "ARI", "ecr": 15},
+    ])
+    projections = sd.pd.DataFrame([
+        {
+            "name": "T.McBride",
+            "position": "WR",
+            "team": "ARI",
+            "pred_total": 178.4,
+            "actual_total": 0.0,
+            "weeks": 17,
+            "model_rank_value": 178.4,
+        }
+    ])
+
+    board = sd.build_draft_board(adp, projections)
+
+    assert len(board) == 1
+    assert board[0].is_modelable is True
+    assert board[0].pred_total == 178.4
+
+
 def test_position_cap_blocks_over_stack():
     t = sd.Team(name="A", is_model_bot=False, slot=1)
     # Give the team 3 QBs already — at the QB cap.

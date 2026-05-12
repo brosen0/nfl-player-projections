@@ -158,6 +158,47 @@ class TestPlayerOperations:
         assert row['name'] == 'Updated Name'
         assert row['position'] == 'WR'
 
+    def test_reconcile_player_positions_from_weekly_rosters_v2(self, db):
+        """Authoritative weekly roster snapshots should fix stale player positions."""
+        db.insert_player({
+            'player_id': 'test_player_004',
+            'name': 'T.McBride',
+            'position': 'WR',
+        })
+
+        with db._get_connection() as conn:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS weekly_rosters_v2 (
+                    season INTEGER,
+                    team TEXT,
+                    position TEXT,
+                    depth_chart_position TEXT,
+                    status TEXT,
+                    player_name TEXT,
+                    player_id TEXT,
+                    gsis_it_id TEXT,
+                    week INTEGER,
+                    game_type TEXT,
+                    headshot_url TEXT
+                )
+            """)
+            conn.execute("""
+                INSERT INTO weekly_rosters_v2
+                (season, team, position, depth_chart_position, status, player_name, player_id, gsis_it_id, week, game_type, headshot_url)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (2025, 'ARI', 'TE', 'TE', 'ACT', 'Trey McBride', 'test_player_004', '', 18, 'REG', ''))
+            conn.commit()
+
+        changed = db.reconcile_player_positions_from_rosters()
+
+        assert changed == 1
+        with db._get_connection() as conn:
+            row = conn.execute(
+                "SELECT position FROM players WHERE player_id = ?",
+                ('test_player_004',),
+            ).fetchone()
+        assert row['position'] == 'TE'
+
 
 class TestPlayerWeeklyStats:
     """Test player weekly stats operations."""

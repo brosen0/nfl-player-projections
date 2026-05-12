@@ -29,6 +29,9 @@ from scripts.snake_draft_sim import (
     load_model_projections,
     load_preseason_projections,
     _apply_vorp,
+    _first_initial,
+    _last_token,
+    _normalize,
 )
 from scripts.draft_advisor import (
     compute_spread,
@@ -880,6 +883,20 @@ def build_board_data(season: int):
     """Build the full draft board with spread, VORP, and projections."""
     adp_df = load_adp_board(season)
 
+    def _player_key(name: str, position: str, team: str = ""):
+        return (
+            _first_initial(name),
+            _normalize(_last_token(name)),
+            position,
+            team or "",
+        )
+
+    def _player_identity(name: str):
+        return (
+            _first_initial(name),
+            _normalize(_last_token(name)),
+        )
+
     csv = _latest_predictions_csv(season)
     if csv:
         projections = load_model_projections(csv, ranking="season_sum", season=season)
@@ -896,9 +913,34 @@ def build_board_data(season: int):
             # Merge with preseason projections for rookies
             fallback = load_preseason_projections(season, adp_df=adp_df)
             if not fallback.empty:
-                # Keep ML projections, add rookies not in ML set
-                ml_names = set(ml_proj["name"].tolist())
-                rookies = fallback[~fallback["name"].isin(ml_names)]
+                # Keep ML projections, add only players not already covered by
+                # the ML artifact after robust normalized matching.
+                ml_keys = {
+                    _player_key(r["name"], r["position"], r.get("team", ""))
+                    for _, r in ml_proj.iterrows()
+                }
+                ml_identity_team_keys = {
+                    (_player_identity(r["name"]), r.get("team", "") or "")
+                    for _, r in ml_proj.iterrows()
+                }
+                ml_identity_counts = {}
+                for _, r in ml_proj.iterrows():
+                    ident = _player_identity(r["name"])
+                    ml_identity_counts[ident] = ml_identity_counts.get(ident, 0) + 1
+                rookies = fallback[
+                    [
+                        (
+                            _player_key(r["name"], r["position"], r.get("team", ""))
+                            not in ml_keys
+                            and (
+                                (_player_identity(r["name"]), r.get("team", "") or "")
+                                not in ml_identity_team_keys
+                            )
+                            and ml_identity_counts.get(_player_identity(r["name"]), 0) == 0
+                        )
+                        for _, r in fallback.iterrows()
+                    ]
+                ]
                 projections = pd.concat([ml_proj, rookies], ignore_index=True)
             else:
                 projections = ml_proj
@@ -1021,16 +1063,17 @@ def build_board_data(season: int):
         # Team tendency
         tt = team_tendencies.get(sr.team, {})
 
-        # Collect context signals (informational — shown to user but most
-        # don't modify the projection since the model + ADP blend already
-        # prices them in. Only age curve applies as a multiplier since
-        # ablation shows it adds +1pp accuracy).
-        raw_proj = sr.blended_projection
+        # The board UI is labeled as season fantasy points, so it must use the
+        # model's season-total projection rather than the ADP/model blend used
+        # for rank-spread analysis.
+        raw_proj = sr.model_projection
+        blended_proj = sr.blended_projection
         adj_mult = 1.0
         adj_reasons = []
         player_age = None
 
-        # Age — only adjustment that improves accuracy on top of blend
+        # Age — only adjustment that improves accuracy on top of the season-total
+        # model projection.
         aa = age_adj.get(sr.name)
         if aa:
             player_age = aa["age"]
@@ -1100,6 +1143,7 @@ def build_board_data(season: int):
             "sp": sr.rank_spread,
             "proj": adjusted_proj,
             "rawProj": round(raw_proj, 1),
+            "blendProj": round(blended_proj, 1),
             "adjPct": adj_pct,
             "adjR": ", ".join(adj_reasons) if adj_reasons else "",
             "age": player_age,
