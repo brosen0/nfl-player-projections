@@ -515,14 +515,12 @@ function renderPills() {
     return `<button class="pill${active}" onclick="setPos('${pos}')">${pos}</button>`;
   }).join("");
 
-  const sleepN  = BOARD.filter(p => p.sp >= 25).length;
-  const fadeN   = BOARD.filter(p => p.sp <= -25).length;
-  const sSel    = sigFilter === "sleeper" ? " active" : "";
-  const fSel    = sigFilter === "fade"    ? " active" : "";
+  const sSel = sigFilter === "sleeper" ? " active" : "";
+  const fSel = sigFilter === "fade"    ? " active" : "";
 
   const sigPills = `
-    <button class="pill${sSel}" style="color:var(--value);border-color:rgba(76,175,130,0.4)" onclick="setSig('sleeper')">▲ Sleepers <span style="opacity:0.6;font-size:0.75em">(${sleepN})</span></button>
-    <button class="pill${fSel}" style="color:var(--avoid);border-color:rgba(224,82,82,0.35)" onclick="setSig('fade')">▼ FADEs <span style="opacity:0.6;font-size:0.75em">(${fadeN})</span></button>
+    <button class="pill${sSel}" style="color:var(--value);border-color:rgba(76,175,130,0.4)" onclick="setSig('sleeper')">▲ Sleepers</button>
+    <button class="pill${fSel}" style="color:var(--avoid);border-color:rgba(224,82,82,0.35)" onclick="setSig('fade')">▼ FADEs</button>
   `;
 
   return posPills + `<span style="width:1px;background:var(--border);height:20px;margin:0 4px;align-self:center"></span>` + sigPills;
