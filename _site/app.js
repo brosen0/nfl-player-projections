@@ -223,5 +223,3 @@ document.addEventListener("keydown", function(e) {
     if (box) box.focus();
   }
 });
-
-render();

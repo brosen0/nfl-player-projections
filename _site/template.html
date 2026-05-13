@@ -54,11 +54,22 @@
 </div>
 
 <script>
-const BOARD = {{BOARD_JSON}};
-const VONA  = {{VONA_JSON}};
-const META  = {{META_JSON}};
-
 {{APP_JS}}
+
+Promise.all([
+  fetch("data/board.json").then(r => r.json()),
+  fetch("data/vona.json").then(r => r.json()),
+  fetch("data/meta.json").then(r => r.json())
+]).then(([board, vona, meta]) => {
+  window.BOARD = board;
+  window.VONA  = vona;
+  window.META  = meta;
+  render();
+}).catch(err => {
+  document.body.innerHTML =
+    '<div style="padding:24px;color:#e05252;font-family:sans-serif">' +
+    'Failed to load draft data: ' + err.message + '</div>';
+});
 </script>
 </body>
 </html>
