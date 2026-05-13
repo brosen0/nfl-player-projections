@@ -1214,20 +1214,24 @@ def build_vona_data(board, adp_df, max_slots=14):
     return vona_all
 
 
-def generate_html(board_data, vona_data, data_sources):
-    """Generate the complete HTML page from template + data files."""
-    season = board_data["season"]
-    players_json = json.dumps(board_data["players"], separators=(",", ":"))
-    vona_json = json.dumps(vona_data, separators=(",", ":"))
-    meta_json = json.dumps({
-        "season": season,
-        "validation": board_data["validation"],
-        "has_actuals": board_data["has_actuals"],
-        "teams": TEAMS,
-        "rounds": ROUNDS,
-        "sources": data_sources,
-    }, separators=(",", ":"))
+def build_data_payloads(board_data, vona_data, data_sources):
+    """Return the three JSON payloads served to the page at runtime."""
+    return {
+        "board": board_data["players"],
+        "vona":  vona_data,
+        "meta":  {
+            "season":      board_data["season"],
+            "validation":  board_data["validation"],
+            "has_actuals": board_data["has_actuals"],
+            "teams":       TEAMS,
+            "rounds":      ROUNDS,
+            "sources":     data_sources,
+        },
+    }
 
+
+def generate_html(season):
+    """Generate the HTML shell from template + CSS + JS (no data inlined)."""
     template = (SITE_DIR / "template.html").read_text(encoding="utf-8")
     style    = (SITE_DIR / "style.css").read_text(encoding="utf-8")
     app_js   = (SITE_DIR / "app.js").read_text(encoding="utf-8")
@@ -1235,9 +1239,6 @@ def generate_html(board_data, vona_data, data_sources):
     html = template
     html = html.replace("{{STYLE_CSS}}",   style)
     html = html.replace("{{APP_JS}}",      app_js)
-    html = html.replace("{{BOARD_JSON}}",  players_json)
-    html = html.replace("{{VONA_JSON}}",   vona_json)
-    html = html.replace("{{META_JSON}}",   meta_json)
     html = html.replace("{{SEASON}}",      str(season))
     html = html.replace("{{PREV_SEASON}}", str(season - 1))
     return html
@@ -1272,12 +1273,24 @@ def main():
     avail = sum(1 for s in data_sources if s["status"] == "available")
     print(f"  {avail}/{len(data_sources)} sources available")
 
-    print("  Generating HTML...")
-    html = generate_html(board_data, vona_data, data_sources)
+    print("  Generating HTML shell...")
+    html = generate_html(season)
 
     DOCS_DIR.mkdir(parents=True, exist_ok=True)
     out_path = DOCS_DIR / "index.html"
     out_path.write_text(html, encoding="utf-8")
+
+    data_dir = DOCS_DIR / "data"
+    data_dir.mkdir(parents=True, exist_ok=True)
+    payloads = build_data_payloads(board_data, vona_data, data_sources)
+    for name, payload in payloads.items():
+        path = data_dir / f"{name}.json"
+        path.write_text(
+            json.dumps(payload, separators=(",", ":")),
+            encoding="utf-8",
+        )
+        size_kb = path.stat().st_size / 1024
+        print(f"  Written to {path} ({size_kb:.0f} KB)")
 
     size_kb = out_path.stat().st_size / 1024
     print(f"  Written to {out_path} ({size_kb:.0f} KB)")
