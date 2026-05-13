@@ -461,8 +461,8 @@ function renderCard(p) {
   const roleTag  = showRole ? `<span class="role-tag">${p.role}</span>` : "";
   const usageNote = p.usage ? `<span style="font-size:0.6rem;color:var(--text-dim)">${p.usage}</span>` : "";
 
-  const hasSplit  = p.trp > 0;
-  const hasTT     = p.tt && p.tt !== "Balanced";
+  const hasSplit  = p.p !== "QB" && p.trp > 0;
+  const hasTT     = p.p !== "QB" && p.tt && p.tt !== "Balanced";
   const hasNote   = !!p.adj_note;
   const hasDetail = hasSplit || hasTT || hasNote;
 
