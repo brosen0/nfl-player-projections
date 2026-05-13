@@ -134,60 +134,30 @@ body {
 .search-box::placeholder { color: var(--text-dim); }
 
 /* ============================================================
-   Stats strip (accuracy / fades / sleepers chips)
+   Scarcity strip (per-position sleeper / fade counts)
    ============================================================ */
-.stats-strip {
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 0 20px 16px;
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-
-.stat-chip {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 10px 16px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  text-align: center;
-  min-width: 110px;
-  flex: 1;
-}
-.stat-chip-value { font-size: 1.4rem; font-weight: 700; }
-.stat-chip-label { font-size: 0.65rem; color: var(--text-muted); margin-top: 2px; }
-.stat-chip.value .stat-chip-value { color: var(--value); }
-.stat-chip.avoid .stat-chip-value { color: var(--avoid); }
-
-/* ============================================================
-   Data sources accordion
-   ============================================================ */
-.sources-row {
+.scarcity-strip {
   max-width: 1200px;
   margin: 0 auto;
   padding: 0 20px 14px;
-}
-details summary {
-  font-size: 0.72rem;
-  color: var(--text-dim);
-  cursor: pointer;
-  list-style: none;
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-}
-details summary::-webkit-details-marker { display: none; }
-.source-dots {
   display: flex;
+  gap: 0;
   flex-wrap: wrap;
-  gap: 6px 16px;
-  margin-top: 6px;
-  font-size: 0.72rem;
-  color: var(--text-muted);
+  align-items: center;
 }
+.scarcity-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding-right: 18px;
+  margin-right: 18px;
+  border-right: 1px solid var(--border);
+  line-height: 1;
+}
+.scarcity-item:last-child { border-right: none; padding-right: 0; margin-right: 0; }
+.scarcity-pos  { font-size: 0.72rem; font-weight: 700; color: var(--text-muted); min-width: 22px; }
+.scarcity-up   { font-size: 0.72rem; font-weight: 600; color: var(--value); }
+.scarcity-down { font-size: 0.72rem; font-weight: 600; color: var(--avoid); }
 
 /* ============================================================
    Card grid
@@ -201,28 +171,28 @@ details summary::-webkit-details-marker { display: none; }
   gap: 10px;
 }
 
-/* ============================================================
-   Glossary strip
-   ============================================================ */
-.glossary {
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 0 20px 12px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px 20px;
-  font-size: 0.72rem;
-  color: var(--text-muted);
+/* Expandable card detail panel */
+.card-expand { max-height: 0; overflow: hidden; transition: max-height 0.2s ease; }
+.player-card.open .card-expand { max-height: 120px; }
+.card-expand-inner {
+  padding-top: 8px;
+  margin-top: 8px;
+  border-top: 1px solid var(--border);
 }
-.gl-value { color: var(--value); font-weight: 600; }
-.gl-avoid { color: var(--avoid); font-weight: 600; }
-
-/* Manual adjustment note on card */
-.adj-badge {
-  margin-top: 6px;
-  font-size: 0.6rem;
-  font-style: italic;
+.expand-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  margin-bottom: 3px;
+}
+.expand-row span:last-child { color: var(--text); font-weight: 500; }
+.expand-note {
+  font-size: 0.63rem;
   color: var(--text-dim);
+  font-style: italic;
+  margin-top: 4px;
+  line-height: 1.4;
 }
 
 /* ============================================================
@@ -233,6 +203,7 @@ details summary::-webkit-details-marker { display: none; }
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 14px;
+  cursor: pointer;
   transition: transform var(--transition), border-color var(--transition);
   position: relative;
   overflow: hidden;
@@ -365,8 +336,7 @@ details summary::-webkit-details-marker { display: none; }
 @media (max-width: 600px) {
   .header      { padding: 10px 14px; }
   .controls    { padding: 10px 14px 6px; }
-  .stats-strip { padding: 0 14px 12px; }
-  .sources-row { padding: 0 14px 12px; }
+  .scarcity-strip { padding: 0 14px 12px; }
   .card-grid   { padding: 0 14px 30px; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
   .search-box  { width: 130px; }
   .search-box:focus { width: 150px; }
@@ -403,14 +373,7 @@ details summary::-webkit-details-marker { display: none; }
   <div class="pills" id="pills"></div>
 </div>
 
-<div class="stats-strip" id="statsStrip"></div>
-
-<div class="glossary">
-  <span><span class="gl-value">▲ Sleeper</span> — model projects more value than their draft rank suggests</span>
-  <span><span class="gl-avoid">▼ FADE</span> — model projects less value than their draft rank suggests</span>
-  <span><b>vs Experts</b> — positive = undervalued, negative = overvalued</span>
-  <span><b>Above Repl.</b> — points above a freely available player at same position</span>
-</div>
+<div class="scarcity-strip" id="scarcityStrip"></div>
 
 <div class="card-grid" id="cardGrid"></div>
 
@@ -427,6 +390,7 @@ const META  = {"season":2026,"validation":{"n":0,"wins":0,"acc":0},"has_actuals"
 "use strict";
 
 let posFilter = "All";
+let sigFilter = "";   // "sleeper" | "fade" | ""
 let sortKey   = "mr";
 let searchQ   = "";
 
@@ -456,6 +420,9 @@ function filteredAndSorted() {
   if (posFilter !== "All") {
     players = players.filter(p => p.p === posFilter);
   }
+
+  if (sigFilter === "sleeper") players = players.filter(p => p.sp >= 10);
+  if (sigFilter === "fade")    players = players.filter(p => p.sp <= -10);
 
   if (searchQ) {
     const q = searchQ.toLowerCase();
@@ -495,9 +462,19 @@ function renderCard(p) {
   const showRole = p.role && roleNum <= (roleDepthCap[p.p] || 3);
   const roleTag  = showRole ? `<span class="role-tag">${p.role}</span>` : "";
   const usageNote = p.usage ? `<span style="font-size:0.6rem;color:var(--text-dim)">${p.usage}</span>` : "";
-  const adjBadge  = p.adj_note ? `<div class="adj-badge" title="Manual adjustment">✎ ${p.adj_note}</div>` : "";
 
-  return `<div class="player-card ${cardCls}">
+  const hasSplit  = p.trp > 0;
+  const hasTT     = p.tt && p.tt !== "Balanced";
+  const hasNote   = !!p.adj_note;
+  const hasDetail = hasSplit || hasTT || hasNote;
+
+  const expandInner = hasDetail ? `<div class="card-expand-inner">
+    ${hasSplit ? `<div class="expand-row"><span>Run / Pass</span><span>${p.trp}% / ${p.tpp}%</span></div>` : ""}
+    ${hasTT    ? `<div class="expand-row"><span>Scheme</span><span>${p.tt}</span></div>` : ""}
+    ${hasNote  ? `<div class="expand-note">✎ ${p.adj_note}</div>` : ""}
+  </div>` : "";
+
+  return `<div class="player-card ${cardCls}" data-id="${p.id}" onclick="toggleCard(${p.id})">
   <div class="card-top">
     <span class="pos-badge pos-${p.p}">${p.p}</span>
     <span class="card-rank">#${p.mr}</span>
@@ -526,7 +503,7 @@ function renderCard(p) {
     <span class="signal-badge ${sig.cls}">${sig.label}</span>
     ${usageNote}
   </div>
-  ${adjBadge}
+  <div class="card-expand">${expandInner}</div>
 </div>`;
 }
 
@@ -535,62 +512,34 @@ function renderCard(p) {
 // ------------------------------------------------------------------
 
 function renderPills() {
-  return ["All", "QB", "RB", "WR", "TE"].map(pos => {
-    const count = pos === "All"
-      ? BOARD.filter(p => Math.abs(p.sp) >= 10).length
-      : BOARD.filter(p => p.p === pos && Math.abs(p.sp) >= 10).length;
-    const label = count
-      ? `${pos} <span style="opacity:0.6;font-size:0.75em">(${count})</span>`
-      : pos;
-    const active = posFilter === pos ? " active" : "";
-    return `<button class="pill${active}" onclick="setPos('${pos}')">${label}</button>`;
+  const posPills = ["All", "QB", "RB", "WR", "TE"].map(pos => {
+    const active = posFilter === pos && !sigFilter ? " active" : "";
+    return `<button class="pill${active}" onclick="setPos('${pos}')">${pos}</button>`;
   }).join("");
+
+  const sleepN  = BOARD.filter(p => p.sp >= 10).length;
+  const fadeN   = BOARD.filter(p => p.sp <= -10).length;
+  const sSel    = sigFilter === "sleeper" ? " active" : "";
+  const fSel    = sigFilter === "fade"    ? " active" : "";
+
+  const sigPills = `
+    <button class="pill${sSel}" style="color:var(--value);border-color:rgba(76,175,130,0.4)" onclick="setSig('sleeper')">▲ Sleepers <span style="opacity:0.6;font-size:0.75em">(${sleepN})</span></button>
+    <button class="pill${fSel}" style="color:var(--avoid);border-color:rgba(224,82,82,0.35)" onclick="setSig('fade')">▼ FADEs <span style="opacity:0.6;font-size:0.75em">(${fadeN})</span></button>
+  `;
+
+  return posPills + `<span style="width:1px;background:var(--border);height:20px;margin:0 4px;align-self:center"></span>` + sigPills;
 }
 
-function renderStatsStrip() {
-  const v           = META.validation || {};
-  const fadesAll    = BOARD.filter(p => p.sp <= -10).length;
-  const fadesStrong = BOARD.filter(p => p.sp <= -25).length;
-  const sleepAll    = BOARD.filter(p => p.sp >= 10).length;
-  const sleepStrong = BOARD.filter(p => p.sp >= 25).length;
-
-  let h = "";
-  if (v.n > 0) {
-    const cls = v.acc >= 55 ? " value" : "";
-    h += `<div class="stat-chip${cls}">
-      <span class="stat-chip-value">${v.acc}%</span>
-      <span class="stat-chip-label">${META.has_actuals ? "This season" : "Historical"} accuracy<br>${v.wins}/${v.n} calls</span>
+function renderScarcity() {
+  return ["QB", "RB", "WR", "TE"].map(pos => {
+    const up   = BOARD.filter(p => p.p === pos && p.sp >= 10).length;
+    const down = BOARD.filter(p => p.p === pos && p.sp <= -10).length;
+    return `<div class="scarcity-item">
+      <span class="scarcity-pos">${pos}</span>
+      <span class="scarcity-up" title="${pos} sleepers">▲${up}</span>
+      <span class="scarcity-down" title="${pos} fades">▼${down}</span>
     </div>`;
-  }
-  h += `<div class="stat-chip avoid">
-    <span class="stat-chip-value">${fadesAll}</span>
-    <span class="stat-chip-label">Overvalued<br>${fadesStrong} strong FADE</span>
-  </div>`;
-  h += `<div class="stat-chip value">
-    <span class="stat-chip-value">${sleepAll}</span>
-    <span class="stat-chip-label">Undervalued<br>${sleepStrong} strong Sleeper</span>
-  </div>`;
-  return h;
-}
-
-function renderSources() {
-  const src = META.sources || [];
-  if (!src.length) return "";
-
-  const avail = src.filter(s => s.status === "available").length;
-  const dots  = src.map(s => {
-    const dot = s.status === "available" ? '<span style="color:var(--value)">●</span>'
-              : s.status === "partial"   ? '<span style="color:var(--wr)">●</span>'
-              :                           '<span style="color:var(--border)">●</span>';
-    return `<span>${dot} ${s.name}</span>`;
   }).join("");
-
-  return `<div class="sources-row">
-    <details>
-      <summary>▶ Data sources (${avail}/${src.length} available)</summary>
-      <div class="source-dots">${dots}</div>
-    </details>
-  </div>`;
 }
 
 function renderCards() {
@@ -607,8 +556,20 @@ function renderCards() {
 
 function setPos(pos) {
   posFilter = pos;
+  sigFilter = "";
   document.getElementById("pills").innerHTML = renderPills();
   updateCards();
+}
+
+function setSig(sig) {
+  sigFilter = sigFilter === sig ? "" : sig;
+  document.getElementById("pills").innerHTML = renderPills();
+  updateCards();
+}
+
+function toggleCard(id) {
+  const el = document.querySelector(`[data-id="${id}"]`);
+  if (el) el.classList.toggle("open");
 }
 
 function setSort(val) {
@@ -632,7 +593,7 @@ function updateCards() {
 
 function render() {
   document.getElementById("pills").innerHTML      = renderPills();
-  document.getElementById("statsStrip").innerHTML = renderStatsStrip();
+  document.getElementById("scarcityStrip").innerHTML = renderScarcity();
   updateCards();
 }
 
