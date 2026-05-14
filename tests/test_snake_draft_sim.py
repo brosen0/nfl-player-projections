@@ -220,30 +220,45 @@ def test_build_draft_board_matches_last_name_and_position():
     assert by_name["X.Ghost"].pred_total == 0.0
 
 
-def test_vorp_subtracts_position_replacement_level():
-    """VORP for the top QB = QB1_proj - QB12_proj;
-       VORP for the top RB = RB1_proj - RB30_proj.
-       Cross-position ordering should favor RB scarcity."""
+def test_vorp_uses_flex_aware_replacement_levels():
+    """Replacement should come from starter demand, including FLEX."""
     import pandas as pd
     rows = []
-    # 20 QBs: 30, 29, 28, ..., 11 (QB12 = 30 - 11 = 19)
+    # 20 QBs: QB replacement is QB11 in a 10-team 1-QB league.
     for i in range(20):
         rows.append({"player_id": f"QB{i}", "name": f"QB{i}", "position": "QB",
                      "team": "X", "pred_total": 30 - i,
                      "actual_total": 0.0, "weeks": 17})
-    # 40 RBs: 25, 24.5, 24, ..., 5.5 (RB30 = 25 - 0.5*29 = 10.5)
+    # 40 RBs: FLEX should absorb RB21-RB30, so replacement becomes RB31.
     for i in range(40):
         rows.append({"player_id": f"RB{i}", "name": f"RB{i}", "position": "RB",
-                     "team": "X", "pred_total": 25 - 0.5 * i,
+                     "team": "X", "pred_total": 40 - i,
+                     "actual_total": 0.0, "weeks": 17})
+    # 30 WRs and 20 TEs are weaker than the RB overflow, so FLEX does not
+    # consume them and their replacement stays at the first bench player.
+    for i in range(30):
+        rows.append({"player_id": f"WR{i}", "name": f"WR{i}", "position": "WR",
+                     "team": "X", "pred_total": 30 - i,
+                     "actual_total": 0.0, "weeks": 17})
+    for i in range(20):
+        rows.append({"player_id": f"TE{i}", "name": f"TE{i}", "position": "TE",
+                     "team": "X", "pred_total": 20 - i,
                      "actual_total": 0.0, "weeks": 17})
     agg = pd.DataFrame(rows)
+
+    replacements = sd._compute_replacement_values(agg, basis_col="pred_total")
     vorp = sd._apply_vorp(agg, basis_col="pred_total")
-    # QB1 (proj 30) replacement QB12 (proj 19) -> VORP 11
-    assert abs(vorp.iloc[0] - 11.0) < 1e-6, f"QB1 VORP = {vorp.iloc[0]}"
-    # RB1 (proj 25) replacement RB30 (proj 10.5) -> VORP 14.5
+
+    assert replacements["QB"] == 20.0
+    assert replacements["RB"] == 10.0
+    assert replacements["WR"] == 10.0
+    assert replacements["TE"] == 10.0
+
+    # QB1 (30) replacement QB11 (20) -> VORP 10
+    assert abs(vorp.iloc[0] - 10.0) < 1e-6, f"QB1 VORP = {vorp.iloc[0]}"
+    # RB1 (40) replacement RB31 (10) -> VORP 30
     rb1_idx = agg.index[agg["player_id"] == "RB0"][0]
-    assert abs(vorp.iloc[rb1_idx] - 14.5) < 1e-6, f"RB1 VORP = {vorp.iloc[rb1_idx]}"
-    # RB has higher VORP than QB despite lower raw projection.
+    assert abs(vorp.iloc[rb1_idx] - 30.0) < 1e-6, f"RB1 VORP = {vorp.iloc[rb1_idx]}"
     assert vorp.iloc[rb1_idx] > vorp.iloc[0]
 
 

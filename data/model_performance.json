@@ -187,7 +187,7 @@
     {
       "player_id": "00-0037744",
       "name": "T.McBride",
-      "position": "WR",
+      "position": "TE",
       "team": "ARI",
       "predicted_total": 255.8,
       "actual_total": 315.9,
@@ -499,7 +499,7 @@
     {
       "player_id": "00-0036919",
       "name": "K.Gainwell",
-      "position": "WR",
+      "position": "RB",
       "team": "PIT",
       "predicted_total": 156.4,
       "actual_total": 231.9,
@@ -703,7 +703,7 @@
     {
       "player_id": "00-0036970",
       "name": "K.Pitts",
-      "position": "WR",
+      "position": "TE",
       "team": "ATL",
       "predicted_total": 184.3,
       "actual_total": 210.8,
@@ -919,7 +919,7 @@
     {
       "player_id": "00-0038041",
       "name": "J.Ferguson",
-      "position": "WR",
+      "position": "TE",
       "team": "DAL",
       "predicted_total": 190.9,
       "actual_total": 190.1,
@@ -955,7 +955,7 @@
     {
       "player_id": "00-0040663",
       "name": "H.Fannin",
-      "position": "WR",
+      "position": "TE",
       "team": "CLE",
       "predicted_total": 165.0,
       "actual_total": 188.4,
@@ -1027,7 +1027,7 @@
     {
       "player_id": "00-0036040",
       "name": "J.Johnson",
-      "position": "WR",
+      "position": "TE",
       "team": "NO",
       "predicted_total": 175.9,
       "actual_total": 183.9,
@@ -1123,7 +1123,7 @@
     {
       "player_id": "00-0039338",
       "name": "B.Bowers",
-      "position": "WR",
+      "position": "TE",
       "team": "LV",
       "predicted_total": 149.0,
       "actual_total": 174.2,
@@ -1135,7 +1135,7 @@
     {
       "player_id": "00-0040128",
       "name": "T.Warren",
-      "position": "WR",
+      "position": "TE",
       "team": "IND",
       "predicted_total": 183.3,
       "actual_total": 174.1,
@@ -1255,7 +1255,7 @@
     {
       "player_id": "00-0036244",
       "name": "C.Parkinson",
-      "position": "WR",
+      "position": "TE",
       "team": "LA",
       "predicted_total": 126.2,
       "actual_total": 161.0,
@@ -1267,7 +1267,7 @@
     {
       "player_id": "00-0040236",
       "name": "K.Monangai",
-      "position": "WR",
+      "position": "RB",
       "team": "CHI",
       "predicted_total": 96.6,
       "actual_total": 159.8,
@@ -1303,7 +1303,7 @@
     {
       "player_id": "00-0038933",
       "name": "D.Kincaid",
-      "position": "WR",
+      "position": "TE",
       "team": "BUF",
       "predicted_total": 129.0,
       "actual_total": 158.2,
@@ -1351,7 +1351,7 @@
     {
       "player_id": "00-0039793",
       "name": "A.Barner",
-      "position": "WR",
+      "position": "TE",
       "team": "SEA",
       "predicted_total": 154.5,
       "actual_total": 150.8,
@@ -1471,7 +1471,7 @@
     {
       "player_id": "00-0040691",
       "name": "J.Dart",
-      "position": "RB",
+      "position": "QB",
       "team": "NYG",
       "predicted_total": 58.2,
       "actual_total": 140.8,
@@ -1519,7 +1519,7 @@
     {
       "player_id": "00-0040189",
       "name": "O.Gadsden",
-      "position": "WR",
+      "position": "TE",
       "team": "LAC",
       "predicted_total": 139.7,
       "actual_total": 139.4,
@@ -1639,7 +1639,7 @@
     {
       "player_id": "00-0039847",
       "name": "T.Johnson",
-      "position": "WR",
+      "position": "TE",
       "team": "NYG",
       "predicted_total": 129.2,
       "actual_total": 127.8,
@@ -1663,7 +1663,7 @@
     {
       "player_id": "00-0036972",
       "name": "M.Jones",
-      "position": "RB",
+      "position": "QB",
       "team": "SF",
       "predicted_total": 61.4,
       "actual_total": 126.7,
@@ -1711,7 +1711,7 @@
     {
       "player_id": "00-0037809",
       "name": "C.Okonkwo",
-      "position": "WR",
+      "position": "TE",
       "team": "TEN",
       "predicted_total": 137.3,
       "actual_total": 124.0,
@@ -1771,7 +1771,7 @@
     {
       "player_id": "00-0038129",
       "name": "C.Otton",
-      "position": "WR",
+      "position": "TE",
       "team": "TB",
       "predicted_total": 124.8,
       "actual_total": 122.2,
@@ -1783,7 +1783,7 @@
     {
       "player_id": "00-0038935",
       "name": "B.Strange",
-      "position": "WR",
+      "position": "TE",
       "team": "JAX",
       "predicted_total": 114.3,
       "actual_total": 120.9,
@@ -1831,7 +1831,7 @@
     {
       "player_id": "00-0038996",
       "name": "T.Kraft",
-      "position": "WR",
+      "position": "TE",
       "team": "GB",
       "predicted_total": 86.7,
       "actual_total": 117.2,
@@ -1855,7 +1855,7 @@
     {
       "player_id": "00-0036894",
       "name": "P.Freiermuth",
-      "position": "WR",
+      "position": "TE",
       "team": "PIT",
       "predicted_total": 123.1,
       "actual_total": 116.4,
@@ -1963,7 +1963,7 @@
     {
       "player_id": "00-0039032",
       "name": "T.Spears",
-      "position": "WR",
+      "position": "RB",
       "team": "TEN",
       "predicted_total": 90.7,
       "actual_total": 111.7,
@@ -2035,7 +2035,7 @@
     {
       "player_id": "00-0039065",
       "name": "S.LaPorta",
-      "position": "WR",
+      "position": "TE",
       "team": "DET",
       "predicted_total": 97.9,
       "actual_total": 106.9,
@@ -2047,7 +2047,7 @@
     {
       "player_id": "00-0037112",
       "name": "J.Tonges",
-      "position": "WR",
+      "position": "TE",
       "team": "SF",
       "predicted_total": 89.5,
       "actual_total": 106.6,
@@ -2275,7 +2275,7 @@
     {
       "player_id": "00-0040584",
       "name": "G.Helm",
-      "position": "WR",
+      "position": "TE",
       "team": "TEN",
       "predicted_total": 96.4,
       "actual_total": 91.7,
@@ -2419,7 +2419,7 @@
     {
       "player_id": "00-0040736",
       "name": "M.Taylor",
-      "position": "WR",
+      "position": "TE",
       "team": "NYJ",
       "predicted_total": 96.1,
       "actual_total": 86.9,
@@ -2431,7 +2431,7 @@
     {
       "player_id": "00-0036290",
       "name": "C.Kmet",
-      "position": "WR",
+      "position": "TE",
       "team": "CHI",
       "predicted_total": 104.0,
       "actual_total": 86.9,

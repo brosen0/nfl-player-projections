@@ -12,43 +12,86 @@
   "prev_season": 2025,
   "has_ml_predictions": false,
   "version": "v2.0.0",
-  "last_updated": "2026-05-10T23:47:35.065797",
-  "training_date": "2026-05-10T23:47:35.065797",
+  "last_updated": "2026-05-11T00:34:37.987368",
+  "training_date": "2026-05-11T00:34:37.987368",
   "test_season": 2025,
   "n_features_per_position": {
-    "QB": 35
+    "QB": 320
   },
   "training_metrics": {},
   "backtest_results": {
     "QB": {
-      "rmse": 6.98,
-      "mae": 5.72,
-      "r2": 0.078,
-      "mape": 79.8,
-      "correlation": 0.312,
-      "directional_accuracy_pct": 58.5,
-      "within_3_pts_pct": 28.9,
-      "within_5_pts_pct": 50.3,
-      "within_7_pts_pct": 65.7,
-      "within_10_pts_pct": 84.7,
-      "spearman_rho": -0.043,
-      "tier_classification_accuracy": 0.308,
+      "rmse": 7.34,
+      "mae": 5.96,
+      "r2": -0.021,
+      "mape": 92.4,
+      "correlation": 0.33,
+      "directional_accuracy_pct": 57.4,
+      "within_3_pts_pct": 30.0,
+      "within_5_pts_pct": 49.1,
+      "within_7_pts_pct": 63.1,
+      "within_10_pts_pct": 81.9,
+      "spearman_rho": -0.168,
+      "tier_classification_accuracy": 0.341,
       "boom_bust": {
         "boom_prevalence": 0.14937106918238993,
         "bust_prevalence": 0.1761006289308176,
-        "boom_precision": 1.0,
-        "boom_recall": 0.010526315789473684,
-        "boom_f1": 0.020833333333333332,
-        "bust_precision": 0.4,
-        "bust_recall": 0.07142857142857142,
-        "bust_f1": 0.12121212121212122
+        "boom_precision": 0.24444444444444444,
+        "boom_recall": 0.11578947368421053,
+        "boom_f1": 0.15714285714285714,
+        "bust_precision": 0.46153846153846156,
+        "bust_recall": 0.05357142857142857,
+        "bust_f1": 0.09599999999999999
       },
-      "vor_rank_correlation": 0.306,
-      "mae_rmse_ratio": 0.82,
-      "spearman_top50": -0.043
+      "vor_rank_correlation": 0.292,
+      "mae_rmse_ratio": 0.812,
+      "spearman_top50": -0.168
     }
   },
-  "top_features": {},
+  "top_features": {
+    "QB": [
+      {
+        "feature": "player_emb_0",
+        "importance": 34.271099368405245
+      },
+      {
+        "feature": "int_rate_roll3_mean",
+        "importance": 27.253025454480834
+      },
+      {
+        "feature": "ngs_avg_air_yards_to_sticks_roll3_mean",
+        "importance": 19.753395960198358
+      },
+      {
+        "feature": "opp_fpts_allowed_s2d_lag1",
+        "importance": 18.00275689917923
+      },
+      {
+        "feature": "opp_defense_week",
+        "importance": 17.00331953188651
+      },
+      {
+        "feature": "position_rank",
+        "importance": 15.254929320288799
+      },
+      {
+        "feature": "ngs_avg_time_to_throw",
+        "importance": 15.002290236713627
+      },
+      {
+        "feature": "offensive_momentum_score",
+        "importance": 14.75282783116535
+      },
+      {
+        "feature": "team_a_points_allowed",
+        "importance": 14.752583898957315
+      },
+      {
+        "feature": "team_a_points_scored",
+        "importance": 14.253017043201373
+      }
+    ]
+  },
   "methodology": {
     "model_type": "LightGBM ensemble with XGBoost and Ridge regression",
     "training_window": "2018-2024",

@@ -116,6 +116,7 @@ class PreseasonProjector:
                         AND pws.week = us.week
                     WHERE pws.season = ?
                       AND p.position IN ('QB', 'RB', 'WR', 'TE')
+                      AND pws.week <= 18
                     GROUP BY pws.player_id, p.position
                     HAVING COUNT(*) >= ?
                     """,

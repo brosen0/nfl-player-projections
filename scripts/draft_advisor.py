@@ -32,7 +32,6 @@ sys.path.insert(0, str(PROJECT_ROOT))
 from scripts.snake_draft_sim import (
     DraftPlayer,
     POSITION_CAPS,
-    REPLACEMENT_RANKS,
     TEAMS,
     ROUNDS,
     build_draft_board,

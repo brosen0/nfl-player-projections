@@ -59,15 +59,6 @@ POSITION_CAPS: Dict[str, int] = {"QB": 3, "RB": 8, "WR": 8, "TE": 3}
 TEAMS = 10
 ROUNDS = 15
 
-# Replacement-level player rank per position, used by ``--ranking vorp``.
-# For a 10-team PPR league with {QB:1, RB:2, WR:2, TE:1, FLEX:1}:
-#   QB: 10 starters + ~2 backups drafted → ~12th QB
-#   RB: 20 starters + ~5 flex slots + ~5 bench RBs → ~30th RB
-#   WR: 20 starters + ~4 flex slots + ~6 bench WRs → ~30th WR
-#   TE: 10 starters + ~2 backups → ~12th TE
-REPLACEMENT_RANKS: Dict[str, int] = {"QB": 12, "RB": 30, "WR": 30, "TE": 12}
-
-
 # --------------------------------------------------------------------
 # Name utilities (match scripts/start_sit_prototype.py)
 # --------------------------------------------------------------------
@@ -480,25 +471,65 @@ def _build_rookie_curve(dp: pd.DataFrame, seasons=range(2020, 2025)) -> dict:
     return curves
 
 
+def _compute_replacement_values(
+    agg: pd.DataFrame,
+    basis_col: str = "pred_total",
+    teams: int = TEAMS,
+    roster_slots: Dict[str, int] = ROSTER_SLOTS,
+) -> Dict[str, float]:
+    """Compute starter-based replacement values for the current league shape.
+
+    ``basis_col`` is already in PPR fantasy-point units, so replacement levels
+    inherit the scoring system automatically. FLEX scarcity is handled by first
+    reserving the base starters at each position, then filling all FLEX starter
+    slots with the best remaining RB/WR/TE projections across positions.
+    """
+    if agg.empty or "position" not in agg.columns:
+        return {}
+
+    frame = agg[["position", basis_col]].copy()
+    frame[basis_col] = pd.to_numeric(frame[basis_col], errors="coerce").fillna(0.0)
+
+    selected_indices = set()
+    sorted_by_pos: Dict[str, pd.DataFrame] = {}
+
+    for pos, count_per_team in roster_slots.items():
+        if pos == "FLEX":
+            continue
+        pos_df = frame[frame["position"] == pos].sort_values(
+            basis_col, ascending=False
+        )
+        sorted_by_pos[pos] = pos_df
+        starter_count = max(teams * count_per_team, 0)
+        if starter_count > 0:
+            selected_indices.update(pos_df.head(starter_count).index.tolist())
+
+    flex_slots = max(teams * roster_slots.get("FLEX", 0), 0)
+    if flex_slots > 0:
+        flex_pool = frame[
+            frame["position"].isin(FLEX_ELIGIBLE) & ~frame.index.isin(selected_indices)
+        ].sort_values(basis_col, ascending=False)
+        selected_indices.update(flex_pool.head(flex_slots).index.tolist())
+
+    replacements: Dict[str, float] = {}
+    for pos, pos_df in sorted_by_pos.items():
+        remaining = pos_df.loc[~pos_df.index.isin(selected_indices), basis_col]
+        replacements[pos] = float(remaining.iloc[0]) if not remaining.empty else 0.0
+    return replacements
+
+
 def _apply_vorp(agg: pd.DataFrame, basis_col: str = "pred_total") -> pd.Series:
     """Compute Value Over Replacement Player per row.
 
-    Replacement level for a position = the value of the Nth-ranked
-    player at that position on ``basis_col``, where N is the
-    ``REPLACEMENT_RANKS`` threshold.  VORP = basis - replacement.
-
-    Players at positions not in REPLACEMENT_RANKS (K/DST/etc.) get
-    VORP = basis.  Missing positions get 0 replacement.
+    Replacement is derived from the active league setup: base starters plus a
+    FLEX starter pool across RB/WR/TE. Positions outside the roster model keep
+    their raw value.
     """
-    vorp = agg[basis_col].astype(float).copy()
-    for pos, rank in REPLACEMENT_RANKS.items():
+    vorp = pd.to_numeric(agg[basis_col], errors="coerce").fillna(0.0).copy()
+    replacements = _compute_replacement_values(agg, basis_col=basis_col)
+    for pos, replacement in replacements.items():
         pos_mask = agg["position"] == pos
-        if not pos_mask.any():
-            continue
-        pos_vals = agg.loc[pos_mask, basis_col].sort_values(ascending=False).reset_index(drop=True)
-        idx = min(rank, len(pos_vals)) - 1
-        replacement = float(pos_vals.iloc[idx]) if idx >= 0 and len(pos_vals) > 0 else 0.0
-        vorp.loc[pos_mask] = agg.loc[pos_mask, basis_col].astype(float) - replacement
+        vorp.loc[pos_mask] = vorp.loc[pos_mask] - replacement
     return vorp
 
 
@@ -745,11 +776,13 @@ CAVEATS = {
     ),
     "vorp": (
         "NOTE: ModelBot ranks by VORP — the season_sum projection "
-        "minus the position's replacement-level projection (QB/TE: "
-        "14th, RB/WR: 35th per 12-team PPR depth). Cross-position: "
-        "the best RB with VORP=12 outranks the best QB with VORP=6. "
-        "Same hindsight caveat as season_sum applies (uses summed "
-        "per-week walk-forward predictions)."
+        "minus a flex-aware replacement baseline derived from the "
+        f"{TEAMS}-team lineup ({ROSTER_SLOTS['QB']} QB, {ROSTER_SLOTS['RB']} RB, "
+        f"{ROSTER_SLOTS['WR']} WR, {ROSTER_SLOTS['TE']} TE, "
+        f"{ROSTER_SLOTS['FLEX']} FLEX in PPR). Cross-position: the best "
+        "RB with VORP=12 outranks the best QB with VORP=6. Same hindsight "
+        "caveat as season_sum applies (uses summed per-week walk-forward "
+        "predictions)."
     ),
 }
 
@@ -807,8 +840,8 @@ def main() -> int:
              "walk-forward week-1 prediction (genuinely pre-season). "
              "'prior_season' ranks by prior-season actual FP (naive "
              "baseline, ignores the model). 'vorp' applies Value Over "
-             "Replacement Player on the season_sum projection (see "
-             "REPLACEMENT_RANKS for thresholds).",
+             "Replacement Player on the season_sum projection using "
+             "the configured PPR starter lineup plus FLEX.",
     )
     ap.add_argument("--json", type=Path, default=None)
     args = ap.parse_args()
