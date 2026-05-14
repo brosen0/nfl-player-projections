@@ -16,6 +16,9 @@
     <div class="header-sub">Model-powered fantasy draft rankings</div>
   </div>
   <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+    <button class="draft-toggle" id="draftModeBtn" type="button" onclick="toggleDraftMode()">
+      Draft Mode Off
+    </button>
     <input
       class="search-box"
       id="searchInput"
@@ -39,11 +42,14 @@
 
 <div class="stats-strip" id="statsStrip"></div>
 
+<div class="draft-panel" id="draftPanel"></div>
+
 <div class="glossary">
   <span><span class="gl-value">▲ Sleeper</span> — model projects more value than their draft rank suggests</span>
   <span><span class="gl-avoid">▼ FADE</span> — model projects less value than their draft rank suggests</span>
-  <span><b>vs Experts</b> — positive = undervalued, negative = overvalued</span>
-  <span><b>Above Repl.</b> — points above a freely available player at same position</span>
+  <span><span class="def-term" title="How many spots our model ranks them versus expert consensus. Positive means undervalued"><b>vs Experts</b></span> — positive = undervalued, negative = overvalued</span>
+  <span><span class="def-term" title="Points above a freely available replacement player at this position"><b>Above Repl.</b></span> — points above a freely available player at same position</span>
+  <span><span class="def-term" title="Projected full-season PPR fantasy points"><b>Season PPR</b></span> — expected full-season PPR fantasy points</span>
 </div>
 
 <div class="card-grid" id="cardGrid"></div>

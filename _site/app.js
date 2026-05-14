@@ -3,6 +3,11 @@
 let posFilter = "All";
 let sortKey   = "mr";
 let searchQ   = "";
+let draftMode = false;
+let watchlistIds = [];
+
+const WATCHLIST_KEY = "draftAdvisor.watchlist";
+const DRAFT_MODE_KEY = "draftAdvisor.draftMode";
 
 // ------------------------------------------------------------------
 // Helpers
@@ -18,6 +23,33 @@ function getSignal(sp) {
 
 function fmtSpread(sp) {
   return sp > 0 ? "+" + sp : String(sp);
+}
+
+function loadPrefs() {
+  try {
+    const savedWatchlist = JSON.parse(window.localStorage.getItem(WATCHLIST_KEY) || "[]");
+    if (Array.isArray(savedWatchlist)) watchlistIds = savedWatchlist;
+    draftMode = window.localStorage.getItem(DRAFT_MODE_KEY) === "1";
+  } catch (_) {
+    watchlistIds = [];
+    draftMode = false;
+  }
+}
+
+function saveWatchlist() {
+  try {
+    window.localStorage.setItem(WATCHLIST_KEY, JSON.stringify(watchlistIds));
+  } catch (_) {}
+}
+
+function saveDraftMode() {
+  try {
+    window.localStorage.setItem(DRAFT_MODE_KEY, draftMode ? "1" : "0");
+  } catch (_) {}
+}
+
+function isWatched(playerId) {
+  return watchlistIds.includes(playerId);
 }
 
 // ------------------------------------------------------------------
@@ -63,6 +95,9 @@ function renderCard(p) {
   const spStr  = fmtSpread(p.sp);
   const spCls  = p.sp > 5 ? "pos" : p.sp < -5 ? "neg" : "neu";
   const cardCls = p.sp >= 10 ? "signal-value" : p.sp <= -10 ? "signal-avoid" : "";
+  const seasonPprTitle = "Projected full-season PPR fantasy points";
+  const aboveReplTitle = "Points above a freely available replacement player at this position";
+  const vsExpertsTitle = "How many spots our model ranks them versus expert consensus. Positive means undervalued";
 
   const roleDepthCap = { QB: 2, RB: 3, WR: 3, TE: 2 };
   const roleNum = p.role ? parseInt(p.role.replace(/\D/g, ""), 10) : 99;
@@ -70,29 +105,39 @@ function renderCard(p) {
   const roleTag  = showRole ? `<span class="role-tag">${p.role}</span>` : "";
   const usageNote = p.usage ? `<span style="font-size:0.6rem;color:var(--text-dim)">${p.usage}</span>` : "";
   const adjBadge  = p.adj_note ? `<div class="adj-badge" title="Manual adjustment">✎ ${p.adj_note}</div>` : "";
+  const whyItems = Array.isArray(p.why) ? p.why.filter(Boolean).slice(0, 4) : [];
+  const whyBlock = whyItems.length ? `<details class="why-expander">
+    <summary>Why</summary>
+    <ul class="why-list">${whyItems.map(item => `<li>${item}</li>`).join("")}</ul>
+  </details>` : "";
+  const watched = isWatched(p.id);
+  const watchBtn = `<button class="queue-btn${watched ? " active" : ""}" type="button" onclick="toggleWatch(${p.id})">${watched ? "Queued" : "Queue"}</button>`;
 
   return `<div class="player-card ${cardCls}">
   <div class="card-top">
     <span class="pos-badge pos-${p.p}">${p.p}</span>
-    <span class="card-rank">#${p.mr}</span>
+    <div class="card-actions">
+      <span class="card-rank">#${p.mr}</span>
+      ${watchBtn}
+    </div>
   </div>
   <div class="player-name" title="${p.n}">${p.n}</div>
   <div class="player-team">${p.t}${roleTag}</div>
   <div class="card-stats">
-    <div class="stat-item" title="Projected full-season PPR fantasy points">
-      <span class="stat-label">Season PPR</span>
+    <div class="stat-item" title="${seasonPprTitle}">
+      <span class="stat-label def-term" title="${seasonPprTitle}">Season PPR</span>
       <span class="stat-value">${p.proj}</span>
     </div>
     <div class="stat-item" title="Average draft position (expert consensus rank)">
       <span class="stat-label">ADP Rank</span>
       <span class="stat-value">${p.ecr}</span>
     </div>
-    <div class="stat-item" title="Points above a freely available replacement player at this position">
-      <span class="stat-label">Above Repl.</span>
+    <div class="stat-item" title="${aboveReplTitle}">
+      <span class="stat-label def-term" title="${aboveReplTitle}">Above Repl.</span>
       <span class="stat-value">${p.vorp}</span>
     </div>
-    <div class="stat-item" title="How many spots our model ranks them vs expert consensus — positive means undervalued">
-      <span class="stat-label">vs Experts</span>
+    <div class="stat-item" title="${vsExpertsTitle}">
+      <span class="stat-label def-term" title="${vsExpertsTitle}">vs Experts</span>
       <span class="stat-value ${spCls}">${spStr}</span>
     </div>
   </div>
@@ -100,6 +145,7 @@ function renderCard(p) {
     <span class="signal-badge ${sig.cls}">${sig.label}</span>
     ${usageNote}
   </div>
+  ${whyBlock}
   ${adjBadge}
 </div>`;
 }
@@ -145,6 +191,40 @@ function renderStatsStrip() {
     <span class="stat-chip-label">Undervalued<br>${sleepStrong} strong Sleeper</span>
   </div>`;
   return h;
+}
+
+function renderDraftPanel() {
+  const panel = document.getElementById("draftPanel");
+  if (!panel) return;
+
+  if (!draftMode) {
+    panel.innerHTML = "";
+    panel.classList.remove("active");
+    return;
+  }
+
+  panel.classList.add("active");
+  const watchedPlayers = watchlistIds
+    .map(id => BOARD.find(p => p.id === id))
+    .filter(Boolean);
+
+  const chips = watchedPlayers.length
+    ? watchedPlayers.map(p => `<button class="watch-chip" type="button" onclick="toggleWatch(${p.id})">
+        <span>${p.n}</span>
+        <span class="watch-chip-meta">${p.p} · #${p.mr}</span>
+      </button>`).join("")
+    : `<div class="draft-empty">Queue players here while drafting.</div>`;
+
+  panel.innerHTML = `<div class="draft-panel-inner">
+    <div class="draft-panel-top">
+      <div>
+        <div class="draft-panel-title">Draft Mode</div>
+        <div class="draft-panel-sub">Big search, quick queue, one-page board.</div>
+      </div>
+      <div class="draft-panel-count">${watchedPlayers.length} queued</div>
+    </div>
+    <div class="watch-chip-row">${chips}</div>
+  </div>`;
 }
 
 function renderSources() {
@@ -195,9 +275,33 @@ function setSearch(val) {
   updateCards();
 }
 
+function toggleDraftMode() {
+  draftMode = !draftMode;
+  saveDraftMode();
+  renderDraftModeState();
+}
+
+function toggleWatch(playerId) {
+  if (isWatched(playerId)) {
+    watchlistIds = watchlistIds.filter(id => id !== playerId);
+  } else {
+    watchlistIds = [playerId].concat(watchlistIds.filter(id => id !== playerId)).slice(0, 12);
+  }
+  saveWatchlist();
+  renderDraftPanel();
+  updateCards();
+}
+
 function updateCards() {
   const grid = document.getElementById("cardGrid");
   if (grid) grid.innerHTML = renderCards();
+}
+
+function renderDraftModeState() {
+  document.body.classList.toggle("draft-mode", draftMode);
+  const btn = document.getElementById("draftModeBtn");
+  if (btn) btn.textContent = draftMode ? "Draft Mode On" : "Draft Mode Off";
+  renderDraftPanel();
 }
 
 // ------------------------------------------------------------------
@@ -205,8 +309,10 @@ function updateCards() {
 // ------------------------------------------------------------------
 
 function render() {
+  loadPrefs();
   document.getElementById("pills").innerHTML      = renderPills();
   document.getElementById("statsStrip").innerHTML = renderStatsStrip();
+  renderDraftModeState();
   updateCards();
 }
 

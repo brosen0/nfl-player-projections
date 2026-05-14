@@ -75,6 +75,8 @@ def test_build_board_data_uses_season_total_projection_for_ui(monkeypatch):
     assert player["proj"] == 192.0
     assert player["blendProj"] == 90.0
     assert player["vorp"] == 12.3
+    assert player["why"][0] == "Model #8 vs ADP #15"
+    assert "Age 31" in player["why"]
 
 
 def test_build_board_data_dedupes_fallback_rows_when_ml_artifact_already_has_player(monkeypatch):
@@ -159,3 +161,54 @@ def test_build_board_data_dedupes_fallback_rows_when_ml_artifact_already_has_pla
     projections = captured["projections"]
     assert len(projections) == 1
     assert projections.iloc[0]["name"] == "T.McBride"
+
+
+def test_site_source_excludes_position_scarcity_strip():
+    template = (PROJECT_ROOT / "_site" / "template.html").read_text(encoding="utf-8")
+    app_js = (PROJECT_ROOT / "_site" / "app.js").read_text(encoding="utf-8")
+    style = (PROJECT_ROOT / "_site" / "style.css").read_text(encoding="utf-8")
+
+    assert 'id="scarcityStrip"' not in template
+    assert "function renderScarcity()" not in app_js
+    assert 'document.getElementById("scarcityStrip").innerHTML = renderScarcity();' not in app_js
+    assert ".scarcity-strip" not in style
+
+
+def test_site_source_includes_hover_definitions_for_key_terms():
+    template = (PROJECT_ROOT / "_site" / "template.html").read_text(encoding="utf-8")
+    app_js = (PROJECT_ROOT / "_site" / "app.js").read_text(encoding="utf-8")
+    style = (PROJECT_ROOT / "_site" / "style.css").read_text(encoding="utf-8")
+
+    assert "Projected full-season PPR fantasy points" in template
+    assert "Projected full-season PPR fantasy points" in app_js
+    assert "Points above a freely available replacement player at this position" in template
+    assert "Points above a freely available replacement player at this position" in app_js
+    assert "How many spots our model ranks them versus expert consensus. Positive means undervalued" in template
+    assert "How many spots our model ranks them versus expert consensus. Positive means undervalued" in app_js
+    assert ".def-term" in style
+
+
+def test_site_source_includes_why_expander():
+    app_js = (PROJECT_ROOT / "_site" / "app.js").read_text(encoding="utf-8")
+    style = (PROJECT_ROOT / "_site" / "style.css").read_text(encoding="utf-8")
+
+    assert 'Array.isArray(p.why)' in app_js
+    assert 'class="why-expander"' in app_js
+    assert ".why-expander" in style
+    assert ".why-list" in style
+
+
+def test_site_source_includes_draft_mode_watchlist():
+    template = (PROJECT_ROOT / "_site" / "template.html").read_text(encoding="utf-8")
+    app_js = (PROJECT_ROOT / "_site" / "app.js").read_text(encoding="utf-8")
+    style = (PROJECT_ROOT / "_site" / "style.css").read_text(encoding="utf-8")
+
+    assert 'id="draftModeBtn"' in template
+    assert 'id="draftPanel"' in template
+    assert "function toggleDraftMode()" in app_js
+    assert "function toggleWatch(playerId)" in app_js
+    assert 'class="queue-btn' in app_js
+    assert "renderDraftPanel()" in app_js
+    assert ".draft-panel" in style
+    assert ".watch-chip" in style
+    assert "body.draft-mode .search-box" in style

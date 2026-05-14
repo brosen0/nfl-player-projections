@@ -1135,6 +1135,10 @@ def build_board_data(season: int):
 
         adjusted_proj = round(raw_proj * adj_mult, 1)
         adj_pct = round((adj_mult - 1.0) * 100)
+        why_reasons = [f"Model #{sr.model_rank} vs ADP #{int(round(sr.ecr))}"]
+        why_reasons.extend(adj_reasons[:3])
+        if manual and manual.get("note"):
+            why_reasons.append(manual["note"])
 
         players.append({
             "id": i,
@@ -1164,6 +1168,7 @@ def build_board_data(season: int):
             "act": round(sr.actual_total, 1) if has_actuals else None,
             "w": sr.model_wins if has_actuals else None,
             "adj_note": manual["note"] if manual else "",
+            "why": why_reasons[:4],
         })
 
     return {

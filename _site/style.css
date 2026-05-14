@@ -94,6 +94,19 @@ body {
 .pill:hover  { border-color: var(--text-muted); color: var(--text); }
 .pill.active { background: var(--text); color: var(--bg); border-color: var(--text); }
 
+.draft-toggle {
+  padding: 7px 12px;
+  border: 1.5px solid rgba(76, 175, 130, 0.35);
+  border-radius: 999px;
+  background: rgba(76, 175, 130, 0.08);
+  color: var(--value);
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: var(--transition);
+}
+.draft-toggle:hover { background: rgba(76, 175, 130, 0.14); }
+
 .sort-select {
   padding: 7px 12px;
   border: 1.5px solid var(--border);
@@ -155,6 +168,69 @@ body {
 .stat-chip.value .stat-chip-value { color: var(--value); }
 .stat-chip.avoid .stat-chip-value { color: var(--avoid); }
 
+.draft-panel {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 20px 14px;
+  display: none;
+}
+
+.draft-panel.active {
+  display: block;
+}
+
+.draft-panel-inner {
+  background: linear-gradient(135deg, rgba(76, 175, 130, 0.1), rgba(31, 35, 52, 0.95));
+  border: 1px solid rgba(76, 175, 130, 0.22);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+}
+
+.draft-panel-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.draft-panel-title {
+  font-size: 0.83rem;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+}
+
+.draft-panel-sub,
+.draft-panel-count,
+.draft-empty {
+  font-size: 0.68rem;
+  color: var(--text-muted);
+}
+
+.watch-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.watch-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(76, 175, 130, 0.22);
+  background: rgba(15, 17, 23, 0.45);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 0.75rem;
+}
+
+.watch-chip-meta {
+  color: var(--text-muted);
+  font-size: 0.66rem;
+}
+
 /* ============================================================
    Data sources accordion
    ============================================================ */
@@ -209,6 +285,10 @@ details summary::-webkit-details-marker { display: none; }
 }
 .gl-value { color: var(--value); font-weight: 600; }
 .gl-avoid { color: var(--avoid); font-weight: 600; }
+.def-term {
+  border-bottom: 1px dotted var(--text-dim);
+  cursor: help;
+}
 
 /* Manual adjustment note on card */
 .adj-badge {
@@ -269,6 +349,11 @@ details summary::-webkit-details-marker { display: none; }
 .pos-TE { background: var(--te); color: #fff; }
 
 .card-rank { font-size: 0.7rem; color: var(--text-dim); font-weight: 600; }
+.card-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
 
 .player-name {
   font-size: 0.95rem;
@@ -330,6 +415,61 @@ details summary::-webkit-details-marker { display: none; }
 .signal-badge.avoid { background: rgba(224, 82, 82, 0.15);  color: var(--avoid); }
 .signal-badge.fair  { color: var(--text-dim); font-weight: 400; font-size: 0.6rem; }
 
+.queue-btn {
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  border-radius: 999px;
+  padding: 3px 8px;
+  font-size: 0.6rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.queue-btn.active {
+  border-color: rgba(76, 175, 130, 0.35);
+  color: var(--value);
+  background: rgba(76, 175, 130, 0.1);
+}
+
+.why-expander {
+  margin-top: 8px;
+  border-top: 1px solid var(--border);
+  padding-top: 7px;
+}
+
+.why-expander summary {
+  list-style: none;
+  cursor: pointer;
+  font-size: 0.63rem;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.why-expander summary::-webkit-details-marker { display: none; }
+.why-expander summary::after {
+  content: " +";
+  color: var(--text-dim);
+}
+
+.why-expander[open] summary::after {
+  content: " -";
+}
+
+.why-list {
+  margin-top: 7px;
+  padding-left: 14px;
+  color: var(--text-muted);
+  font-size: 0.66rem;
+  line-height: 1.4;
+}
+
+.why-list li + li {
+  margin-top: 3px;
+}
+
 /* ============================================================
    Footer
    ============================================================ */
@@ -352,6 +492,22 @@ details summary::-webkit-details-marker { display: none; }
   font-size: 0.9rem;
 }
 
+body.draft-mode .search-box {
+  width: 320px;
+  font-size: 0.95rem;
+  border-color: rgba(76, 175, 130, 0.22);
+}
+
+body.draft-mode .search-box:focus {
+  width: 380px;
+  border-color: rgba(76, 175, 130, 0.45);
+}
+
+body.draft-mode .draft-toggle {
+  background: rgba(76, 175, 130, 0.18);
+  border-color: rgba(76, 175, 130, 0.5);
+}
+
 /* ============================================================
    Responsive
    ============================================================ */
@@ -359,8 +515,12 @@ details summary::-webkit-details-marker { display: none; }
   .header      { padding: 10px 14px; }
   .controls    { padding: 10px 14px 6px; }
   .stats-strip { padding: 0 14px 12px; }
+  .draft-panel { padding: 0 14px 12px; }
   .sources-row { padding: 0 14px 12px; }
   .card-grid   { padding: 0 14px 30px; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
   .search-box  { width: 130px; }
   .search-box:focus { width: 150px; }
+  body.draft-mode .search-box { width: 190px; }
+  body.draft-mode .search-box:focus { width: 220px; }
+  .draft-panel-top { align-items: flex-start; flex-direction: column; }
 }
