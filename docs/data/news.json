@@ -1,5 +1,5 @@
 {
-  "updated": "2026-05-17T13:05:39Z",
+  "updated": "2026-05-17T22:08:11Z",
   "players": {
     "Malik Nabers": {
       "status": "IR",
@@ -109,6 +109,12 @@
       "pos": "WR",
       "team": "TEN"
     },
+    "Marvin Harrison Jr.": {
+      "status": "Questionable",
+      "note": "Foot",
+      "pos": "WR",
+      "team": "ARI"
+    },
     "Kendre Miller": {
       "status": "Questionable",
       "note": "Knee - ACL \u2014 Surgery",
@@ -139,6 +145,12 @@
       "pos": "RB",
       "team": "TB"
     },
+    "Patrick Mahomes II": {
+      "status": "Questionable",
+      "note": "Knee - ACL \u2014 Surgery",
+      "pos": "QB",
+      "team": "KC"
+    },
     "Cam Ward": {
       "status": "Questionable",
       "note": "Shoulder - AC Joint \u2014 Sprain",
@@ -150,6 +162,12 @@
       "note": "Knee - ACL \u2014 Surgery",
       "pos": "WR",
       "team": "MIA"
+    },
+    "Michael Penix Jr.": {
+      "status": "Questionable",
+      "note": "Knee - ACL \u2014 Surgery",
+      "pos": "QB",
+      "team": "ATL"
     },
     "Tory Horton": {
       "status": "Questionable",

@@ -24,9 +24,10 @@ BOARD_PATH = PROJECT_ROOT / "docs" / "data" / "board.json"
 OUTPUT_PATH = PROJECT_ROOT / "docs" / "data" / "news.json"
 
 SLEEPER_URL = "https://api.sleeper.app/v1/players/nfl"
-TIMEOUT = 10
+TIMEOUT = 15
 POSITIONS = {"QB", "RB", "WR", "TE"}
 FLAGGED_STATUSES = {"Questionable", "Doubtful", "Out", "IR", "PUP", "Suspended"}
+SUFFIXES = {"jr", "sr", "ii", "iii", "iv", "v"}
 
 
 def normalize(name: str) -> str:
@@ -34,16 +35,24 @@ def normalize(name: str) -> str:
     return re.sub(r"[^a-z0-9 ]", "", name.lower()).strip()
 
 
+def strip_suffix(norm: str) -> str:
+    """Remove trailing generational suffix (jr/sr/ii/iii/iv) from a normalized name."""
+    parts = norm.split()
+    if parts and parts[-1] in SUFFIXES:
+        return " ".join(parts[:-1])
+    return norm
+
+
 def first_initial_last(name: str) -> str:
-    """'Ja'Marr Chase' → 'j chase'"""
-    parts = normalize(name).split()
+    """'Ja'Marr Chase' → 'j chase'; strips generational suffixes first."""
+    parts = strip_suffix(normalize(name)).split()
     if len(parts) >= 2:
         return parts[0][0] + " " + parts[-1]
-    return normalize(name)
+    return strip_suffix(normalize(name))
 
 
 def last_name(name: str) -> str:
-    parts = normalize(name).split()
+    parts = strip_suffix(normalize(name)).split()
     return parts[-1] if parts else normalize(name)
 
 
@@ -69,6 +78,11 @@ def build_sleeper_index(sleeper_players: dict) -> tuple[dict, dict, dict]:
         norm = normalize(full)
         if norm:
             by_full[norm] = p
+            # Also index without generational suffix so board names like
+            # "Patrick Mahomes II" match Sleeper's "Patrick Mahomes"
+            stripped = strip_suffix(norm)
+            if stripped != norm and stripped not in by_full:
+                by_full[stripped] = p
 
         il = first_initial_last(full)
         by_initial_last.setdefault(il, []).append(p)
@@ -165,6 +179,8 @@ def main():
     injured: dict[str, dict] = {}
     matched = 0
 
+    unmatched_names: list[str] = []
+
     for bp in board_players:
         board_name = bp.get("n", "")
         board_pos = bp.get("p", "")
@@ -175,6 +191,7 @@ def main():
             by_full, by_initial_last, by_last_pos_team,
         )
         if sp is None:
+            unmatched_names.append(f"{board_name} ({board_pos})")
             continue
 
         matched += 1
@@ -189,8 +206,10 @@ def main():
             }
 
     # Print summary
-    print(f"Fetched {n_sleeper} Sleeper players, matched {matched} board players, "
-          f"{len(injured)} with injury flags")
+    print(f"Fetched {n_sleeper} Sleeper players, matched {matched}/{len(board_players)} "
+          f"board players, {len(injured)} with injury flags")
+    if unmatched_names:
+        print(f"  Unmatched ({len(unmatched_names)}): {', '.join(unmatched_names)}")
 
     if injured:
         for name, info in injured.items():
