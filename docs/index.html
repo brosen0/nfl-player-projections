@@ -380,6 +380,94 @@ details summary::-webkit-details-marker { display: none; }
 .scar-note  { font-size: 0.55rem; color: var(--text-dim); align-self: flex-end; margin-left: auto; }
 
 /* ============================================================
+   VONA panel (Round Guide)
+   ============================================================ */
+.vona-panel {
+  padding: 10px 16px 12px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.vona-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+
+.vona-title {
+  font-size: 0.65rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+}
+
+.slot-pills {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.slot-pill {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-dim);
+  padding: 2px 7px;
+  cursor: pointer;
+  font-size: 0.65rem;
+  font-weight: 600;
+  line-height: 1.5;
+}
+.slot-pill.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.slot-pill:not(.active):hover { border-color: var(--text-muted); color: var(--text-muted); }
+
+.vona-body { display: flex; gap: 24px; flex-wrap: wrap; }
+
+.vona-round-cur  { flex: 1; min-width: 220px; }
+.vona-round-next { flex: 1; min-width: 180px; }
+
+.vona-round-label {
+  font-size: 0.6rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  margin-bottom: 6px;
+}
+.vona-text-dim { color: var(--text-dim); }
+
+.vona-picks     { display: flex; flex-direction: column; gap: 5px; }
+.vona-picks-dim { opacity: 0.55; }
+
+.vona-pick {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.65rem;
+}
+.vona-pick .pos-badge { flex-shrink: 0; font-size: 0.55rem; padding: 1px 5px; }
+.vona-pick-name  { flex: 1; font-weight: 600; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.vona-pick-team  { color: var(--text-dim); flex-shrink: 0; }
+.vona-pick-proj  { color: var(--text-muted); flex-shrink: 0; }
+.vona-pick-net   { flex-shrink: 0; font-weight: 600; font-size: 0.6rem; }
+.vona-net-pos    { color: var(--value); }
+.vona-net-neg    { color: var(--avoid); }
+
+.vona-done {
+  font-size: 0.65rem;
+  color: var(--text-dim);
+  font-style: italic;
+}
+
+/* ============================================================
    Player card
    ============================================================ */
 .player-card {
@@ -644,6 +732,8 @@ body.draft-mode .draft-toggle {
 
 <div id="scarcityStrip"></div>
 
+<div id="vonaPanel"></div>
+
 <div class="draft-panel" id="draftPanel"></div>
 
 <div class="glossary">
@@ -670,9 +760,11 @@ let searchQ      = "";
 let draftMode    = false;
 let watchlistIds = [];
 let draftPick    = 1;
+let draftSlot    = 1;
 
-const WATCHLIST_KEY = "draftAdvisor.watchlist";
+const WATCHLIST_KEY  = "draftAdvisor.watchlist";
 const DRAFT_MODE_KEY = "draftAdvisor.draftMode";
+const DRAFT_SLOT_KEY = "draftAdvisor.draftSlot";
 
 // ------------------------------------------------------------------
 // Helpers
@@ -695,9 +787,12 @@ function loadPrefs() {
     const savedWatchlist = JSON.parse(window.localStorage.getItem(WATCHLIST_KEY) || "[]");
     if (Array.isArray(savedWatchlist)) watchlistIds = savedWatchlist;
     draftMode = window.localStorage.getItem(DRAFT_MODE_KEY) === "1";
+    const savedSlot = parseInt(window.localStorage.getItem(DRAFT_SLOT_KEY) || "1", 10);
+    if (savedSlot >= 1 && savedSlot <= 10) draftSlot = savedSlot;
   } catch (_) {
     watchlistIds = [];
     draftMode = false;
+    draftSlot = 1;
   }
 }
 
@@ -710,6 +805,12 @@ function saveWatchlist() {
 function saveDraftMode() {
   try {
     window.localStorage.setItem(DRAFT_MODE_KEY, draftMode ? "1" : "0");
+  } catch (_) {}
+}
+
+function saveDraftSlot() {
+  try {
+    window.localStorage.setItem(DRAFT_SLOT_KEY, String(draftSlot));
   } catch (_) {}
 }
 
@@ -907,8 +1008,79 @@ function renderScarcityStrip() {
 
 function setDraftPick(pick) {
   draftPick = pick;
-  const el = document.getElementById("scarcityStrip");
-  if (el) el.innerHTML = renderScarcityStrip();
+  const s = document.getElementById("scarcityStrip");
+  if (s) s.innerHTML = renderScarcityStrip();
+  const v = document.getElementById("vonaPanel");
+  if (v) v.innerHTML = renderVonaPanel();
+}
+
+function setDraftSlot(slot) {
+  draftSlot = slot;
+  saveDraftSlot();
+  const v = document.getElementById("vonaPanel");
+  if (v) v.innerHTML = renderVonaPanel();
+}
+
+function renderVonaPanel() {
+  if (!window.VONA) return "";
+  const teams  = (window.SCARCITY && SCARCITY.teams)  || 10;
+  const rounds = (window.SCARCITY && SCARCITY.rounds) || 15;
+  const currentRound = Math.ceil(draftPick / teams);
+  const slotPicks = VONA[String(draftSlot)] || [];
+
+  const slotPills = Array.from({ length: teams }, (_, i) => i + 1).map(s =>
+    `<button class="slot-pill${s === draftSlot ? " active" : ""}" onclick="setDraftSlot(${s})">${s}</button>`
+  ).join("");
+
+  function renderPick(p) {
+    const netCls = p.net > 1 ? "vona-net-pos" : p.net < -1 ? "vona-net-neg" : "";
+    const netStr = p.net > 0 ? `+${p.net.toFixed(1)}` : p.net.toFixed(1);
+    return `<div class="vona-pick">
+      <span class="pos-badge pos-${p.p}">${p.p}</span>
+      <span class="vona-pick-name">${p.n}</span>
+      <span class="vona-pick-team">${p.t}</span>
+      <span class="vona-pick-proj">${p.proj}</span>
+      <span class="vona-pick-net ${netCls}" title="Net value vs taking best ${p.ocp} instead">${netStr} vs ${p.ocp}</span>
+    </div>`;
+  }
+
+  if (currentRound > rounds) {
+    return `<div class="vona-panel">
+      <div class="vona-header">
+        <span class="vona-title">Round Guide · Slot</span>
+        <div class="slot-pills">${slotPills}</div>
+      </div>
+      <div class="vona-done">Draft complete</div>
+    </div>`;
+  }
+
+  const curPicks  = slotPicks.filter(p => p.rd === currentRound).slice(0, 3);
+  const nextPicks = slotPicks.filter(p => p.rd === currentRound + 1).slice(0, 2);
+  const curPickNum  = curPicks.length  ? curPicks[0].pk  : "?";
+  const nextPickNum = nextPicks.length ? nextPicks[0].pk : "?";
+
+  const curSection = curPicks.length
+    ? `<div class="vona-round-label">Rd ${currentRound} · Pick ${curPickNum}</div>
+       <div class="vona-picks">${curPicks.map(renderPick).join("")}</div>`
+    : `<div class="vona-round-label vona-text-dim">Rd ${currentRound} — no data for slot ${draftSlot}</div>`;
+
+  const nextSection = nextPicks.length && currentRound < rounds
+    ? `<div class="vona-round-next">
+        <div class="vona-round-label vona-text-dim">Rd ${currentRound + 1} preview · Pick ${nextPickNum}</div>
+        <div class="vona-picks vona-picks-dim">${nextPicks.map(renderPick).join("")}</div>
+       </div>`
+    : "";
+
+  return `<div class="vona-panel">
+    <div class="vona-header">
+      <span class="vona-title">Round Guide · Slot</span>
+      <div class="slot-pills">${slotPills}</div>
+    </div>
+    <div class="vona-body">
+      <div class="vona-round-cur">${curSection}</div>
+      ${nextSection}
+    </div>
+  </div>`;
 }
 
 function renderDraftPanel() {
@@ -1031,6 +1203,7 @@ function render() {
   document.getElementById("pills").innerHTML         = renderPills();
   document.getElementById("statsStrip").innerHTML    = renderStatsStrip();
   document.getElementById("scarcityStrip").innerHTML = renderScarcityStrip();
+  document.getElementById("vonaPanel").innerHTML     = renderVonaPanel();
   renderDraftModeState();
   updateCards();
 }

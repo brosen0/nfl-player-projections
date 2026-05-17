@@ -373,6 +373,94 @@ details summary::-webkit-details-marker { display: none; }
 .scar-note  { font-size: 0.55rem; color: var(--text-dim); align-self: flex-end; margin-left: auto; }
 
 /* ============================================================
+   VONA panel (Round Guide)
+   ============================================================ */
+.vona-panel {
+  padding: 10px 16px 12px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.vona-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+
+.vona-title {
+  font-size: 0.65rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+}
+
+.slot-pills {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.slot-pill {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-dim);
+  padding: 2px 7px;
+  cursor: pointer;
+  font-size: 0.65rem;
+  font-weight: 600;
+  line-height: 1.5;
+}
+.slot-pill.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.slot-pill:not(.active):hover { border-color: var(--text-muted); color: var(--text-muted); }
+
+.vona-body { display: flex; gap: 24px; flex-wrap: wrap; }
+
+.vona-round-cur  { flex: 1; min-width: 220px; }
+.vona-round-next { flex: 1; min-width: 180px; }
+
+.vona-round-label {
+  font-size: 0.6rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  margin-bottom: 6px;
+}
+.vona-text-dim { color: var(--text-dim); }
+
+.vona-picks     { display: flex; flex-direction: column; gap: 5px; }
+.vona-picks-dim { opacity: 0.55; }
+
+.vona-pick {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.65rem;
+}
+.vona-pick .pos-badge { flex-shrink: 0; font-size: 0.55rem; padding: 1px 5px; }
+.vona-pick-name  { flex: 1; font-weight: 600; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.vona-pick-team  { color: var(--text-dim); flex-shrink: 0; }
+.vona-pick-proj  { color: var(--text-muted); flex-shrink: 0; }
+.vona-pick-net   { flex-shrink: 0; font-weight: 600; font-size: 0.6rem; }
+.vona-net-pos    { color: var(--value); }
+.vona-net-neg    { color: var(--avoid); }
+
+.vona-done {
+  font-size: 0.65rem;
+  color: var(--text-dim);
+  font-style: italic;
+}
+
+/* ============================================================
    Player card
    ============================================================ */
 .player-card {
