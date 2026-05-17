@@ -316,6 +316,70 @@ details summary::-webkit-details-marker { display: none; }
 .mkt-edge-row .stat-value { font-size: 0.6rem; font-weight: 600; }
 
 /* ============================================================
+   Scarcity strip
+   ============================================================ */
+.scarcity-strip {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 16px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+
+.scar-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.scar-pick-label {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  min-width: 86px;
+  text-align: center;
+  font-weight: 600;
+}
+
+.scar-btn {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-muted);
+  padding: 2px 7px;
+  cursor: pointer;
+  font-size: 0.6rem;
+  line-height: 1.4;
+}
+.scar-btn:disabled { opacity: 0.3; cursor: default; }
+.scar-btn:not(:disabled):hover { border-color: var(--text-muted); }
+
+.scar-tiles {
+  display: flex;
+  gap: 6px;
+}
+
+.scar-tile {
+  text-align: center;
+  padding: 5px 10px;
+  border-radius: 6px;
+  min-width: 48px;
+}
+.scar-green  { background: rgba(52, 168, 83, 0.12); }
+.scar-yellow { background: rgba(251, 188, 5, 0.15); }
+.scar-red    { background: rgba(234, 67, 53, 0.12); }
+
+.scar-pos   { font-size: 0.55rem; font-weight: 700; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px; }
+.scar-rem   { font-size: 1.05rem; font-weight: 700; line-height: 1.1; }
+.scar-green  .scar-rem { color: var(--value); }
+.scar-yellow .scar-rem { color: var(--wr); }
+.scar-red    .scar-rem { color: var(--avoid); }
+.scar-label { font-size: 0.5rem; color: var(--text-dim); }
+.scar-cliff { font-size: 0.5rem; color: var(--avoid); margin-top: 2px; font-weight: 700; }
+.scar-note  { font-size: 0.55rem; color: var(--text-dim); align-self: flex-end; margin-left: auto; }
+
+/* ============================================================
    Player card
    ============================================================ */
 .player-card {
@@ -578,6 +642,8 @@ body.draft-mode .draft-toggle {
 
 <div class="stats-strip" id="statsStrip"></div>
 
+<div id="scarcityStrip"></div>
+
 <div class="draft-panel" id="draftPanel"></div>
 
 <div class="glossary">
@@ -598,11 +664,12 @@ body.draft-mode .draft-toggle {
 <script>
 "use strict";
 
-let posFilter = "All";
-let sortKey   = "mr";
-let searchQ   = "";
-let draftMode = false;
+let posFilter    = "All";
+let sortKey      = "mr";
+let searchQ      = "";
+let draftMode    = false;
 let watchlistIds = [];
+let draftPick    = 1;
 
 const WATCHLIST_KEY = "draftAdvisor.watchlist";
 const DRAFT_MODE_KEY = "draftAdvisor.draftMode";
@@ -800,6 +867,50 @@ function renderStatsStrip() {
   return h;
 }
 
+function renderScarcityStrip() {
+  if (!window.SCARCITY) return "";
+  const POSITIONS = ["QB", "RB", "WR", "TE"];
+  const teams  = SCARCITY.teams  || 10;
+  const rounds = SCARCITY.rounds || 15;
+  const maxPick = teams * rounds;
+  const cliffs  = SCARCITY.cliffs || {};
+  const pickData = (SCARCITY.by_pick || {})[String(draftPick)] || {};
+
+  const tiles = POSITIONS.map(pos => {
+    const d = pickData[pos] || { rem: 0, top: 0 };
+    const picksToCliff = (cliffs[pos] || maxPick + 1) - draftPick;
+    const heat = d.rem <= 3 ? "scar-red" : d.rem <= 6 ? "scar-yellow" : "scar-green";
+    const cliffWarn = picksToCliff > 0 && picksToCliff <= teams
+      ? `<div class="scar-cliff">cliff ~${picksToCliff}</div>` : "";
+    return `<div class="scar-tile ${heat}">
+      <div class="scar-pos">${pos}</div>
+      <div class="scar-rem">${d.rem}</div>
+      <div class="scar-label">left</div>
+      ${cliffWarn}
+    </div>`;
+  }).join("");
+
+  const round = Math.ceil(draftPick / teams);
+  const prevPick = Math.max(1, draftPick - teams);
+  const nextPick = Math.min(maxPick, draftPick + teams);
+
+  return `<div class="scarcity-strip">
+    <div class="scar-header">
+      <button class="scar-btn" onclick="setDraftPick(${prevPick})" ${draftPick <= teams ? "disabled" : ""}>◀</button>
+      <span class="scar-pick-label">Pick ${draftPick} · Rd ${round}</span>
+      <button class="scar-btn" onclick="setDraftPick(${nextPick})" ${draftPick >= maxPick ? "disabled" : ""}>▶</button>
+    </div>
+    <div class="scar-tiles">${tiles}</div>
+    <div class="scar-note">Starters above replacement remaining</div>
+  </div>`;
+}
+
+function setDraftPick(pick) {
+  draftPick = pick;
+  const el = document.getElementById("scarcityStrip");
+  if (el) el.innerHTML = renderScarcityStrip();
+}
+
 function renderDraftPanel() {
   const panel = document.getElementById("draftPanel");
   if (!panel) return;
@@ -917,8 +1028,9 @@ function renderDraftModeState() {
 
 function render() {
   loadPrefs();
-  document.getElementById("pills").innerHTML      = renderPills();
-  document.getElementById("statsStrip").innerHTML = renderStatsStrip();
+  document.getElementById("pills").innerHTML         = renderPills();
+  document.getElementById("statsStrip").innerHTML    = renderStatsStrip();
+  document.getElementById("scarcityStrip").innerHTML = renderScarcityStrip();
   renderDraftModeState();
   updateCards();
 }
@@ -941,11 +1053,13 @@ document.addEventListener("keydown", function(e) {
 Promise.all([
   fetch("data/board.json").then(r => r.json()),
   fetch("data/vona.json").then(r => r.json()),
-  fetch("data/meta.json").then(r => r.json())
-]).then(([board, vona, meta]) => {
-  window.BOARD = board;
-  window.VONA  = vona;
-  window.META  = meta;
+  fetch("data/meta.json").then(r => r.json()),
+  fetch("data/scarcity.json").then(r => r.json()),
+]).then(([board, vona, meta, scarcity]) => {
+  window.BOARD    = board;
+  window.VONA     = vona;
+  window.META     = meta;
+  window.SCARCITY = scarcity;
   render();
 }).catch(err => {
   document.body.innerHTML =

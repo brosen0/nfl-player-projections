@@ -309,6 +309,70 @@ details summary::-webkit-details-marker { display: none; }
 .mkt-edge-row .stat-value { font-size: 0.6rem; font-weight: 600; }
 
 /* ============================================================
+   Scarcity strip
+   ============================================================ */
+.scarcity-strip {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 16px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+
+.scar-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.scar-pick-label {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  min-width: 86px;
+  text-align: center;
+  font-weight: 600;
+}
+
+.scar-btn {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-muted);
+  padding: 2px 7px;
+  cursor: pointer;
+  font-size: 0.6rem;
+  line-height: 1.4;
+}
+.scar-btn:disabled { opacity: 0.3; cursor: default; }
+.scar-btn:not(:disabled):hover { border-color: var(--text-muted); }
+
+.scar-tiles {
+  display: flex;
+  gap: 6px;
+}
+
+.scar-tile {
+  text-align: center;
+  padding: 5px 10px;
+  border-radius: 6px;
+  min-width: 48px;
+}
+.scar-green  { background: rgba(52, 168, 83, 0.12); }
+.scar-yellow { background: rgba(251, 188, 5, 0.15); }
+.scar-red    { background: rgba(234, 67, 53, 0.12); }
+
+.scar-pos   { font-size: 0.55rem; font-weight: 700; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px; }
+.scar-rem   { font-size: 1.05rem; font-weight: 700; line-height: 1.1; }
+.scar-green  .scar-rem { color: var(--value); }
+.scar-yellow .scar-rem { color: var(--wr); }
+.scar-red    .scar-rem { color: var(--avoid); }
+.scar-label { font-size: 0.5rem; color: var(--text-dim); }
+.scar-cliff { font-size: 0.5rem; color: var(--avoid); margin-top: 2px; font-weight: 700; }
+.scar-note  { font-size: 0.55rem; color: var(--text-dim); align-self: flex-end; margin-left: auto; }
+
+/* ============================================================
    Player card
    ============================================================ */
 .player-card {

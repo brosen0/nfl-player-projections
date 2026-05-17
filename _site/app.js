@@ -1,10 +1,11 @@
 "use strict";
 
-let posFilter = "All";
-let sortKey   = "mr";
-let searchQ   = "";
-let draftMode = false;
+let posFilter    = "All";
+let sortKey      = "mr";
+let searchQ      = "";
+let draftMode    = false;
 let watchlistIds = [];
+let draftPick    = 1;
 
 const WATCHLIST_KEY = "draftAdvisor.watchlist";
 const DRAFT_MODE_KEY = "draftAdvisor.draftMode";
@@ -202,6 +203,50 @@ function renderStatsStrip() {
   return h;
 }
 
+function renderScarcityStrip() {
+  if (!window.SCARCITY) return "";
+  const POSITIONS = ["QB", "RB", "WR", "TE"];
+  const teams  = SCARCITY.teams  || 10;
+  const rounds = SCARCITY.rounds || 15;
+  const maxPick = teams * rounds;
+  const cliffs  = SCARCITY.cliffs || {};
+  const pickData = (SCARCITY.by_pick || {})[String(draftPick)] || {};
+
+  const tiles = POSITIONS.map(pos => {
+    const d = pickData[pos] || { rem: 0, top: 0 };
+    const picksToCliff = (cliffs[pos] || maxPick + 1) - draftPick;
+    const heat = d.rem <= 3 ? "scar-red" : d.rem <= 6 ? "scar-yellow" : "scar-green";
+    const cliffWarn = picksToCliff > 0 && picksToCliff <= teams
+      ? `<div class="scar-cliff">cliff ~${picksToCliff}</div>` : "";
+    return `<div class="scar-tile ${heat}">
+      <div class="scar-pos">${pos}</div>
+      <div class="scar-rem">${d.rem}</div>
+      <div class="scar-label">left</div>
+      ${cliffWarn}
+    </div>`;
+  }).join("");
+
+  const round = Math.ceil(draftPick / teams);
+  const prevPick = Math.max(1, draftPick - teams);
+  const nextPick = Math.min(maxPick, draftPick + teams);
+
+  return `<div class="scarcity-strip">
+    <div class="scar-header">
+      <button class="scar-btn" onclick="setDraftPick(${prevPick})" ${draftPick <= teams ? "disabled" : ""}>◀</button>
+      <span class="scar-pick-label">Pick ${draftPick} · Rd ${round}</span>
+      <button class="scar-btn" onclick="setDraftPick(${nextPick})" ${draftPick >= maxPick ? "disabled" : ""}>▶</button>
+    </div>
+    <div class="scar-tiles">${tiles}</div>
+    <div class="scar-note">Starters above replacement remaining</div>
+  </div>`;
+}
+
+function setDraftPick(pick) {
+  draftPick = pick;
+  const el = document.getElementById("scarcityStrip");
+  if (el) el.innerHTML = renderScarcityStrip();
+}
+
 function renderDraftPanel() {
   const panel = document.getElementById("draftPanel");
   if (!panel) return;
@@ -319,8 +364,9 @@ function renderDraftModeState() {
 
 function render() {
   loadPrefs();
-  document.getElementById("pills").innerHTML      = renderPills();
-  document.getElementById("statsStrip").innerHTML = renderStatsStrip();
+  document.getElementById("pills").innerHTML         = renderPills();
+  document.getElementById("statsStrip").innerHTML    = renderStatsStrip();
+  document.getElementById("scarcityStrip").innerHTML = renderScarcityStrip();
   renderDraftModeState();
   updateCards();
 }

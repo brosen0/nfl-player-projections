@@ -251,15 +251,15 @@ def test_build_board_data_keeps_distinct_fallback_row_when_player_id_differs(mon
     assert set(projections["player_id"]) == {"BIJAN_PID", "BRIAN_PID"}
 
 
-def test_site_source_excludes_position_scarcity_strip():
+def test_site_source_includes_position_scarcity_strip():
     template = (PROJECT_ROOT / "_site" / "template.html").read_text(encoding="utf-8")
     app_js = (PROJECT_ROOT / "_site" / "app.js").read_text(encoding="utf-8")
     style = (PROJECT_ROOT / "_site" / "style.css").read_text(encoding="utf-8")
 
-    assert 'id="scarcityStrip"' not in template
-    assert "function renderScarcity()" not in app_js
-    assert 'document.getElementById("scarcityStrip").innerHTML = renderScarcity();' not in app_js
-    assert ".scarcity-strip" not in style
+    assert 'id="scarcityStrip"' in template
+    assert "function renderScarcityStrip()" in app_js
+    assert 'document.getElementById("scarcityStrip").innerHTML = renderScarcityStrip()' in app_js
+    assert ".scarcity-strip" in style
 
 
 def test_site_source_includes_hover_definitions_for_key_terms():

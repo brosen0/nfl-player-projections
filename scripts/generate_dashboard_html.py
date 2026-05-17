@@ -1244,11 +1244,54 @@ def build_vona_data(board, adp_df, max_slots=14):
     return vona_all
 
 
-def build_data_payloads(board_data, vona_data, data_sources):
-    """Return the three JSON payloads served to the page at runtime."""
+def build_scarcity_data(board_players, teams=10, rounds=15):
+    """Compute above-replacement starters remaining by position at each pick.
+
+    Returns:
+        by_pick: {pick_str: {pos: {rem, top}}} for picks 1..teams*rounds
+        cliffs:  {pos: first_pick_where_rem_drops_below_threshold}
+        teams, rounds for the JS to use
+    """
+    POSITIONS = ["QB", "RB", "WR", "TE"]
+    CLIFF_THRESHOLD = {"QB": 3, "RB": 4, "WR": 4, "TE": 3}
+
+    sorted_p = sorted(board_players, key=lambda p: p["ecr"])
+    total = teams * rounds
+
+    by_pick = {}
+    for pick in range(1, total + 1):
+        remaining = sorted_p[pick - 1:]
+        counts = {pos: 0 for pos in POSITIONS}
+        top = {pos: 0.0 for pos in POSITIONS}
+        for p in remaining:
+            pos = p["p"]
+            if pos in POSITIONS and p.get("vorp", 0) > 0:
+                counts[pos] += 1
+                if p["proj"] > top[pos]:
+                    top[pos] = p["proj"]
+        by_pick[str(pick)] = {
+            pos: {"rem": counts[pos], "top": round(top[pos], 1)}
+            for pos in POSITIONS
+        }
+
+    cliffs = {}
+    for pos in POSITIONS:
+        threshold = CLIFF_THRESHOLD[pos]
+        cliffs[pos] = total + 1  # default: never hits cliff
+        for pick in range(1, total + 1):
+            if by_pick[str(pick)][pos]["rem"] < threshold:
+                cliffs[pos] = pick
+                break
+
+    return {"by_pick": by_pick, "cliffs": cliffs, "teams": teams, "rounds": rounds}
+
+
+def build_data_payloads(board_data, vona_data, scarcity_data, data_sources):
+    """Return the JSON payloads served to the page at runtime."""
     return {
-        "board": board_data["players"],
-        "vona":  vona_data,
+        "board":    board_data["players"],
+        "vona":     vona_data,
+        "scarcity": scarcity_data,
         "meta":  {
             "season":      board_data["season"],
             "validation":  board_data["validation"],
@@ -1298,6 +1341,10 @@ def main():
     )
     print(f"  VONA computed for {len(vona_data)} slots")
 
+    print("  Computing positional scarcity curves...")
+    scarcity_data = build_scarcity_data(board_data["players"], teams=TEAMS, rounds=ROUNDS)
+    print(f"  Scarcity cliffs: { {k: f'pick {v}' for k, v in scarcity_data['cliffs'].items()} }")
+
     print("  Checking data sources...")
     data_sources = check_data_sources(season)
     avail = sum(1 for s in data_sources if s["status"] == "available")
@@ -1312,7 +1359,7 @@ def main():
 
     data_dir = DOCS_DIR / "data"
     data_dir.mkdir(parents=True, exist_ok=True)
-    payloads = build_data_payloads(board_data, vona_data, data_sources)
+    payloads = build_data_payloads(board_data, vona_data, scarcity_data, data_sources)
     for name, payload in payloads.items():
         path = data_dir / f"{name}.json"
         path.write_text(

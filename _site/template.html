@@ -42,6 +42,8 @@
 
 <div class="stats-strip" id="statsStrip"></div>
 
+<div id="scarcityStrip"></div>
+
 <div class="draft-panel" id="draftPanel"></div>
 
 <div class="glossary">
@@ -65,11 +67,13 @@
 Promise.all([
   fetch("data/board.json").then(r => r.json()),
   fetch("data/vona.json").then(r => r.json()),
-  fetch("data/meta.json").then(r => r.json())
-]).then(([board, vona, meta]) => {
-  window.BOARD = board;
-  window.VONA  = vona;
-  window.META  = meta;
+  fetch("data/meta.json").then(r => r.json()),
+  fetch("data/scarcity.json").then(r => r.json()),
+]).then(([board, vona, meta, scarcity]) => {
+  window.BOARD    = board;
+  window.VONA     = vona;
+  window.META     = meta;
+  window.SCARCITY = scarcity;
   render();
 }).catch(err => {
   document.body.innerHTML =
