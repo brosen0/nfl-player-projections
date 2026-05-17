@@ -16,6 +16,7 @@
     <div class="header-sub">Model-powered fantasy draft rankings</div>
   </div>
   <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+    <a class="nav-link" href="lineup.html">Lineup Optimizer →</a>
     <button class="draft-toggle" id="draftModeBtn" type="button" onclick="toggleDraftMode()">
       Draft Mode Off
     </button>
@@ -71,11 +72,13 @@ Promise.all([
   fetch("data/vona.json").then(r => r.json()),
   fetch("data/meta.json").then(r => r.json()),
   fetch("data/scarcity.json").then(r => r.json()),
-]).then(([board, vona, meta, scarcity]) => {
+  fetch("data/news.json").then(r => r.json()).catch(() => ({})),
+]).then(([board, vona, meta, scarcity, news]) => {
   window.BOARD    = board;
   window.VONA     = vona;
   window.META     = meta;
   window.SCARCITY = scarcity;
+  window.NEWS     = news;
   render();
 }).catch(err => {
   document.body.innerHTML =

@@ -16,6 +16,16 @@ const DRAFT_SLOT_KEY = "draftAdvisor.draftSlot";
 // Helpers
 // ------------------------------------------------------------------
 
+function statusBadge(name) {
+  const players = (window.NEWS && window.NEWS.players) || {};
+  const info = players[name];
+  if (!info) return "";
+  const status = info.status || "";
+  const note   = info.note   || status;
+  const cls    = status.toLowerCase()[0] || "";
+  return `<span class="inj-badge inj-${cls}" title="${note}">${status[0] || ""}</span>`;
+}
+
 function getSignal(sp) {
   if (sp <= -25) return { cls: "avoid", label: "FADE" };
   if (sp <= -10) return { cls: "avoid", label: "Fade" };
@@ -141,7 +151,7 @@ function renderCard(p) {
       ${watchBtn}
     </div>
   </div>
-  <div class="player-name" title="${p.n}">${p.n}</div>
+  <div class="player-name" title="${p.n}">${p.n}${statusBadge(p.n)}</div>
   <div class="player-team">${p.t}${roleTag}</div>
   <div class="card-stats">
     <div class="stat-item" title="${seasonPprTitle}">

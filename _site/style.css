@@ -107,6 +107,19 @@ body {
 }
 .draft-toggle:hover { background: rgba(76, 175, 130, 0.14); }
 
+.nav-link {
+  text-decoration: none;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 6px 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  transition: var(--transition);
+  white-space: nowrap;
+}
+.nav-link:hover { border-color: var(--text-muted); color: var(--text); }
+
 .sort-select {
   padding: 7px 12px;
   border: 1.5px solid var(--border);
@@ -692,6 +705,25 @@ body.draft-mode .draft-toggle {
   background: rgba(76, 175, 130, 0.18);
   border-color: rgba(76, 175, 130, 0.5);
 }
+
+/* ============================================================
+   Injury badges
+   ============================================================ */
+.inj-badge {
+  display: inline-block;
+  font-size: 0.55rem;
+  font-weight: 800;
+  padding: 1px 4px;
+  border-radius: 3px;
+  vertical-align: middle;
+  margin-left: 3px;
+  cursor: help;
+}
+.inj-q { background: rgba(251,188,5,0.18); color: #fbc415; }
+.inj-d { background: rgba(255,140,0,0.18); color: #ff8c00; }
+.inj-o { background: rgba(224,82,82,0.18); color: #e05252; }
+.inj-i { background: rgba(224,82,82,0.25); color: #ff4444; }
+.inj-p, .inj-s { background: rgba(136,139,160,0.18); color: #888ba0; }
 
 /* ============================================================
    Responsive

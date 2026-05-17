@@ -1,0 +1,263 @@
+{
+  "updated": "2026-05-17T13:05:39Z",
+  "players": {
+    "Malik Nabers": {
+      "status": "IR",
+      "note": "Knee - ACL \u2014 Surgery",
+      "pos": "WR",
+      "team": "NYG"
+    },
+    "Cam Skattebo": {
+      "status": "Questionable",
+      "note": "Ankle \u2014 Surgery",
+      "pos": "RB",
+      "team": "NYG"
+    },
+    "Garrett Wilson": {
+      "status": "Questionable",
+      "note": "Knee \u2014 Sprain",
+      "pos": "WR",
+      "team": "NYJ"
+    },
+    "Tucker Kraft": {
+      "status": "Questionable",
+      "note": "Knee - ACL \u2014 Surgery",
+      "pos": "TE",
+      "team": "GB"
+    },
+    "Trey Benson": {
+      "status": "Questionable",
+      "note": "Knee - Meniscus \u2014 Surgery",
+      "pos": "RB",
+      "team": "ARI"
+    },
+    "Najee Harris": {
+      "status": "IR",
+      "note": "Achilles",
+      "pos": "RB",
+      "team": "LAC"
+    },
+    "Tyreek Hill": {
+      "status": "Questionable",
+      "note": "Knee - ACL \u2014 Surgery",
+      "pos": "WR",
+      "team": "FA"
+    },
+    "Jayden Daniels": {
+      "status": "Questionable",
+      "note": "Elbow",
+      "pos": "QB",
+      "team": "WAS"
+    },
+    "Daniel Jones": {
+      "status": "IR",
+      "note": "Achilles \u2014 Surgery",
+      "pos": "QB",
+      "team": "IND"
+    },
+    "Devin Neal": {
+      "status": "Questionable",
+      "note": "Hamstring",
+      "pos": "RB",
+      "team": "NO"
+    },
+    "Tank Dell": {
+      "status": "Questionable",
+      "note": "Knee - ACL + MCL \u2014 Surgery",
+      "pos": "WR",
+      "team": "HOU"
+    },
+    "Travis Hunter": {
+      "status": "Questionable",
+      "note": "Knee \u2014 Surgery",
+      "pos": "WR",
+      "team": "JAC"
+    },
+    "Sam LaPorta": {
+      "status": "Questionable",
+      "note": "Back \u2014 Surgery",
+      "pos": "TE",
+      "team": "DET"
+    },
+    "Troy Franklin": {
+      "status": "Questionable",
+      "note": "Hamstring",
+      "pos": "WR",
+      "team": "DEN"
+    },
+    "Brock Bowers": {
+      "status": "Questionable",
+      "note": "Knee - PCL \u2014 Bruise",
+      "pos": "TE",
+      "team": "LV"
+    },
+    "Bo Nix": {
+      "status": "Questionable",
+      "note": "Ankle \u2014 Surgery",
+      "pos": "QB",
+      "team": "DEN"
+    },
+    "Ty Johnson": {
+      "status": "Questionable",
+      "note": "Ankle",
+      "pos": "RB",
+      "team": "BUF"
+    },
+    "Calvin Ridley": {
+      "status": "Questionable",
+      "note": "Lower Leg \u2014 Surgery",
+      "pos": "WR",
+      "team": "TEN"
+    },
+    "Kendre Miller": {
+      "status": "Questionable",
+      "note": "Knee - ACL \u2014 Surgery",
+      "pos": "RB",
+      "team": "NO"
+    },
+    "Darius Slayton": {
+      "status": "Questionable",
+      "note": "Abdomen",
+      "pos": "WR",
+      "team": "NYG"
+    },
+    "Dalton Schultz": {
+      "status": "Questionable",
+      "note": "Calf",
+      "pos": "TE",
+      "team": "HOU"
+    },
+    "Joe Mixon": {
+      "status": "Questionable",
+      "note": "Foot",
+      "pos": "RB",
+      "team": "FA"
+    },
+    "Bucky Irving": {
+      "status": "Questionable",
+      "note": "Shoulder \u2014 Surgery",
+      "pos": "RB",
+      "team": "TB"
+    },
+    "Cam Ward": {
+      "status": "Questionable",
+      "note": "Shoulder - AC Joint \u2014 Sprain",
+      "pos": "QB",
+      "team": "TEN"
+    },
+    "Chris Bell": {
+      "status": "Questionable",
+      "note": "Knee - ACL \u2014 Surgery",
+      "pos": "WR",
+      "team": "MIA"
+    },
+    "Tory Horton": {
+      "status": "Questionable",
+      "note": "Shin \u2014 Surgery",
+      "pos": "WR",
+      "team": "SEA"
+    },
+    "Dalton Kincaid": {
+      "status": "Questionable",
+      "note": "Knee - PCL",
+      "pos": "TE",
+      "team": "BUF"
+    },
+    "MarShawn Lloyd": {
+      "status": "Questionable",
+      "note": "Hamstring",
+      "pos": "RB",
+      "team": "GB"
+    },
+    "George Kittle": {
+      "status": "IR",
+      "note": "Achilles \u2014 Surgery",
+      "pos": "TE",
+      "team": "SF"
+    },
+    "Alec Pierce": {
+      "status": "Questionable",
+      "note": "Ankle \u2014 Surgery",
+      "pos": "WR",
+      "team": "IND"
+    },
+    "Chris Olave": {
+      "status": "Questionable",
+      "note": "Illness",
+      "pos": "WR",
+      "team": "NO"
+    },
+    "Zach Charbonnet": {
+      "status": "IR",
+      "note": "Knee - ACL \u2014 Surgery",
+      "pos": "RB",
+      "team": "SEA"
+    },
+    "Quinshon Judkins": {
+      "status": "Questionable",
+      "note": "Ankle \u2014 Surgery",
+      "pos": "RB",
+      "team": "CLE"
+    },
+    "Devaughn Vele": {
+      "status": "Questionable",
+      "note": "Shoulder",
+      "pos": "WR",
+      "team": "NO"
+    },
+    "Malik Davis": {
+      "status": "Questionable",
+      "note": "Eye",
+      "pos": "RB",
+      "team": "DAL"
+    },
+    "Alvin Kamara": {
+      "status": "Questionable",
+      "note": "Knee - MCL \u2014 Sprain",
+      "pos": "RB",
+      "team": "NO"
+    },
+    "Justice Hill": {
+      "status": "Questionable",
+      "note": "Neck",
+      "pos": "RB",
+      "team": "BAL"
+    },
+    "Gunnar Helm": {
+      "status": "Questionable",
+      "note": "Toe",
+      "pos": "TE",
+      "team": "TEN"
+    },
+    "Jordyn Tyson": {
+      "status": "Questionable",
+      "note": "Undisclosed",
+      "pos": "WR",
+      "team": "NO"
+    },
+    "Jake Tonges": {
+      "status": "Questionable",
+      "note": "Foot",
+      "pos": "TE",
+      "team": "SF"
+    },
+    "Josh Allen": {
+      "status": "Questionable",
+      "note": "Foot \u2014 Fracture",
+      "pos": "QB",
+      "team": "BUF"
+    },
+    "Rashod Bateman": {
+      "status": "Questionable",
+      "note": "Illness",
+      "pos": "WR",
+      "team": "BAL"
+    },
+    "Jerome Ford": {
+      "status": "Questionable",
+      "note": "Shoulder",
+      "pos": "RB",
+      "team": "WAS"
+    }
+  }
+}

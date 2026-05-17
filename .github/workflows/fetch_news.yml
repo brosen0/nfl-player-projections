@@ -1,0 +1,35 @@
+name: Fetch Injury News
+
+on:
+  schedule:
+    # 1pm ET daily = 18:00 UTC (covers morning practice reports)
+    # NFL season runs Sep–Jan; also runs year-round in case of offseason moves
+    - cron: '0 18 * * *'
+  workflow_dispatch:  # allow manual trigger from GitHub UI
+
+jobs:
+  fetch-news:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # needed to push the commit
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Fetch injury news
+        run: python scripts/fetch_news.py
+
+      - name: Commit updated news.json
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add docs/data/news.json
+          # Only commit if the file actually changed
+          git diff --staged --quiet || git commit -m "chore: update injury news [skip ci]"
+          git push
