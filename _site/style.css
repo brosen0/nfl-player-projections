@@ -270,6 +270,29 @@ details summary::-webkit-details-marker { display: none; }
   gap: 10px;
 }
 
+.tier-break {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 4px;
+}
+.tier-break::before,
+.tier-break::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+.tier-label {
+  font-size: 0.58rem;
+  font-weight: 700;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  white-space: nowrap;
+}
+
 /* ============================================================
    Glossary strip
    ============================================================ */

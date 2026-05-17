@@ -383,12 +383,58 @@ function renderSources() {
   </div>`;
 }
 
+function buildTierMap(players) {
+  // Assign stable tier numbers based on VORP clusters (position-normalized value).
+  // Sort by VORP descending, detect step-function drops at mean+2σ, cap at 5 tiers.
+  // Players with vorp ≤ 0 (fringe/unranked) land in the last tier.
+  const withVorp = players
+    .filter(p => (p.vorp || 0) > 0)
+    .sort((a, b) => (b.vorp || 0) - (a.vorp || 0));
+
+  const tierMap = new Map();
+
+  if (withVorp.length >= 3) {
+    const vorps = withVorp.map(p => p.vorp || 0);
+    const gaps  = vorps.slice(1).map((v, i) => vorps[i] - v);
+    const mean  = gaps.reduce((a, b) => a + b, 0) / gaps.length;
+    const std   = Math.sqrt(gaps.map(g => (g - mean) ** 2).reduce((a, b) => a + b, 0) / gaps.length);
+    const threshold = Math.max(mean + 2 * std, 5);
+
+    let tier = 1;
+    tierMap.set(withVorp[0].id, tier);
+    for (let i = 1; i < withVorp.length; i++) {
+      if (gaps[i - 1] >= threshold && tier < 5) tier++;
+      tierMap.set(withVorp[i].id, tier);
+    }
+  }
+
+  // Fringe players not in withVorp → last tier
+  players.forEach(p => { if (!tierMap.has(p.id)) tierMap.set(p.id, 5); });
+  return tierMap;
+}
+
 function renderCards() {
   const players = filteredAndSorted();
-  if (!players.length) {
-    return `<div class="no-results">No players match your search.</div>`;
+  if (!players.length) return `<div class="no-results">No players match your search.</div>`;
+
+  // Skip tier breaks for signal sort (sp) — not a value dimension
+  if (sortKey === "sp" || players.length < 3) return players.map(renderCard).join("");
+
+  const tierMap = buildTierMap(players);
+
+  // Render with one-way tier labels: once we show "Tier 3" we never go back to "Tier 2"
+  // even if the chosen sort key interleaves players across tiers.
+  let html = "";
+  let lastTierShown = 0;
+  for (const p of players) {
+    const t = tierMap.get(p.id) || 5;
+    if (t > lastTierShown) {
+      html += `<div class="tier-break"><span class="tier-label">Tier ${t}</span></div>`;
+      lastTierShown = t;
+    }
+    html += renderCard(p);
   }
-  return players.map(renderCard).join("");
+  return html;
 }
 
 // ------------------------------------------------------------------
