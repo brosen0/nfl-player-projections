@@ -44,6 +44,7 @@ import json
 import sqlite3
 import sys
 from dataclasses import dataclass, field
+from functools import lru_cache
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -85,6 +86,158 @@ def _first_initial(name: str) -> str:
     (first letter = 'c')."""
     n = (name or "").strip()
     return n[0].lower() if n else ""
+
+
+def _normalize_full_name(name: str) -> str:
+    parts = []
+    for token in (name or "").replace(".", " ").split():
+        norm = _normalize(token)
+        if norm and norm not in _NAME_SUFFIXES:
+            parts.append(norm)
+    return " ".join(parts)
+
+
+_TEAM_ALIASES = {
+    "JAC": "JAX",
+    "LA": "LAR",
+    "LAR": "LAR",
+}
+
+
+def _canonical_team(team: str) -> str:
+    return _TEAM_ALIASES.get((team or "").strip().upper(), (team or "").strip().upper())
+
+
+@lru_cache(maxsize=1)
+def _load_full_name_player_id_lookup() -> Dict[Tuple[str, str, str], str]:
+    """Return {(full_name, position, team): player_id} from roster sources.
+
+    The draft ADP feed uses full names while historical projections often use
+    abbreviated names. This lookup lets us keep exact player_id matches when
+    two players otherwise share the same initial/last-name signature.
+    """
+    from config.settings import DB_PATH
+
+    conn = sqlite3.connect(str(DB_PATH))
+    lookup: Dict[Tuple[str, str, str], str] = {}
+
+    queries = [
+        (
+            """
+            SELECT player_name, position, team, player_id
+              FROM weekly_rosters_v2
+             WHERE player_name IS NOT NULL
+               AND position IN ('QB', 'RB', 'WR', 'TE')
+             ORDER BY season DESC, week DESC
+            """
+        ),
+        (
+            """
+            SELECT full_name AS player_name, position, team, player_id
+              FROM weekly_rosters
+             WHERE full_name IS NOT NULL
+               AND position IN ('QB', 'RB', 'WR', 'TE')
+             ORDER BY season DESC, week DESC
+            """
+        ),
+        (
+            """
+            SELECT player_name, position, team, player_id
+              FROM rosters
+             WHERE player_name IS NOT NULL
+               AND position IN ('QB', 'RB', 'WR', 'TE')
+             ORDER BY season DESC
+            """
+        ),
+    ]
+
+    for query in queries:
+        try:
+            for name, position, team, player_id in conn.execute(query):
+                key = (
+                    (name or "").strip().lower(),
+                    (position or "").strip().upper(),
+                    _canonical_team(team),
+                )
+                if key not in lookup and player_id:
+                    lookup[key] = str(player_id)
+        except sqlite3.OperationalError:
+            continue
+
+    conn.close()
+    return lookup
+
+
+def _resolve_player_id_from_full_name(name: str, position: str, team: str) -> str:
+    lookup = _load_full_name_player_id_lookup()
+    return lookup.get(
+        (
+            (name or "").strip().lower(),
+            (position or "").strip().upper(),
+            _canonical_team(team),
+        ),
+        "",
+    )
+
+
+@lru_cache(maxsize=1)
+def _load_player_id_name_aliases() -> Dict[str, set[str]]:
+    from config.settings import DB_PATH
+
+    conn = sqlite3.connect(str(DB_PATH))
+    aliases: Dict[str, set[str]] = {}
+    queries = [
+        (
+            """
+            SELECT player_name, player_id
+              FROM weekly_rosters_v2
+             WHERE player_name IS NOT NULL
+               AND position IN ('QB', 'RB', 'WR', 'TE')
+            """
+        ),
+        (
+            """
+            SELECT full_name AS player_name, player_id
+              FROM weekly_rosters
+             WHERE full_name IS NOT NULL
+               AND position IN ('QB', 'RB', 'WR', 'TE')
+            """
+        ),
+        (
+            """
+            SELECT player_name, player_id
+              FROM rosters
+             WHERE player_name IS NOT NULL
+               AND position IN ('QB', 'RB', 'WR', 'TE')
+            """
+        ),
+    ]
+    for query in queries:
+        try:
+            for name, player_id in conn.execute(query):
+                pid = str(player_id or "")
+                norm_name = _normalize_full_name(name)
+                if pid and norm_name:
+                    aliases.setdefault(pid, set()).add(norm_name)
+        except sqlite3.OperationalError:
+            continue
+
+    conn.close()
+    return aliases
+
+
+def _prediction_matches_adp_name(pred: Dict, adp_name: str) -> bool:
+    if not pred:
+        return False
+    if " " not in (adp_name or "").strip():
+        return True
+    player_id = str(pred.get("player_id") or "")
+    if not player_id:
+        return True
+    aliases = _load_player_id_name_aliases().get(player_id)
+    if not aliases:
+        return True
+    return _normalize_full_name(adp_name) in aliases
 
 
 def _build_pred_index(predictions: pd.DataFrame) -> Dict[Tuple[str, str, str], Dict]:
@@ -240,6 +393,9 @@ def load_model_projections(
     ``pred_total`` and ``actual_total`` (used for post-draft scoring)
     are always the season-sum versions regardless of ranking mode."""
     df = pd.read_csv(predictions_csv)
+    if "week" in df.columns:
+        weeks = pd.to_numeric(df["week"], errors="coerce")
+        df = df[weeks.between(1, 18)]
     if "is_active" in df.columns:
         df = df[df["is_active"] == 1]
     agg = (
@@ -584,14 +740,29 @@ def build_draft_board(
     pred_idx = _build_pred_index(projections)
     pred_team_fallback_idx = _build_pred_team_fallback_index(projections)
     pred_name_fallback_idx = _build_pred_name_fallback_index(projections)
+    pred_player_id_idx = {}
+    if "player_id" in projections.columns:
+        for _, r in projections.iterrows():
+            pid = str(r.get("player_id") or "")
+            if pid:
+                pred_player_id_idx[pid] = r.to_dict()
     board: List[DraftPlayer] = []
     for _, r in adp.iterrows():
+        pred = None
+        resolved_player_id = _resolve_player_id_from_full_name(
+            r["name"], r["position"], r.get("team") or ""
+        )
+        if resolved_player_id:
+            pred = pred_player_id_idx.get(resolved_player_id)
         key = (
             _first_initial(r["name"]),
             _normalize(_last_token(r["name"])),
             r["position"],
         )
-        pred = pred_idx.get(key)
+        if pred is None:
+            pred = pred_idx.get(key)
+            if pred is not None and not _prediction_matches_adp_name(pred, r["name"]):
+                pred = None
         if pred is None:
             fallback_key = (
                 _first_initial(r["name"]),
@@ -599,11 +770,15 @@ def build_draft_board(
                 str(r.get("team") or ""),
             )
             pred = pred_team_fallback_idx.get(fallback_key)
+            if pred is not None and not _prediction_matches_adp_name(pred, r["name"]):
+                pred = None
         if pred is None:
             pred = pred_name_fallback_idx.get((
                 _first_initial(r["name"]),
                 _normalize(_last_token(r["name"])),
             ))
+            if pred is not None and not _prediction_matches_adp_name(pred, r["name"]):
+                pred = None
         board.append(DraftPlayer(
             player_id=str(pred.get("player_id")) if pred else "",
             name=r["name"],

@@ -133,6 +133,97 @@ def test_build_draft_board_falls_back_to_team_match_when_projection_position_is_
     assert board[0].pred_total == 178.4
 
 
+def test_load_model_projections_excludes_postseason_weeks(tmp_path):
+    csv = tmp_path / "predictions.csv"
+    csv.write_text(
+        "\n".join(
+            [
+                "player_id,name,position,team,week,predicted,actual,is_active",
+                "p1,M.Stafford,QB,LA,18,20.0,21.0,1",
+                "p1,M.Stafford,QB,LA,19,30.0,31.0,1",
+                "p1,M.Stafford,QB,LA,20,40.0,41.0,1",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    agg = sd.load_model_projections(csv, ranking="season_sum")
+
+    assert len(agg) == 1
+    assert agg.iloc[0]["pred_total"] == 20.0
+    assert agg.iloc[0]["actual_total"] == 21.0
+    assert agg.iloc[0]["weeks"] == 1
+
+
+def test_build_draft_board_prefers_exact_player_id_match(monkeypatch):
+    monkeypatch.setattr(
+        sd,
+        "_resolve_player_id_from_full_name",
+        lambda name, position, team: "BRIAN_PID" if name == "Brian Robinson Jr." else "",
+    )
+    adp = sd.pd.DataFrame([
+        {"name": "Brian Robinson Jr.", "position": "RB", "team": "WAS", "ecr": 75},
+    ])
+    projections = sd.pd.DataFrame([
+        {
+            "player_id": "BIJAN_PID",
+            "name": "B.Robinson",
+            "position": "RB",
+            "team": "ATL",
+            "pred_total": 305.2,
+            "actual_total": 374.8,
+            "weeks": 17,
+            "model_rank_value": 305.2,
+        },
+        {
+            "player_id": "BRIAN_PID",
+            "name": "B.Robinson",
+            "position": "RB",
+            "team": "WAS",
+            "pred_total": 181.4,
+            "actual_total": 192.7,
+            "weeks": 17,
+            "model_rank_value": 181.4,
+        },
+    ])
+
+    board = sd.build_draft_board(adp, projections)
+
+    assert len(board) == 1
+    assert board[0].player_id == "BRIAN_PID"
+    assert board[0].pred_total == 181.4
+
+
+def test_build_draft_board_rejects_wrong_full_name_alias(monkeypatch):
+    monkeypatch.setattr(sd, "_resolve_player_id_from_full_name", lambda *args, **kwargs: "")
+    monkeypatch.setattr(
+        sd,
+        "_load_player_id_name_aliases",
+        lambda: {"BIJAN_PID": {"bijan robinson"}},
+    )
+    adp = sd.pd.DataFrame([
+        {"name": "Brian Robinson Jr.", "position": "RB", "team": "ATL", "ecr": 75},
+    ])
+    projections = sd.pd.DataFrame([
+        {
+            "player_id": "BIJAN_PID",
+            "name": "B.Robinson",
+            "position": "RB",
+            "team": "ATL",
+            "pred_total": 305.2,
+            "actual_total": 374.8,
+            "weeks": 17,
+            "model_rank_value": 305.2,
+        },
+    ])
+
+    board = sd.build_draft_board(adp, projections)
+
+    assert len(board) == 1
+    assert board[0].is_modelable is False
+    assert board[0].pred_total == 0.0
+
+
 def test_position_cap_blocks_over_stack():
     t = sd.Team(name="A", is_model_bot=False, slot=1)
     # Give the team 3 QBs already — at the QB cap.

@@ -2,6 +2,10 @@
 import os
 from pathlib import Path
 
+# ── The Odds API ──────────────────────────────────────────────────────────────
+# Loaded from .env — never hardcode.  Rotate via .env only.
+ODDS_API_KEY: str = os.getenv("ODDS_API_KEY", "")
+
 # Project paths
 PROJECT_ROOT = Path(__file__).parent.parent
 DATA_DIR = PROJECT_ROOT / "data"

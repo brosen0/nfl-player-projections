@@ -110,6 +110,14 @@ function renderCard(p) {
     <summary>Why</summary>
     <ul class="why-list">${whyItems.map(item => `<li>${item}</li>`).join("")}</ul>
   </details>` : "";
+  const mktBlock = (p.mkt25 != null && p.edge != null) ? (() => {
+    const edgeCls = p.edge > 0 ? "pos" : p.edge < 0 ? "neg" : "";
+    const edgeStr = p.edge > 0 ? `+${p.edge}` : String(p.edge);
+    return `<div class="mkt-edge-row">
+      <span class="mkt-label">Mkt '25: ${p.mkt25} fp</span>
+      <span class="stat-value ${edgeCls}" title="Model 2026 projection minus 2025 market-implied FP">edge ${edgeStr}</span>
+    </div>`;
+  })() : "";
   const watched = isWatched(p.id);
   const watchBtn = `<button class="queue-btn${watched ? " active" : ""}" type="button" onclick="toggleWatch(${p.id})">${watched ? "Queued" : "Queue"}</button>`;
 
@@ -145,6 +153,7 @@ function renderCard(p) {
     <span class="signal-badge ${sig.cls}">${sig.label}</span>
     ${usageNote}
   </div>
+  ${mktBlock}
   ${whyBlock}
   ${adjBadge}
 </div>`;

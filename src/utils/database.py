@@ -481,7 +481,101 @@ class DatabaseManager:
                     FOREIGN KEY (player_id) REFERENCES players(player_id)
                 )
             """)
-            
+
+            # Game odds — one row per (event, bookmaker, market, snapshot time).
+            # Markets: h2h (moneylines), spreads, totals.
+            # home_point / away_point = spread or total line; home_price / away_price = American odds.
+            # fetched_at = UTC ISO-8601 datetime of the API snapshot.
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS game_odds (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    event_id TEXT NOT NULL,
+                    game_id TEXT,
+                    season INTEGER,
+                    week INTEGER,
+                    commence_time TEXT NOT NULL,
+                    home_team TEXT NOT NULL,
+                    away_team TEXT NOT NULL,
+                    bookmaker TEXT NOT NULL,
+                    market TEXT NOT NULL,
+                    home_price REAL,
+                    away_price REAL,
+                    home_point REAL,
+                    away_point REAL,
+                    fetched_at TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(event_id, bookmaker, market, fetched_at)
+                )
+            """)
+            cursor.execute(
+                "CREATE INDEX IF NOT EXISTS idx_game_odds_season_week "
+                "ON game_odds(season, week)"
+            )
+            cursor.execute(
+                "CREATE INDEX IF NOT EXISTS idx_game_odds_event "
+                "ON game_odds(event_id)"
+            )
+
+            # Player prop odds — one row per (event, bookmaker, market, player, over/under, snapshot).
+            # market examples: player_pass_yds, player_rush_tds, player_receptions, etc.
+            # description: "Over" or "Under".
+            # point: the line value (e.g., 274.5 for passing yards).
+            # price: American odds for that side.
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS player_props_odds (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    event_id TEXT NOT NULL,
+                    game_id TEXT,
+                    season INTEGER,
+                    week INTEGER,
+                    commence_time TEXT NOT NULL,
+                    home_team TEXT NOT NULL,
+                    away_team TEXT NOT NULL,
+                    bookmaker TEXT NOT NULL,
+                    market TEXT NOT NULL,
+                    player_name TEXT NOT NULL,
+                    description TEXT,
+                    price REAL NOT NULL,
+                    point REAL,
+                    fetched_at TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(event_id, bookmaker, market, player_name, description, fetched_at)
+                )
+            """)
+            cursor.execute(
+                "CREATE INDEX IF NOT EXISTS idx_player_props_event "
+                "ON player_props_odds(event_id)"
+            )
+            cursor.execute(
+                "CREATE INDEX IF NOT EXISTS idx_player_props_player "
+                "ON player_props_odds(player_name, market)"
+            )
+
+            # Game weather — one row per game (home stadium at kickoff).
+            # Dome/retractable-roof games: is_dome=1, weather fields NULL.
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS game_weather (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    season INTEGER NOT NULL,
+                    week INTEGER NOT NULL,
+                    game_date TEXT NOT NULL,
+                    home_team TEXT NOT NULL,
+                    away_team TEXT NOT NULL,
+                    stadium TEXT,
+                    is_dome INTEGER DEFAULT 0,
+                    kickoff_time TEXT,
+                    temp_f REAL,
+                    wind_mph REAL,
+                    precip_mm REAL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(season, week, home_team, away_team)
+                )
+            """)
+            cursor.execute(
+                "CREATE INDEX IF NOT EXISTS idx_game_weather_season_week "
+                "ON game_weather(season, week)"
+            )
+
             conn.commit()
     
     @contextmanager

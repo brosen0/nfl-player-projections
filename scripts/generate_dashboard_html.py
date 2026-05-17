@@ -915,6 +915,11 @@ def build_board_data(season: int):
             if not fallback.empty:
                 # Keep ML projections, add only players not already covered by
                 # the ML artifact after robust normalized matching.
+                ml_player_ids = {
+                    str(r.get("player_id") or "")
+                    for _, r in ml_proj.iterrows()
+                    if str(r.get("player_id") or "")
+                }
                 ml_keys = {
                     _player_key(r["name"], r["position"], r.get("team", ""))
                     for _, r in ml_proj.iterrows()
@@ -923,23 +928,27 @@ def build_board_data(season: int):
                     (_player_identity(r["name"]), r.get("team", "") or "")
                     for _, r in ml_proj.iterrows()
                 }
-                ml_identity_counts = {}
-                for _, r in ml_proj.iterrows():
-                    ident = _player_identity(r["name"])
-                    ml_identity_counts[ident] = ml_identity_counts.get(ident, 0) + 1
-                rookies = fallback[
-                    [
-                        (
-                            _player_key(r["name"], r["position"], r.get("team", ""))
-                            not in ml_keys
-                            and (
-                                (_player_identity(r["name"]), r.get("team", "") or "")
-                                not in ml_identity_team_keys
-                            )
-                            and ml_identity_counts.get(_player_identity(r["name"]), 0) == 0
+
+                def _should_keep_fallback_row(row) -> bool:
+                    row_pid = str(row.get("player_id") or "")
+                    row_identity = _player_identity(row["name"])
+                    row_identity_team = (row_identity, row.get("team", "") or "")
+                    if row_pid:
+                        return (
+                            row_pid not in ml_player_ids
+                            and row_identity_team not in ml_identity_team_keys
                         )
-                        for _, r in fallback.iterrows()
-                    ]
+
+                    row_key = _player_key(
+                        row["name"], row["position"], row.get("team", "")
+                    )
+                    return (
+                        row_key not in ml_keys
+                        and row_identity_team not in ml_identity_team_keys
+                    )
+
+                rookies = fallback[
+                    [_should_keep_fallback_row(r) for _, r in fallback.iterrows()]
                 ]
                 projections = pd.concat([ml_proj, rookies], ignore_index=True)
             else:
@@ -1044,6 +1053,19 @@ def build_board_data(season: int):
             if entry["player"] in name_lower or name_lower in entry["player"]:
                 return entry
         return None
+
+    # Load market-implied 2025 projections for edge signal on draft board.
+    # Keyed by _norm_key(name) → market_fp float. Missing file = no signal shown.
+    mkt_proj_lookup: dict = {}
+    mkt_proj_path = PROJECT_ROOT / "docs" / "data" / "market_projections.json"
+    if mkt_proj_path.exists():
+        mkt_raw = json.loads(mkt_proj_path.read_text(encoding="utf-8"))
+        for pname, rec in mkt_raw.get("players", {}).items():
+            key = _norm_key(pname)
+            fp = rec.get("market_fp", 0)
+            # Keep the highest-fp entry when norm keys collide
+            if key not in mkt_proj_lookup or fp > mkt_proj_lookup[key]:
+                mkt_proj_lookup[key] = fp
 
     # Serialize board for JS
     players = []
@@ -1169,6 +1191,9 @@ def build_board_data(season: int):
             "w": sr.model_wins if has_actuals else None,
             "adj_note": manual["note"] if manual else "",
             "why": why_reasons[:4],
+            "mkt25": mkt_proj_lookup.get(_norm_key(sr.name)),
+            "edge": round(adjusted_proj - mkt_proj_lookup[_norm_key(sr.name)])
+                if _norm_key(sr.name) in mkt_proj_lookup else None,
         })
 
     return {

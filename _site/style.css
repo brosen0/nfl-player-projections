@@ -298,6 +298,16 @@ details summary::-webkit-details-marker { display: none; }
   color: var(--text-dim);
 }
 
+.mkt-edge-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 5px;
+  font-size: 0.6rem;
+}
+.mkt-label { color: var(--text-dim); }
+.mkt-edge-row .stat-value { font-size: 0.6rem; font-weight: 600; }
+
 /* ============================================================
    Player card
    ============================================================ */
