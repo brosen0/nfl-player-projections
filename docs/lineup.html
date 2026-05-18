@@ -1031,14 +1031,11 @@ function confidence(starterProj, benchProj, position) {
   const edge = benchProj - starterProj;
   if (edge <= 0) return null;
 
-  const tiers = TIERS || { strong_threshold_edge: 4.0, by_position: {} };
+  const tiers = TIERS || { strong_threshold_edge: 7.0, by_position: {} };
 
-  // QB predictions carry structural uncertainty — always lean
-  if (position === "QB") {
-    return { tier: "LEAN", edge, reason: "QB predictions carry high uncertainty" };
-  }
-
-  const posThreshold = tiers.by_position?.[position]?.strong_threshold ?? tiers.strong_threshold_edge ?? 4.0;
+  // All positions use the same threshold — QB accuracy at 7pt edge (77.9%)
+  // matches every other position. No position-based overrides.
+  const posThreshold = tiers.by_position?.[position]?.strong_threshold ?? tiers.strong_threshold_edge ?? 7.0;
   const posAccuracy  = tiers.by_position?.[position]?.strong_accuracy  ?? tiers.strong_accuracy  ?? null;
 
   if (edge >= posThreshold) {
