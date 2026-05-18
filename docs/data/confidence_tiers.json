@@ -1,0 +1,357 @@
+{
+  "generated": "2026-05-18T02:36:19.589138+00:00",
+  "seasons_analyzed": [
+    2018,
+    2019,
+    2020,
+    2021,
+    2022,
+    2023,
+    2024,
+    2025
+  ],
+  "total_decisions": 205354,
+  "strong_threshold_edge": 7,
+  "strong_threshold_reached_075": true,
+  "strong_accuracy": 0.7771,
+  "strong_pct_of_decisions": 0.0021,
+  "edge_buckets": [
+    {
+      "label": "0-1",
+      "min": 0,
+      "max": 1,
+      "accuracy": 0.508,
+      "n": 171505
+    },
+    {
+      "label": "1-2",
+      "min": 1,
+      "max": 2,
+      "accuracy": 0.5577,
+      "n": 21608
+    },
+    {
+      "label": "2-3",
+      "min": 2,
+      "max": 3,
+      "accuracy": 0.5984,
+      "n": 6634
+    },
+    {
+      "label": "3-4",
+      "min": 3,
+      "max": 4,
+      "accuracy": 0.6526,
+      "n": 2812
+    },
+    {
+      "label": "4-5",
+      "min": 4,
+      "max": 5,
+      "accuracy": 0.6734,
+      "n": 1338
+    },
+    {
+      "label": "5-7",
+      "min": 5,
+      "max": 7,
+      "accuracy": 0.7047,
+      "n": 1033
+    },
+    {
+      "label": "7-10",
+      "min": 7,
+      "max": 10,
+      "accuracy": 0.7771,
+      "n": 350
+    },
+    {
+      "label": "10+",
+      "min": 10,
+      "max": null,
+      "accuracy": 0.9324,
+      "n": 74
+    }
+  ],
+  "by_position": {
+    "QB": {
+      "accuracy": 0.5548,
+      "n": 23424,
+      "strong_threshold": 7,
+      "strong_accuracy": 0.7792,
+      "edge_buckets": [
+        {
+          "label": "0-1",
+          "min": 0,
+          "max": 1,
+          "accuracy": 0.5194,
+          "n": 10652
+        },
+        {
+          "label": "1-2",
+          "min": 1,
+          "max": 2,
+          "accuracy": 0.5395,
+          "n": 6693
+        },
+        {
+          "label": "2-3",
+          "min": 2,
+          "max": 3,
+          "accuracy": 0.5908,
+          "n": 3038
+        },
+        {
+          "label": "3-4",
+          "min": 3,
+          "max": 4,
+          "accuracy": 0.6357,
+          "n": 1378
+        },
+        {
+          "label": "4-5",
+          "min": 4,
+          "max": 5,
+          "accuracy": 0.6708,
+          "n": 729
+        },
+        {
+          "label": "5-7",
+          "min": 5,
+          "max": 7,
+          "accuracy": 0.7103,
+          "n": 642
+        },
+        {
+          "label": "7-10",
+          "min": 7,
+          "max": 10,
+          "accuracy": 0.7792,
+          "n": 240
+        },
+        {
+          "label": "10+",
+          "min": 10,
+          "max": null,
+          "accuracy": 0.9231,
+          "n": 52
+        }
+      ]
+    },
+    "RB": {
+      "accuracy": 0.5282,
+      "n": 50339,
+      "strong_threshold": 7,
+      "strong_accuracy": 0.7632,
+      "edge_buckets": [
+        {
+          "label": "0-1",
+          "min": 0,
+          "max": 1,
+          "accuracy": 0.5155,
+          "n": 40983
+        },
+        {
+          "label": "1-2",
+          "min": 1,
+          "max": 2,
+          "accuracy": 0.5646,
+          "n": 7008
+        },
+        {
+          "label": "2-3",
+          "min": 2,
+          "max": 3,
+          "accuracy": 0.606,
+          "n": 1368
+        },
+        {
+          "label": "3-4",
+          "min": 3,
+          "max": 4,
+          "accuracy": 0.6786,
+          "n": 501
+        },
+        {
+          "label": "4-5",
+          "min": 4,
+          "max": 5,
+          "accuracy": 0.6792,
+          "n": 265
+        },
+        {
+          "label": "5-7",
+          "min": 5,
+          "max": 7,
+          "accuracy": 0.7143,
+          "n": 161
+        },
+        {
+          "label": "7-10",
+          "min": 7,
+          "max": 10,
+          "accuracy": 0.7632,
+          "n": 38
+        },
+        {
+          "label": "10+",
+          "min": 10,
+          "max": null,
+          "accuracy": 1.0,
+          "n": 15
+        }
+      ]
+    },
+    "TE": {
+      "accuracy": 0.5297,
+      "n": 29531,
+      "strong_threshold": 7,
+      "strong_accuracy": 0.7742,
+      "edge_buckets": [
+        {
+          "label": "0-1",
+          "min": 0,
+          "max": 1,
+          "accuracy": 0.5125,
+          "n": 23790
+        },
+        {
+          "label": "1-2",
+          "min": 1,
+          "max": 2,
+          "accuracy": 0.5771,
+          "n": 3672
+        },
+        {
+          "label": "2-3",
+          "min": 2,
+          "max": 3,
+          "accuracy": 0.6034,
+          "n": 1233
+        },
+        {
+          "label": "3-4",
+          "min": 3,
+          "max": 4,
+          "accuracy": 0.6935,
+          "n": 509
+        },
+        {
+          "label": "4-5",
+          "min": 4,
+          "max": 5,
+          "accuracy": 0.7059,
+          "n": 187
+        },
+        {
+          "label": "5-7",
+          "min": 5,
+          "max": 7,
+          "accuracy": 0.7048,
+          "n": 105
+        },
+        {
+          "label": "7-10",
+          "min": 7,
+          "max": 10,
+          "accuracy": 0.7742,
+          "n": 31
+        },
+        {
+          "label": "10+",
+          "min": 10,
+          "max": null,
+          "accuracy": 0.75,
+          "n": 4
+        }
+      ]
+    },
+    "WR": {
+      "accuracy": 0.5068,
+      "n": 102060,
+      "strong_threshold": 7,
+      "strong_accuracy": 0.7805,
+      "edge_buckets": [
+        {
+          "label": "0-1",
+          "min": 0,
+          "max": 1,
+          "accuracy": 0.5025,
+          "n": 96080
+        },
+        {
+          "label": "1-2",
+          "min": 1,
+          "max": 2,
+          "accuracy": 0.558,
+          "n": 4235
+        },
+        {
+          "label": "2-3",
+          "min": 2,
+          "max": 3,
+          "accuracy": 0.605,
+          "n": 995
+        },
+        {
+          "label": "3-4",
+          "min": 3,
+          "max": 4,
+          "accuracy": 0.6274,
+          "n": 424
+        },
+        {
+          "label": "4-5",
+          "min": 4,
+          "max": 5,
+          "accuracy": 0.6369,
+          "n": 157
+        },
+        {
+          "label": "5-7",
+          "min": 5,
+          "max": 7,
+          "accuracy": 0.664,
+          "n": 125
+        },
+        {
+          "label": "7-10",
+          "min": 7,
+          "max": 10,
+          "accuracy": 0.7805,
+          "n": 41
+        },
+        {
+          "label": "10+",
+          "min": 10,
+          "max": null,
+          "accuracy": 1.0,
+          "n": 3
+        }
+      ]
+    }
+  },
+  "by_week_range": {
+    "early_1_3": {
+      "accuracy": 0.5157,
+      "n": 35440
+    },
+    "mid_4_10": {
+      "accuracy": 0.5182,
+      "n": 75325
+    },
+    "late_11_17": {
+      "accuracy": 0.5199,
+      "n": 79500
+    },
+    "week_18": {
+      "accuracy": 0.551,
+      "n": 15089
+    }
+  },
+  "structural_lean_rules": [
+    "QB predictions are compressed (under-dispersed): at edge 1-2 pts, QB accuracy is 0.54 vs RB/WR/TE at similar edges. QB decisions at edge < 7 should be treated as LEAN. Above 7 pts, QB accuracy (0.78) matches other positions.",
+    "Weeks 1-3: accuracy (0.52) is not materially worse than mid-season (0.52); prior assumption of early-week noise not confirmed by data",
+    "Week 18: accuracy (0.55) is at or above overall (0.52); prior assumption of week-18 noise not confirmed by data"
+  ]
+}

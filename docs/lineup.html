@@ -503,6 +503,35 @@ body {
   .settings-sep { display: none; }
 }
 
+/* ---- Confidence tier badges ---- */
+.conf-strong {
+  display: inline-block;
+  background: rgba(76, 175, 130, 0.18);
+  color: #4caf82;
+  font-size: 0.6rem;
+  font-weight: 800;
+  padding: 2px 6px;
+  border-radius: 3px;
+  letter-spacing: 0.5px;
+  vertical-align: middle;
+}
+.conf-lean {
+  display: inline-block;
+  background: rgba(251, 188, 5, 0.18);
+  color: #fbc415;
+  font-size: 0.6rem;
+  font-weight: 800;
+  padding: 2px 6px;
+  border-radius: 3px;
+  letter-spacing: 0.5px;
+  vertical-align: middle;
+}
+.conf-reason {
+  font-size: 0.6rem;
+  color: var(--text-dim);
+  margin-top: 3px;
+}
+
 /* ---- Injury badges ---- */
 .inj-badge {
   display: inline-block;
@@ -638,6 +667,7 @@ body {
 let board = [];         // all players from board.json
 let nameIndex = {};     // lowercase name → player
 let NEWS = {};          // injury/status data from news.json
+let TIERS = null;       // confidence tier config from confidence_tiers.json
 
 // Slot definitions (static ordering)
 const CORE_SLOTS = [
@@ -658,12 +688,14 @@ const slots = {};
 // ─── Initialise ──────────────────────────────────────────────────────────────
 async function init() {
   try {
-    const [boardData, newsData] = await Promise.all([
+    const [boardData, newsData, tiersData] = await Promise.all([
       fetch("data/board.json").then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); }),
       fetch("data/news.json").then(r => r.json()).catch(() => ({})),
+      fetch("data/confidence_tiers.json").then(r => r.json()).catch(() => null),
     ]);
     board = boardData;
     NEWS  = newsData;
+    TIERS = tiersData || { strong_threshold_edge: 4.0, by_position: {} };
     buildNameIndex();
     buildSlotGrid();
     loadFromLocalStorage();
@@ -994,6 +1026,28 @@ function resolvePlayerName(name) {
   return null;
 }
 
+// ─── Confidence tiers ────────────────────────────────────────────────────────
+function confidence(starterProj, benchProj, position) {
+  const edge = benchProj - starterProj;
+  if (edge <= 0) return null;
+
+  const tiers = TIERS || { strong_threshold_edge: 4.0, by_position: {} };
+
+  // QB predictions carry structural uncertainty — always lean
+  if (position === "QB") {
+    return { tier: "LEAN", edge, reason: "QB predictions carry high uncertainty" };
+  }
+
+  const posThreshold = tiers.by_position?.[position]?.strong_threshold ?? tiers.strong_threshold_edge ?? 4.0;
+  const posAccuracy  = tiers.by_position?.[position]?.strong_accuracy  ?? tiers.strong_accuracy  ?? null;
+
+  if (edge >= posThreshold) {
+    const accLabel = posAccuracy ? `${Math.round(posAccuracy * 100)}% historically correct at this edge` : "Large edge — historically reliable";
+    return { tier: "STRONG", edge, accuracy: posAccuracy, reason: accLabel };
+  }
+  return { tier: "LEAN", edge, reason: "Edge too small to call with confidence" };
+}
+
 // ─── Optimizer ───────────────────────────────────────────────────────────────
 function runOptimizer() {
   // Collect entered players
@@ -1089,12 +1143,14 @@ function runOptimizer() {
     const isOnBench = bench.some(p => p.id === userPick.id);
     // Only recommend if optimal player is actually better
     if (weekly(optimal.player) > weekly(userPick)) {
+      const conf = confidence(weekly(userPick), weekly(optimal.player), optimal.player.p);
       swaps.push({
         slotLabel: def.label,
         start:  optimal.player,
         sit:    userPick,
         gain:   weekly(optimal.player) - weekly(userPick),
         userPickOnBench: isOnBench,
+        conf,
       });
     }
   }
@@ -1106,12 +1162,14 @@ function runOptimizer() {
   const flexUser = userStarters["FLEX"];
   if (flexOptimal && flexUser && flexOptimal.player.id !== flexUser.player.id) {
     if (weekly(flexOptimal.player) > weekly(flexUser)) {
+      const conf = confidence(weekly(flexUser), weekly(flexOptimal.player), flexOptimal.player.p);
       swaps.push({
         slotLabel: "FLEX",
         start: flexOptimal.player,
         sit:   flexUser,
         gain:  weekly(flexOptimal.player) - weekly(flexUser),
         userPickOnBench: bench.some(p => p.id === flexUser.id),
+        conf,
       });
     }
   }
@@ -1207,16 +1265,35 @@ function renderResults(starters, bench, swaps, benchHighlight) {
   if (!swaps.length) {
     swapSection.innerHTML = `<div class="no-swaps">No swaps needed — your starters are optimal.</div>`;
   } else {
-    swapSection.innerHTML = `<div class="swap-list">${
-      swaps.map(sw => `
-        <div class="swap-card">
-          <span class="swap-label">Start</span>
-          <span class="swap-player-in">${esc(sw.start.n)} <span style="font-size:0.75rem;font-weight:400;color:var(--text-muted)">(${weekly(sw.start).toFixed(1)} pts/wk)</span></span>
-          <span class="swap-arrow">over</span>
-          <span class="swap-player-out">${esc(sw.sit.n)} <span style="font-size:0.72rem;color:var(--text-dim)">(${weekly(sw.sit).toFixed(1)} pts/wk)</span></span>
-          <span class="swap-gain">+${sw.gain.toFixed(1)} pts/wk</span>
+    const hasStrong = swaps.some(sw => sw.conf?.tier === "STRONG");
+    const noSwapsMsg = hasStrong
+      ? ""
+      : `<div class="no-swaps" style="margin-bottom:8px">No confident swaps — all alternatives are within the model's margin of error.</div>`;
+
+    swapSection.innerHTML = noSwapsMsg + `<div class="swap-list">${
+      swaps.map(sw => {
+        const badgeHtml = sw.conf
+          ? `<span class="conf-${sw.conf.tier.toLowerCase()}">${sw.conf.tier}</span>`
+          : "";
+        const reasonHtml = sw.conf?.reason
+          ? `<div class="conf-reason">${esc(sw.conf.reason)}</div>`
+          : "";
+        return `
+        <div class="swap-card" style="flex-wrap:wrap">
+          <div style="display:flex;align-items:center;gap:10px;flex:1;flex-wrap:wrap">
+            <span class="swap-label">Start</span>
+            <span class="swap-player-in">${esc(sw.start.n)} <span style="font-size:0.75rem;font-weight:400;color:var(--text-muted)">(${weekly(sw.start).toFixed(1)} pts/wk)</span></span>
+            <span class="swap-arrow">over</span>
+            <span class="swap-player-out">${esc(sw.sit.n)} <span style="font-size:0.72rem;color:var(--text-dim)">(${weekly(sw.sit).toFixed(1)} pts/wk)</span></span>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
+            ${badgeHtml}
+            <span class="swap-gain">+${sw.gain.toFixed(1)} pts/wk</span>
+          </div>
+          ${reasonHtml ? `<div style="flex-basis:100%">${reasonHtml}</div>` : ""}
         </div>
-      `).join("")
+      `;
+      }).join("")
     }</div>`;
   }
 
