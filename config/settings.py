@@ -321,6 +321,8 @@ CAUSAL_FEATURES = {
         "rb_ybc_avg_roll3_mean", "rb_yac_avg_roll3_mean",
         # Seasonal PFR prior-season broken tackles — individual elusiveness baseline
         "rb_broken_tackles_prior",
+        # v19: boom/ceiling features
+        "fp_volatility_roll5", "target_share_accel", "snap_share_accel",
     ],
     "WR": [
         "snap_share_pct_roll3_mean",
@@ -347,6 +349,8 @@ CAUSAL_FEATURES = {
         "recv_drop_pct_roll3_mean",
         # Seasonal PFR prior-season drop rate — full-season hands baseline
         "recv_drop_pct_season_prior",
+        # v19: boom/ceiling features
+        "fp_volatility_roll5", "target_share_accel", "snap_share_accel",
     ],
     "TE": [
         "snap_share_pct_roll3_mean",
@@ -373,6 +377,8 @@ CAUSAL_FEATURES = {
         "recv_drop_pct_roll3_mean",
         # Seasonal PFR prior-season drop rate — full-season hands baseline
         "recv_drop_pct_season_prior",
+        # v19: boom/ceiling features
+        "fp_volatility_roll5", "target_share_accel", "snap_share_accel",
     ],
     "QB": [
         # Volume (3-week rolling)
@@ -402,6 +408,8 @@ CAUSAL_FEATURES = {
         "qb_bad_throw_pct_prior", "qb_pocket_time_prior",
         # NGS decision quality (2018+) — aggressiveness and depth of target
         "ngs_aggressiveness_roll3_mean", "ngs_avg_air_yards_to_sticks_roll3_mean",
+        # v19: boom/ceiling features
+        "fp_volatility_roll5", "prior_season_late_ppg",
     ],
 }
 
@@ -541,7 +549,7 @@ QB_TARGET_CHOICE_FILENAME = "qb_target_choice.json"
 
 # Feature set version: bump when feature_engineering adds/removes/renames model features.
 # Saved when training; checked when loading models. Mismatch triggers a retrain warning.
-FEATURE_VERSION = "18"  # v18: QB-specific model — blitz/hurry/hit/sack rates + NGS aggressiveness + air_yards_to_sticks
+FEATURE_VERSION = "19"  # v19: boom/ceiling features — score volatility, usage acceleration, QB late-season prior
 FEATURE_VERSION_FILENAME = "feature_version.txt"
 
 # =============================================================================

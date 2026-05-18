@@ -217,6 +217,9 @@ class FeatureEngineer:
         # the exact semantics.
         df = self._add_prev_season_ppg(df)
 
+        # v19 Exp 3: prior season weeks 14-17 avg PPG — cold-start form signal for QBs.
+        df = self._add_prior_season_late_ppg(df)
+
         # Pre-season ADP (ECR) — provides market-consensus signal
         # especially valuable for early-season weeks when rolling
         # averages have little data.
@@ -280,6 +283,62 @@ class FeatureEngineer:
         df["prev_season_ppg"] = df.groupby("player_id")["_tmp_season_ppg"].shift(1)
         df.drop(columns=["_tmp_season_ppg"], inplace=True, errors="ignore")
         df = self._apply_rookie_prior(df)
+        return df
+
+    def _add_prior_season_late_ppg(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Add prior season weeks 14-17 avg PPG as a cold-start form signal for QBs.
+
+        At week 1 of a new season there are no rolling in-season stats.  A QB
+        who finished the prior season on a hot streak (wk 14-17) is a better
+        boom candidate than one who faded.  Lagged by 1 season so it's causal.
+        Falls back to prev_season_ppg when the DB query fails or returns no rows.
+        """
+        import logging
+        logger = logging.getLogger(__name__)
+
+        if "player_id" not in df.columns or "season" not in df.columns:
+            df["prior_season_late_ppg"] = 0.0
+            return df
+
+        try:
+            import sqlite3
+            from config.settings import DB_PATH
+            conn = sqlite3.connect(str(DB_PATH))
+            rows = conn.execute("""
+                SELECT player_id, season,
+                       AVG(fantasy_points) AS prior_season_late_ppg
+                FROM player_weekly_stats
+                WHERE week >= 14 AND fantasy_points IS NOT NULL
+                GROUP BY player_id, season
+            """).fetchall()
+            conn.close()
+        except Exception as e:
+            logger.warning("prior_season_late_ppg DB query failed: %s", e)
+            df["prior_season_late_ppg"] = df.get(
+                "prev_season_ppg", pd.Series(0.0, index=df.index)
+            )
+            return df
+
+        if not rows:
+            df["prior_season_late_ppg"] = df.get(
+                "prev_season_ppg", pd.Series(0.0, index=df.index)
+            )
+            return df
+
+        late = pd.DataFrame(rows, columns=["player_id", "season", "prior_season_late_ppg"])
+        # Shift: use season N's late-season games to predict season N+1
+        late["season"] = late["season"] + 1
+
+        df = df.merge(late[["player_id", "season", "prior_season_late_ppg"]],
+                      on=["player_id", "season"], how="left")
+
+        # Fall back to prev_season_ppg for rows with no late-season data
+        fallback = (
+            df["prev_season_ppg"]
+            if "prev_season_ppg" in df.columns
+            else pd.Series(0.0, index=df.index)
+        )
+        df["prior_season_late_ppg"] = df["prior_season_late_ppg"].fillna(fallback).fillna(0.0)
         return df
 
     def _add_age_curve_feature(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -990,6 +1049,37 @@ class FeatureEngineer:
                 df.groupby("player_id")[col]
                 .transform(lambda x: x.shift(1).rolling(window, min_periods=1).mean())
             )
+
+        # v19 Exp 1: fp_volatility_roll5 — rolling std of actual PPR FP over 5 weeks (lag-1).
+        # Captures boom/bust tendency; players with high std are ceiling candidates.
+        if "fantasy_points" in df.columns:
+            df["fp_volatility_roll5"] = (
+                df.groupby("player_id")["fantasy_points"]
+                .transform(lambda x: x.shift(1).rolling(5, min_periods=2).std())
+                .fillna(0)
+            )
+
+        # v19 Exp 2: target_share_accel and snap_share_accel (RB/WR/TE only).
+        # Acceleration = last week's value minus rolling 4-week mean.
+        # Positive = usage trending up (boom candidate); negative = usage fading (bust risk).
+        if "target_share_pct" in df.columns:
+            _ts_lag1 = df.groupby("player_id")["target_share_pct"].transform(
+                lambda x: x.shift(1)
+            )
+            _ts_roll4 = df.groupby("player_id")["target_share_pct"].transform(
+                lambda x: x.shift(1).rolling(4, min_periods=2).mean()
+            )
+            df["target_share_accel"] = (_ts_lag1 - _ts_roll4).fillna(0)
+
+        if "snap_share_pct" in df.columns:
+            _ss_lag1 = df.groupby("player_id")["snap_share_pct"].transform(
+                lambda x: x.shift(1)
+            )
+            _ss_roll4 = df.groupby("player_id")["snap_share_pct"].transform(
+                lambda x: x.shift(1).rolling(4, min_periods=2).mean()
+            )
+            df["snap_share_accel"] = (_ss_lag1 - _ss_roll4).fillna(0)
+
         return df
 
     def _create_base_features(self, df: pd.DataFrame) -> pd.DataFrame:
