@@ -213,3 +213,22 @@ Skill tool at the appropriate moments:
   merging, request a structured code review.
 - **finishing-a-development-branch**: When implementation is complete and
   tests pass, use this to guide merge/PR/cleanup decisions.
+
+---
+
+## 9. UI Freeze (tagged ui-stable-v1)
+
+The following files are considered locked for the near future. Do NOT edit,
+restructure, or delete them without explicit user instruction in that session:
+
+- `docs/index.html` — draft board (primary Pages site)
+- `docs/lineup.html` — lineup optimizer
+- `_site/index.html` — alternate deploy target
+- `_site/app.js` — shared card rendering logic
+- `_site/style.css` — shared styles
+- `docs/data/board.json` — player projection data
+- `docs/data/news.json` — injury/status feed
+- `docs/data/confidence_tiers.json` — STRONG/LEAN thresholds
+
+If a task requires touching one of these files, pause and confirm with the
+user before making any change. The recovery point is git tag `ui-stable-v1`.
