@@ -1,5 +1,5 @@
 {
-  "updated": "2026-05-17T22:08:11Z",
+  "updated": "2026-05-19T19:57:17Z",
   "players": {
     "Malik Nabers": {
       "status": "IR",
@@ -199,12 +199,6 @@
       "pos": "WR",
       "team": "IND"
     },
-    "Chris Olave": {
-      "status": "Questionable",
-      "note": "Illness",
-      "pos": "WR",
-      "team": "NO"
-    },
     "Zach Charbonnet": {
       "status": "IR",
       "note": "Knee - ACL \u2014 Surgery",
@@ -258,12 +252,6 @@
       "note": "Foot",
       "pos": "TE",
       "team": "SF"
-    },
-    "Josh Allen": {
-      "status": "Questionable",
-      "note": "Foot \u2014 Fracture",
-      "pos": "QB",
-      "team": "BUF"
     },
     "Rashod Bateman": {
       "status": "Questionable",
