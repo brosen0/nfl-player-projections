@@ -576,10 +576,10 @@ class ModelBacktester:
                 )
                 results["by_position"][pos]["n_players"] = len(pos_data['player_id'].unique())
         
-        # Metrics by week
+        # Metrics by week — use plain int keys (numpy.int64 breaks C-level json encoder)
         for week in sorted(merged['week'].unique()):
             week_data = merged[merged['week'] == week]
-            results["by_week"][week] = self._calculate_metrics(
+            results["by_week"][int(week)] = self._calculate_metrics(
                 week_data[actual_col],
                 week_data[prediction_col]
             )
@@ -1996,6 +1996,7 @@ def run_loyo_backtest(
                 test_season=ts,
                 optimize_training_years=False,
                 strict_requirements=strict_requirements,
+                _explicit_test_season=True,
             )
         except Exception as e:
             print(f"  Skipping fold {ts}: data load failed ({e})")
@@ -2117,11 +2118,25 @@ def run_loyo_backtest(
     }
 
     # Save results
+    class _Encoder(json.JSONEncoder):
+        def default(self, obj):
+            if isinstance(obj, np.bool_):
+                return bool(obj)
+            if isinstance(obj, np.integer):
+                return int(obj)
+            if isinstance(obj, np.floating):
+                return float(obj)
+            if isinstance(obj, np.ndarray):
+                return obj.tolist()
+            return str(obj)
+
     ts_str = datetime.now().strftime("%Y%m%d_%H%M%S")
     out_path = DATA_DIR / "backtest_results" / f"loyo_backtest_{ts_str}.json"
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(out_path, "w") as f:
-        json.dump(result, f, indent=2, default=str)
+    tmp_path = out_path.with_suffix(".json.tmp")
+    with open(tmp_path, "w") as f:
+        json.dump(result, f, indent=2, cls=_Encoder)
+    tmp_path.replace(out_path)
 
     # Print summary
     print("\n" + "=" * 60)

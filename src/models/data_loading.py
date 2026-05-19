@@ -22,7 +22,8 @@ def load_training_data(positions: list = None, min_games: int = 4,
                        test_season: int = None,
                        n_train_seasons: int = None,
                        optimize_training_years: bool = False,
-                       strict_requirements: bool = False) -> tuple:
+                       strict_requirements: bool = False,
+                       _explicit_test_season: bool = False) -> tuple:
     """
     Load and prepare training data with automatic train/test split.
 
@@ -116,11 +117,13 @@ def load_training_data(positions: list = None, min_games: int = 4,
     train_data = combined[combined['season'].isin(train_seasons)]
     test_data = combined[combined['season'] == auto_test_season]
 
-    # In-season: pipeline requires current season as test and non-empty test set
+    # In-season: pipeline requires current season as test and non-empty test set.
+    # Skip when caller explicitly set test_season (e.g. LOYO backtest iterating folds).
     from src.utils.nfl_calendar import get_current_nfl_season, current_season_has_weeks_played
     current_season = get_current_nfl_season()
     in_season = current_season_has_weeks_played()
-    if in_season and auto_test_season != current_season:
+    caller_set_season = _explicit_test_season or (test_season is not None)
+    if in_season and not caller_set_season and auto_test_season != current_season:
         raise ValueError(
             "The pipeline requires the current season as test when it has started. "
             f"Expected test_season={current_season}, got {auto_test_season}. "

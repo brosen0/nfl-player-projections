@@ -156,8 +156,10 @@ class DataManager:
                 f"Current season {current_season} has started (week >= 1) but is not in the database. "
                 "Run data refresh so current season is loaded from play-by-play (e.g. python -m src.data.auto_refresh)."
             )
-        if in_season and current_season in available:
-            test_season = current_season  # Force latest = test when in-season
+        if in_season and current_season in available and test_season is None:
+            # Default to current season when in-season and caller didn't specify.
+            # Don't override explicit test_season (LOYO backtest sets its own).
+            test_season = current_season
         else:
             latest_season = max(available)
             if test_season is None:

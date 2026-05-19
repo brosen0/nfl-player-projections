@@ -408,8 +408,11 @@ CAUSAL_FEATURES = {
         "qb_bad_throw_pct_prior", "qb_pocket_time_prior",
         # NGS decision quality (2018+) — aggressiveness and depth of target
         "ngs_aggressiveness_roll3_mean", "ngs_avg_air_yards_to_sticks_roll3_mean",
-        # v19: boom/ceiling features
-        "fp_volatility_roll5", "prior_season_late_ppg",
+        # v19: ceiling volatility signal
+        "fp_volatility_roll5",
+        # prior_season_late_ppg removed in v20 — caused +3.6pt upward bias for
+        # benched QBs whose high late-2019 scores don't reflect 2020 backup role.
+        # prev_season_ppg + depth_chart_rank already cover prior quality.
     ],
 }
 
@@ -549,7 +552,7 @@ QB_TARGET_CHOICE_FILENAME = "qb_target_choice.json"
 
 # Feature set version: bump when feature_engineering adds/removes/renames model features.
 # Saved when training; checked when loading models. Mismatch triggers a retrain warning.
-FEATURE_VERSION = "19"  # v19: boom/ceiling features — score volatility, usage acceleration, QB late-season prior
+FEATURE_VERSION = "20"  # v20: remove QB prior_season_late_ppg (caused upward bias); keep fp_volatility_roll5 + usage accel
 FEATURE_VERSION_FILENAME = "feature_version.txt"
 
 # =============================================================================
