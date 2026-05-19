@@ -553,11 +553,46 @@ details summary::-webkit-details-marker { display: none; }
   gap: 6px;
 }
 
+.player-summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.player-photo {
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(13, 18, 36, 0.95);
+}
+
+.player-photo-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  background:
+    radial-gradient(circle at top, rgba(137, 190, 255, 0.18), transparent 58%),
+    linear-gradient(135deg, rgba(33, 42, 71, 0.95), rgba(12, 18, 34, 0.98));
+}
+
+.player-meta {
+  min-width: 0;
+  flex: 1;
+}
+
 .player-name {
   font-size: 0.95rem;
   font-weight: 700;
   line-height: 1.2;
-  margin-bottom: 2px;
+  margin-bottom: 3px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -566,10 +601,10 @@ details summary::-webkit-details-marker { display: none; }
 .player-team {
   font-size: 0.72rem;
   color: var(--text-muted);
-  margin-bottom: 10px;
   display: flex;
   align-items: center;
   gap: 5px;
+  flex-wrap: wrap;
 }
 .role-tag {
   font-size: 0.6rem;
@@ -740,4 +775,9 @@ body.draft-mode .draft-toggle {
   body.draft-mode .search-box { width: 190px; }
   body.draft-mode .search-box:focus { width: 220px; }
   .draft-panel-top { align-items: flex-start; flex-direction: column; }
+  .player-summary { align-items: flex-start; }
+  .player-photo {
+    width: 42px;
+    height: 42px;
+  }
 }

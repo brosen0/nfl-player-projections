@@ -38,6 +38,20 @@ function fmtSpread(sp) {
   return sp > 0 ? "+" + sp : String(sp);
 }
 
+function initialsForName(name) {
+  const parts = String(name || "").trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return "?";
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
+function renderPlayerPhoto(p) {
+  if (p.img) {
+    return `<img class="player-photo" src="${p.img}" alt="${p.n} headshot" loading="lazy" decoding="async">`;
+  }
+  return `<div class="player-photo player-photo-fallback" aria-hidden="true">${initialsForName(p.n)}</div>`;
+}
+
 function loadPrefs() {
   try {
     const savedWatchlist = JSON.parse(window.localStorage.getItem(WATCHLIST_KEY) || "[]");
@@ -151,8 +165,13 @@ function renderCard(p) {
       ${watchBtn}
     </div>
   </div>
-  <div class="player-name" title="${p.n}">${p.n}${statusBadge(p.n)}</div>
-  <div class="player-team">${p.t}${roleTag}</div>
+  <div class="player-summary">
+    ${renderPlayerPhoto(p)}
+    <div class="player-meta">
+      <div class="player-name" title="${p.n}">${p.n}${statusBadge(p.n)}</div>
+      <div class="player-team">${p.t}${roleTag}</div>
+    </div>
+  </div>
   <div class="card-stats">
     <div class="stat-item" title="${seasonPprTitle}">
       <span class="stat-label def-term" title="${seasonPprTitle}">Season PPR</span>
