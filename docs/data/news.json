@@ -1,5 +1,5 @@
 {
-  "updated": "2026-05-19T19:57:17Z",
+  "updated": "2026-05-20T20:23:24Z",
   "players": {
     "Malik Nabers": {
       "status": "IR",
@@ -42,6 +42,12 @@
       "note": "Knee - ACL \u2014 Surgery",
       "pos": "WR",
       "team": "FA"
+    },
+    "Rashee Rice": {
+      "status": "Questionable",
+      "note": "Knee",
+      "pos": "WR",
+      "team": "KC"
     },
     "Jayden Daniels": {
       "status": "Questionable",
@@ -109,17 +115,17 @@
       "pos": "WR",
       "team": "TEN"
     },
-    "Marvin Harrison Jr.": {
-      "status": "Questionable",
-      "note": "Foot",
-      "pos": "WR",
-      "team": "ARI"
-    },
     "Kendre Miller": {
       "status": "Questionable",
       "note": "Knee - ACL \u2014 Surgery",
       "pos": "RB",
       "team": "NO"
+    },
+    "Marvin Harrison Jr.": {
+      "status": "Questionable",
+      "note": "Foot",
+      "pos": "WR",
+      "team": "ARI"
     },
     "Darius Slayton": {
       "status": "Questionable",
@@ -175,12 +181,6 @@
       "pos": "WR",
       "team": "SEA"
     },
-    "Dalton Kincaid": {
-      "status": "Questionable",
-      "note": "Knee - PCL",
-      "pos": "TE",
-      "team": "BUF"
-    },
     "MarShawn Lloyd": {
       "status": "Questionable",
       "note": "Hamstring",
@@ -211,17 +211,17 @@
       "pos": "RB",
       "team": "CLE"
     },
-    "Devaughn Vele": {
-      "status": "Questionable",
-      "note": "Shoulder",
-      "pos": "WR",
-      "team": "NO"
-    },
     "Malik Davis": {
       "status": "Questionable",
       "note": "Eye",
       "pos": "RB",
       "team": "DAL"
+    },
+    "Devaughn Vele": {
+      "status": "Questionable",
+      "note": "Shoulder",
+      "pos": "WR",
+      "team": "NO"
     },
     "Alvin Kamara": {
       "status": "Questionable",
