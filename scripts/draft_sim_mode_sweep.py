@@ -43,15 +43,47 @@ sys.modules[da_spec.name] = da
 da_spec.loader.exec_module(da)
 
 
+def find_predictions_csv(season: int) -> Path | None:
+    matches = sorted(
+        (PROJECT_ROOT / "data" / "backtest_results").glob(
+            f"ts_backtest_{season}_*_predictions.csv"
+        )
+    )
+    return matches[-1] if matches else None
+
+
 def run_slot_sweep(
-    season: int, ranking: str, csv_path: Path,
+    season: int,
+    ranking: str,
+    csv_path: Path | None,
     vona_picker=None,
+    projector_path: Path | None = None,
 ) -> Dict:
     adp = sd.load_adp_board(season)
     scrape_date = adp["scrape_date"].iloc[0]
-    projections = sd.load_model_projections(
-        csv_path, ranking=ranking, season=season
-    )
+    if ranking == "preseason_ml":
+        projections = sd.load_preseason_projections(
+            season,
+            adp_df=adp,
+            projection_mode="ml",
+            actuals_season=season,
+            projector_path=projector_path,
+        )
+    elif ranking == "preseason_ppg17":
+        projections = sd.load_preseason_projections(
+            season,
+            adp_df=adp,
+            projection_mode="ppg17",
+            actuals_season=season,
+        )
+    else:
+        if csv_path is None:
+            raise FileNotFoundError(
+                f"No backtest predictions CSV available for season={season}"
+            )
+        projections = sd.load_model_projections(
+            csv_path, ranking=ranking, season=season
+        )
     board = sd.build_draft_board(adp, projections)
 
     ranks: List[int] = []
@@ -81,7 +113,7 @@ def run_slot_sweep(
         "lift_vs_adp_mean": round(
             statistics.mean(model_totals) - statistics.mean(adp_totals), 1
         ),
-        "wins_vs_adp_mean_of_12": wins_vs_adp_mean,
+        "wins_vs_adp_mean_slots": wins_vs_adp_mean,
     }
 
 
@@ -89,27 +121,25 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--seasons", nargs="+", type=int, default=[2024, 2025])
     ap.add_argument("--modes", nargs="+",
-                    default=["season_sum", "week1", "prior_season",
-                             "vona_advisor", "vona_week1"])
+                    default=["season_sum", "preseason_ml", "preseason_ppg17",
+                             "week1", "prior_season", "vona_advisor",
+                             "vona_week1"])
     ap.add_argument("--json", type=Path, default=None)
     args = ap.parse_args()
 
     results: List[Dict] = []
     for season in args.seasons:
-        matches = sorted(
-            (PROJECT_ROOT / "data" / "backtest_results").glob(
-                f"ts_backtest_{season}_*_predictions.csv"
-            )
-        )
-        if not matches:
-            print(f"No predictions CSV for {season}, skipping.",
-                  file=sys.stderr)
-            continue
-        csv_path = matches[-1]
+        csv_path = find_predictions_csv(season)
         for mode in args.modes:
             picker = None
             ranking = mode
             if mode.startswith("vona_"):
+                if csv_path is None:
+                    print(
+                        f"No predictions CSV for {season}, skipping {mode}.",
+                        file=sys.stderr,
+                    )
+                    continue
                 # VONABot picks by dynamic VONA instead of raw ranking.
                 # vona_advisor = season_sum projections (hindsight)
                 # vona_week1   = week1 projections (honest pre-draft)
@@ -117,6 +147,12 @@ def main() -> int:
                     "advisor", "season_sum")
                 adp = sd.load_adp_board(season)
                 picker = da.make_vona_picker(adp)
+            elif mode not in {"preseason_ml", "preseason_ppg17"} and csv_path is None:
+                print(
+                    f"No predictions CSV for {season}, skipping {mode}.",
+                    file=sys.stderr,
+                )
+                continue
             r = run_slot_sweep(season, ranking, csv_path,
                                vona_picker=picker)
             r["ranking"] = mode  # label as vona_*, not underlying ranking
@@ -129,16 +165,21 @@ def main() -> int:
                 f"mean_model_pts={r['mean_model_actual']:.1f}  "
                 f"mean_adp_pts={r['mean_adp_actual']:.1f}  "
                 f"lift={r['lift_vs_adp_mean']:+.1f}  "
-                f"beats_adp_mean_in={r['wins_vs_adp_mean_of_12']}/12_slots"
+                f"beats_adp_mean_in={r['wins_vs_adp_mean_slots']}/{sd.TEAMS}_slots"
             )
         print()
 
     print("Legend:")
-    print("  mean_rank:  average ModelBot finish rank (1=best, 12=worst)"
-          " across the 12 draft slots.  Pure-luck null is 6.5.")
-    print("  lift:       mean_model_pts - mean_adp_pts (avg over 12 slots).")
+    print(
+        f"  mean_rank:  average ModelBot finish rank (1=best, {sd.TEAMS}=worst)"
+        f" across the {sd.TEAMS} draft slots.  Pure-luck null is "
+        f"{(sd.TEAMS + 1) / 2:.1f}."
+    )
+    print(
+        f"  lift:       mean_model_pts - mean_adp_pts (avg over {sd.TEAMS} slots)."
+    )
     print("  beats_adp_mean_in: # of draft slots where ModelBot's roster"
-          " actual-total exceeds the 11 ADPBot mean.")
+          f" actual-total exceeds the {sd.TEAMS - 1} ADPBot mean.")
 
     if args.json:
         args.json.parent.mkdir(parents=True, exist_ok=True)

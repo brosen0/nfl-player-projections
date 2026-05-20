@@ -443,14 +443,124 @@ def load_model_projections(
     return agg
 
 
-def load_preseason_projections(season: int, adp_df: pd.DataFrame = None) -> pd.DataFrame:
-    """Build preseason projections from prior-season stats for an upcoming
-    season that has no backtest predictions yet (e.g. 2026 before week 1).
+def _load_season_actual_totals(season: int) -> pd.DataFrame:
+    """Load regular-season fantasy-point totals for a completed season."""
+    from src.utils.database import DatabaseManager
 
-    Uses prior-season fantasy points per game as the projection basis.
-    If ``adp_df`` is provided, rookies (no prior-season stats) are added
-    with ADP-implied projections based on historical positional ECR curves.
-    Returns a DataFrame compatible with ``build_draft_board``."""
+    with DatabaseManager()._get_connection() as conn:
+        return pd.read_sql(
+            """
+            SELECT pws.player_id,
+                   p.name,
+                   p.position,
+                   SUM(pws.fantasy_points) AS actual_total,
+                   COUNT(*) AS weeks
+              FROM player_weekly_stats pws
+              JOIN players p ON pws.player_id = p.player_id
+             WHERE pws.season = ?
+               AND pws.week <= 18
+               AND p.position IN ('QB', 'RB', 'WR', 'TE')
+             GROUP BY pws.player_id, p.name, p.position
+            """,
+            conn,
+            params=(season,),
+        )
+
+
+def _attach_actual_totals(
+    projections: pd.DataFrame,
+    actuals: pd.DataFrame,
+) -> pd.DataFrame:
+    """Attach target-season actual totals using player_id, then name fallback."""
+    if projections.empty:
+        return projections.copy()
+
+    out = projections.copy()
+    if actuals.empty:
+        out["actual_total"] = 0.0
+        return out
+
+    actual_rows = actuals.to_dict("records")
+    by_player_id = {
+        str(r.get("player_id") or ""): float(r.get("actual_total") or 0.0)
+        for r in actual_rows
+        if str(r.get("player_id") or "")
+    }
+    by_full_name = {}
+    by_signature = {}
+    for row in actual_rows:
+        full_key = (
+            _normalize_full_name(str(row.get("name") or "")),
+            str(row.get("position") or ""),
+        )
+        sig_key = (
+            _first_initial(str(row.get("name") or "")),
+            _normalize(_last_token(str(row.get("name") or ""))),
+            str(row.get("position") or ""),
+        )
+        existing_full = by_full_name.get(full_key)
+        existing_sig = by_signature.get(sig_key)
+        weeks = int(row.get("weeks", 0) or 0)
+        total = float(row.get("actual_total", 0.0) or 0.0)
+        if existing_full is None or (
+            weeks,
+            total,
+        ) > (
+            int(existing_full.get("weeks", 0) or 0),
+            float(existing_full.get("actual_total", 0.0) or 0.0),
+        ):
+            by_full_name[full_key] = row
+        if existing_sig is None or (
+            weeks,
+            total,
+        ) > (
+            int(existing_sig.get("weeks", 0) or 0),
+            float(existing_sig.get("actual_total", 0.0) or 0.0),
+        ):
+            by_signature[sig_key] = row
+
+    actual_totals: List[float] = []
+    for _, row in out.iterrows():
+        player_id = str(row.get("player_id") or "")
+        actual_total = by_player_id.get(player_id)
+        if actual_total is None:
+            full_key = (
+                _normalize_full_name(str(row.get("name") or "")),
+                str(row.get("position") or ""),
+            )
+            match = by_full_name.get(full_key)
+            if match is None:
+                sig_key = (
+                    _first_initial(str(row.get("name") or "")),
+                    _normalize(_last_token(str(row.get("name") or ""))),
+                    str(row.get("position") or ""),
+                )
+                match = by_signature.get(sig_key)
+            actual_total = float(match.get("actual_total", 0.0) or 0.0) if match else 0.0
+        actual_totals.append(float(actual_total))
+
+    out["actual_total"] = actual_totals
+    return out
+
+
+def load_preseason_projections(
+    season: int,
+    adp_df: pd.DataFrame = None,
+    projection_mode: str = "auto",
+    actuals_season: int | None = None,
+    projector_path: Path | None = None,
+) -> pd.DataFrame:
+    """Build preseason projections from prior-season stats.
+
+    ``projection_mode``:
+      - ``auto``: try the trained preseason projector, then fall back to PPG x 17
+      - ``ml``: require the trained preseason projector
+      - ``ppg17``: use prior-season fantasy points per game x 17
+
+    If ``actuals_season`` is provided, overwrite ``actual_total`` with the
+    realized totals from that season so the frame can drive a historical
+    draft simulation instead of only a future preseason board.
+    """
     from src.utils.database import DatabaseManager
     prior = season - 1
     with DatabaseManager()._get_connection() as conn:
@@ -464,6 +574,7 @@ def load_preseason_projections(season: int, adp_df: pd.DataFrame = None) -> pd.D
                    p.name,
                    p.position,
                    pws.team,
+                   p.birth_date,
                    COUNT(*) AS games_played,
                    AVG(pws.fantasy_points) AS ppg,
                    SUM(pws.fantasy_points) AS pred_total,
@@ -497,39 +608,58 @@ def load_preseason_projections(season: int, adp_df: pd.DataFrame = None) -> pd.D
             conn,
             params=(prior,),
         )
+        prior_df["prior_season"] = prior
+        prior_df["projection_season"] = season
     if prior_df.empty and adp_df is None:
         return prior_df
 
+    if not prior_df.empty and actuals_season is not None:
+        prior_df["actual_total"] = 0.0
+
     if not prior_df.empty:
-        # Try ML season-total projector first; fall back to PPG × 17 heuristic
-        try:
-            from pathlib import Path as _Path
-            _projector_path = _Path(__file__).resolve().parent.parent / "data" / "models" / "preseason_projector.json"
-            if _projector_path.exists():
-                from src.models.preseason_projector import PreseasonProjector
-                _proj = PreseasonProjector.load(_projector_path)
-                _ml_preds = []
-                for pos in ("QB", "RB", "WR", "TE"):
-                    pos_mask = prior_df["position"] == pos
-                    if pos_mask.any() and pos in _proj.models:
-                        pos_df = prior_df[pos_mask].copy()
-                        preds = _proj.predict(pos_df, pos)
-                        _ml_preds.extend(zip(pos_df.index, preds))
-                if _ml_preds:
-                    ml_series = {idx: val for idx, val in _ml_preds}
-                    prior_df["model_rank_value"] = prior_df.index.map(
-                        lambda i: ml_series.get(i, prior_df.loc[i, "ppg"] * 17)
-                    )
-                    prior_df["pred_total"] = prior_df["model_rank_value"]
-                    prior_df = prior_df.drop(columns=["ppg"])
-                else:
-                    raise ValueError("No ML predictions produced")
-            else:
-                raise FileNotFoundError("preseason_projector.json not found")
-        except Exception:
+        if projection_mode not in {"auto", "ml", "ppg17"}:
+            raise ValueError(f"unknown projection_mode={projection_mode!r}")
+
+        if projection_mode == "ppg17":
             prior_df["model_rank_value"] = prior_df["ppg"] * 17
             prior_df["pred_total"] = prior_df["model_rank_value"]
             prior_df = prior_df.drop(columns=["ppg"])
+        else:
+            # Try ML season-total projector first; optionally fall back to PPG × 17.
+            try:
+                from pathlib import Path as _Path
+                _projector_path = (
+                    _Path(projector_path)
+                    if projector_path is not None
+                    else _Path(__file__).resolve().parent.parent / "data" / "models" / "preseason_projector.json"
+                )
+                if _projector_path.exists():
+                    from src.models.preseason_projector import PreseasonProjector
+                    _proj = PreseasonProjector.load(_projector_path)
+                    _ml_preds = []
+                    for pos in ("QB", "RB", "WR", "TE"):
+                        pos_mask = prior_df["position"] == pos
+                        if pos_mask.any() and pos in _proj.models:
+                            pos_df = prior_df[pos_mask].copy()
+                            preds = _proj.predict(pos_df, pos)
+                            _ml_preds.extend(zip(pos_df.index, preds))
+                    if _ml_preds:
+                        ml_series = {idx: val for idx, val in _ml_preds}
+                        prior_df["model_rank_value"] = prior_df.index.map(
+                            lambda i: ml_series.get(i, prior_df.loc[i, "ppg"] * 17)
+                        )
+                        prior_df["pred_total"] = prior_df["model_rank_value"]
+                        prior_df = prior_df.drop(columns=["ppg"])
+                    else:
+                        raise ValueError("No ML predictions produced")
+                else:
+                    raise FileNotFoundError("preseason_projector.json not found")
+            except Exception:
+                if projection_mode == "ml":
+                    raise
+                prior_df["model_rank_value"] = prior_df["ppg"] * 17
+                prior_df["pred_total"] = prior_df["model_rank_value"]
+                prior_df = prior_df.drop(columns=["ppg"])
 
     # Add rookies/unmatched ADP players
     if adp_df is not None and not adp_df.empty:
@@ -561,7 +691,12 @@ def load_preseason_projections(season: int, adp_df: pd.DataFrame = None) -> pd.D
                     proj = _ecr_to_ppg(r["ecr"], r["position"]) * 17
 
                 rookie_rows.append({
-                    "player_id": f"rookie_{r['name']}_{r['position']}",
+                    "player_id": (
+                        _resolve_player_id_from_full_name(
+                            r["name"], r["position"], r.get("team", "")
+                        )
+                        or f"rookie_{r['name']}_{r['position']}"
+                    ),
                     "name": r["name"],
                     "position": r["position"],
                     "team": r.get("team", ""),
@@ -574,6 +709,12 @@ def load_preseason_projections(season: int, adp_df: pd.DataFrame = None) -> pd.D
         if rookie_rows:
             rookies_df = pd.DataFrame(rookie_rows)
             prior_df = pd.concat([prior_df, rookies_df], ignore_index=True)
+
+    if actuals_season is not None and not prior_df.empty:
+        prior_df = _attach_actual_totals(
+            prior_df,
+            _load_season_actual_totals(actuals_season),
+        )
 
     return prior_df
 

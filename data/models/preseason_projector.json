@@ -1,180 +1,4295 @@
 {
+  "schema_version": 2,
+  "variant_name": "incumbent_plus_conservative_upstream_calibrator",
+  "selection_report": {
+    "selected_variant": "incumbent_plus_conservative_upstream_calibrator",
+    "candidate_variant": "incumbent_plus_conservative_upstream_calibrator",
+    "baseline_variant": "ridge_baseline",
+    "incumbent_variant": "legacy_ridge_with_cohort_patches",
+    "promotion_decision": "promote_candidate",
+    "historical_tolerance": {
+      "outcome_mae_tolerance": 3.0,
+      "outcome_bias_tolerance": 2.0,
+      "top150_actual_mean_tolerance": 1.0,
+      "top24_rb_actual_mean_tolerance": 4.0
+    },
+    "draft_sim_tolerance": {
+      "mean_rank_tolerance": 0.15,
+      "lift_tolerance": 5.0,
+      "mean_model_points_tolerance": 10.0
+    },
+    "draft_sim_baseline": {
+      "aggregate": {
+        "mean_rank_avg": 7.1,
+        "lift_vs_adp_mean_avg": -148.45,
+        "mean_model_actual_avg": 1456.2,
+        "wins_vs_adp_mean_slots_total": 7
+      },
+      "by_season": {
+        "2024": {
+          "season": 2024,
+          "scrape_date": "2024-09-06",
+          "ranking": "preseason_ml",
+          "slot_ranks": [
+            4,
+            3,
+            3,
+            3,
+            5,
+            5,
+            5,
+            6,
+            6,
+            6
+          ],
+          "mean_rank": 4.6,
+          "best_rank": 3,
+          "worst_rank": 6,
+          "mean_model_actual": 1670.6,
+          "mean_adp_actual": 1630.7,
+          "lift_vs_adp_mean": 39.9,
+          "wins_vs_adp_mean_slots": 7
+        },
+        "2025": {
+          "season": 2025,
+          "scrape_date": "2025-09-05",
+          "ranking": "preseason_ml",
+          "slot_ranks": [
+            10,
+            10,
+            10,
+            10,
+            9,
+            9,
+            9,
+            9,
+            10,
+            10
+          ],
+          "mean_rank": 9.6,
+          "best_rank": 9,
+          "worst_rank": 10,
+          "mean_model_actual": 1241.8,
+          "mean_adp_actual": 1578.6,
+          "lift_vs_adp_mean": -336.8,
+          "wins_vs_adp_mean_slots": 0
+        }
+      }
+    },
+    "variants": {
+      "ridge_baseline": {
+        "passes_gate": 1,
+        "market_objective_score": 61.2461,
+        "draft_sim_passes_gate": 0,
+        "draft_sim_candidate_score": 9.0395,
+        "draft_sim_summary": {
+          "aggregate": {
+            "mean_rank_avg": 7.7,
+            "lift_vs_adp_mean_avg": -133.95,
+            "mean_model_actual_avg": 1468.3,
+            "wins_vs_adp_mean_slots_total": 5
+          },
+          "by_season": {
+            "2024": {
+              "season": 2024,
+              "scrape_date": "2024-09-06",
+              "ranking": "preseason_ml",
+              "slot_ranks": [
+                8,
+                8,
+                9,
+                5,
+                8,
+                5,
+                5,
+                3,
+                3,
+                3
+              ],
+              "mean_rank": 5.7,
+              "best_rank": 3,
+              "worst_rank": 9,
+              "mean_model_actual": 1646.8,
+              "mean_adp_actual": 1649.0,
+              "lift_vs_adp_mean": -2.2,
+              "wins_vs_adp_mean_slots": 5
+            },
+            "2025": {
+              "season": 2025,
+              "scrape_date": "2025-09-05",
+              "ranking": "preseason_ml",
+              "slot_ranks": [
+                10,
+                10,
+                10,
+                10,
+                10,
+                10,
+                9,
+                9,
+                9,
+                10
+              ],
+              "mean_rank": 9.7,
+              "best_rank": 9,
+              "worst_rank": 10,
+              "mean_model_actual": 1289.8,
+              "mean_adp_actual": 1555.5,
+              "lift_vs_adp_mean": -265.7,
+              "wins_vs_adp_mean_slots": 0
+            }
+          }
+        },
+        "summary": {
+          "overall": {
+            "base_mae": 52.7007,
+            "pred_mae": 52.7007,
+            "base_bias": 0.0828,
+            "pred_bias": 0.0828,
+            "base_market_mae": 24.1752,
+            "pred_market_mae": 24.1752,
+            "base_large_divergence_share": 0.4396,
+            "pred_large_divergence_share": 0.4396,
+            "base_rb_wr_gap_excess": -19.4869,
+            "pred_rb_wr_gap_excess": -19.4869,
+            "base_top150_actual_mean": 181.5378,
+            "pred_top150_actual_mean": 181.5378,
+            "base_top24_rb_actual_mean": 212.4238,
+            "pred_top24_rb_actual_mean": 212.4238,
+            "base_top24_wr_actual_mean": 226.1935,
+            "pred_top24_wr_actual_mean": 226.1935,
+            "base_top12_te_actual_mean": 164.3024,
+            "pred_top12_te_actual_mean": 164.3024
+          },
+          "by_position": {
+            "QB": {
+              "n": 238,
+              "base_mae": 82.5545,
+              "pred_mae": 82.5545,
+              "base_bias": 1.0878,
+              "pred_bias": 1.0878,
+              "base_market_mae": 38.9886,
+              "pred_market_mae": 38.9886,
+              "base_large_divergence_share": 0.3529,
+              "pred_large_divergence_share": 0.3529
+            },
+            "RB": {
+              "n": 518,
+              "base_mae": 57.1623,
+              "pred_mae": 57.1623,
+              "base_bias": -0.2159,
+              "pred_bias": -0.2159,
+              "base_market_mae": 22.4761,
+              "pred_market_mae": 22.4761,
+              "base_large_divergence_share": 0.3592,
+              "pred_large_divergence_share": 0.3592
+            },
+            "WR": {
+              "n": 836,
+              "base_mae": 50.3439,
+              "pred_mae": 50.3439,
+              "base_bias": -0.0859,
+              "pred_bias": -0.0859,
+              "base_market_mae": 23.3398,
+              "pred_market_mae": 23.3398,
+              "base_large_divergence_share": 0.4603,
+              "pred_large_divergence_share": 0.4603
+            },
+            "TE": {
+              "n": 443,
+              "base_mae": 35.8927,
+              "pred_mae": 35.8927,
+              "base_bias": 0.2107,
+              "pred_bias": 0.2107,
+              "base_market_mae": 19.5329,
+              "pred_market_mae": 19.5329,
+              "base_large_divergence_share": 0.541,
+              "pred_large_divergence_share": 0.541
+            }
+          },
+          "cohort_market_error": {
+            "base": {
+              "backup": 49.8612,
+              "committee": 12.8061,
+              "rotational": 29.2239,
+              "starter": 23.605,
+              "rookie_low_exp": 24.1752,
+              "elite_incumbent": 33.1623
+            },
+            "pred": {
+              "backup": 49.8612,
+              "committee": 12.8061,
+              "rotational": 29.2239,
+              "starter": 23.605,
+              "rookie_low_exp": 24.1752,
+              "elite_incumbent": 33.1623
+            }
+          },
+          "variant": "ridge_baseline",
+          "calibrator_audits": {}
+        }
+      },
+      "position_specific_ridge": {
+        "passes_gate": 1,
+        "market_objective_score": 60.0854,
+        "draft_sim_passes_gate": 0,
+        "draft_sim_candidate_score": 9.5555,
+        "draft_sim_summary": {
+          "aggregate": {
+            "mean_rank_avg": 7.9,
+            "lift_vs_adp_mean_avg": -165.55,
+            "mean_model_actual_avg": 1447.85,
+            "wins_vs_adp_mean_slots_total": 4
+          },
+          "by_season": {
+            "2024": {
+              "season": 2024,
+              "scrape_date": "2024-09-06",
+              "ranking": "preseason_ml",
+              "slot_ranks": [
+                8,
+                9,
+                8,
+                3,
+                9,
+                5,
+                5,
+                4,
+                4,
+                4
+              ],
+              "mean_rank": 5.9,
+              "best_rank": 3,
+              "worst_rank": 9,
+              "mean_model_actual": 1624.5,
+              "mean_adp_actual": 1671.0,
+              "lift_vs_adp_mean": -46.5,
+              "wins_vs_adp_mean_slots": 4
+            },
+            "2025": {
+              "season": 2025,
+              "scrape_date": "2025-09-05",
+              "ranking": "preseason_ml",
+              "slot_ranks": [
+                10,
+                10,
+                10,
+                10,
+                10,
+                10,
+                9,
+                10,
+                10,
+                10
+              ],
+              "mean_rank": 9.9,
+              "best_rank": 9,
+              "worst_rank": 10,
+              "mean_model_actual": 1271.2,
+              "mean_adp_actual": 1555.8,
+              "lift_vs_adp_mean": -284.6,
+              "wins_vs_adp_mean_slots": 0
+            }
+          }
+        },
+        "summary": {
+          "overall": {
+            "base_mae": 52.6431,
+            "pred_mae": 52.6431,
+            "base_bias": 0.0071,
+            "pred_bias": 0.0071,
+            "base_market_mae": 23.2505,
+            "pred_market_mae": 23.2505,
+            "base_large_divergence_share": 0.4098,
+            "pred_large_divergence_share": 0.4098,
+            "base_rb_wr_gap_excess": -20.4429,
+            "pred_rb_wr_gap_excess": -20.4429,
+            "base_top150_actual_mean": 181.3581,
+            "pred_top150_actual_mean": 181.3581,
+            "base_top24_rb_actual_mean": 211.8726,
+            "pred_top24_rb_actual_mean": 211.8726,
+            "base_top24_wr_actual_mean": 226.4042,
+            "pred_top24_wr_actual_mean": 226.4042,
+            "base_top12_te_actual_mean": 165.8667,
+            "pred_top12_te_actual_mean": 165.8667
+          },
+          "by_position": {
+            "QB": {
+              "n": 238,
+              "base_mae": 81.9884,
+              "pred_mae": 81.9884,
+              "base_bias": 0.9707,
+              "pred_bias": 0.9707,
+              "base_market_mae": 38.9434,
+              "pred_market_mae": 38.9434,
+              "base_large_divergence_share": 0.3529,
+              "pred_large_divergence_share": 0.3529
+            },
+            "RB": {
+              "n": 518,
+              "base_mae": 57.1458,
+              "pred_mae": 57.1458,
+              "base_bias": -0.2188,
+              "pred_bias": -0.2188,
+              "base_market_mae": 21.9307,
+              "pred_market_mae": 21.9307,
+              "base_large_divergence_share": 0.3099,
+              "pred_large_divergence_share": 0.3099
+            },
+            "WR": {
+              "n": 836,
+              "base_mae": 50.293,
+              "pred_mae": 50.293,
+              "base_bias": -0.221,
+              "pred_bias": -0.221,
+              "base_market_mae": 22.0165,
+              "pred_market_mae": 22.0165,
+              "base_large_divergence_share": 0.4268,
+              "pred_large_divergence_share": 0.4268
+            },
+            "TE": {
+              "n": 443,
+              "base_mae": 36.0476,
+              "pred_mae": 36.0476,
+              "base_bias": 0.184,
+              "pred_bias": 0.184,
+              "base_market_mae": 18.4571,
+              "pred_market_mae": 18.4571,
+              "base_large_divergence_share": 0.5246,
+              "pred_large_divergence_share": 0.5246
+            }
+          },
+          "cohort_market_error": {
+            "base": {
+              "backup": 48.4136,
+              "committee": 12.3916,
+              "rotational": 29.7667,
+              "starter": 22.6292,
+              "rookie_low_exp": 23.2505,
+              "elite_incumbent": 33.1509
+            },
+            "pred": {
+              "backup": 48.4136,
+              "committee": 12.3916,
+              "rotational": 29.7667,
+              "starter": 22.6292,
+              "rookie_low_exp": 23.2505,
+              "elite_incumbent": 33.1509
+            }
+          },
+          "variant": "position_specific_ridge",
+          "calibrator_audits": {}
+        }
+      },
+      "position_specific_ridge_rb_construction": {
+        "passes_gate": 1,
+        "market_objective_score": 62.5477,
+        "draft_sim_passes_gate": 0,
+        "draft_sim_candidate_score": 9.5555,
+        "draft_sim_summary": {
+          "aggregate": {
+            "mean_rank_avg": 7.9,
+            "lift_vs_adp_mean_avg": -165.55,
+            "mean_model_actual_avg": 1447.85,
+            "wins_vs_adp_mean_slots_total": 4
+          },
+          "by_season": {
+            "2024": {
+              "season": 2024,
+              "scrape_date": "2024-09-06",
+              "ranking": "preseason_ml",
+              "slot_ranks": [
+                8,
+                9,
+                8,
+                3,
+                9,
+                5,
+                5,
+                4,
+                4,
+                4
+              ],
+              "mean_rank": 5.9,
+              "best_rank": 3,
+              "worst_rank": 9,
+              "mean_model_actual": 1624.5,
+              "mean_adp_actual": 1671.0,
+              "lift_vs_adp_mean": -46.5,
+              "wins_vs_adp_mean_slots": 4
+            },
+            "2025": {
+              "season": 2025,
+              "scrape_date": "2025-09-05",
+              "ranking": "preseason_ml",
+              "slot_ranks": [
+                10,
+                10,
+                10,
+                10,
+                10,
+                10,
+                9,
+                10,
+                10,
+                10
+              ],
+              "mean_rank": 9.9,
+              "best_rank": 9,
+              "worst_rank": 10,
+              "mean_model_actual": 1271.2,
+              "mean_adp_actual": 1555.8,
+              "lift_vs_adp_mean": -284.6,
+              "wins_vs_adp_mean_slots": 0
+            }
+          }
+        },
+        "summary": {
+          "overall": {
+            "base_mae": 52.7205,
+            "pred_mae": 52.7205,
+            "base_bias": 0.0095,
+            "pred_bias": 0.0095,
+            "base_market_mae": 23.3146,
+            "pred_market_mae": 23.3146,
+            "base_large_divergence_share": 0.4151,
+            "pred_large_divergence_share": 0.4151,
+            "base_rb_wr_gap_excess": -22.6291,
+            "pred_rb_wr_gap_excess": -22.6291,
+            "base_top150_actual_mean": 181.4347,
+            "pred_top150_actual_mean": 181.4347,
+            "base_top24_rb_actual_mean": 210.1494,
+            "pred_top24_rb_actual_mean": 210.1494,
+            "base_top24_wr_actual_mean": 226.4042,
+            "pred_top24_wr_actual_mean": 226.4042,
+            "base_top12_te_actual_mean": 165.8667,
+            "pred_top12_te_actual_mean": 165.8667
+          },
+          "by_position": {
+            "QB": {
+              "n": 238,
+              "base_mae": 81.9884,
+              "pred_mae": 81.9884,
+              "base_bias": 0.9707,
+              "pred_bias": 0.9707,
+              "base_market_mae": 38.9434,
+              "pred_market_mae": 38.9434,
+              "base_large_divergence_share": 0.3529,
+              "pred_large_divergence_share": 0.3529
+            },
+            "RB": {
+              "n": 518,
+              "base_mae": 57.4497,
+              "pred_mae": 57.4497,
+              "base_bias": -0.2093,
+              "pred_bias": -0.2093,
+              "base_market_mae": 22.1885,
+              "pred_market_mae": 22.1885,
+              "base_large_divergence_share": 0.331,
+              "pred_large_divergence_share": 0.331
+            },
+            "WR": {
+              "n": 836,
+              "base_mae": 50.293,
+              "pred_mae": 50.293,
+              "base_bias": -0.221,
+              "pred_bias": -0.221,
+              "base_market_mae": 22.0165,
+              "pred_market_mae": 22.0165,
+              "base_large_divergence_share": 0.4268,
+              "pred_large_divergence_share": 0.4268
+            },
+            "TE": {
+              "n": 443,
+              "base_mae": 36.0476,
+              "pred_mae": 36.0476,
+              "base_bias": 0.184,
+              "pred_bias": 0.184,
+              "base_market_mae": 18.4571,
+              "pred_market_mae": 18.4571,
+              "base_large_divergence_share": 0.5246,
+              "pred_large_divergence_share": 0.5246
+            }
+          },
+          "cohort_market_error": {
+            "base": {
+              "backup": 48.4136,
+              "committee": 12.2693,
+              "rotational": 29.7667,
+              "starter": 22.6996,
+              "rookie_low_exp": 23.3146,
+              "elite_incumbent": 33.0444
+            },
+            "pred": {
+              "backup": 48.4136,
+              "committee": 12.2693,
+              "rotational": 29.7667,
+              "starter": 22.6996,
+              "rookie_low_exp": 23.3146,
+              "elite_incumbent": 33.0444
+            }
+          },
+          "variant": "position_specific_ridge_rb_construction",
+          "calibrator_audits": {}
+        }
+      },
+      "hybrid_legacy_rb_position_specific": {
+        "passes_gate": 1,
+        "market_objective_score": 61.8812,
+        "draft_sim_passes_gate": 0,
+        "draft_sim_candidate_score": 11.3545,
+        "draft_sim_summary": {
+          "aggregate": {
+            "mean_rank_avg": 9.0,
+            "lift_vs_adp_mean_avg": -235.45,
+            "mean_model_actual_avg": 1372.55,
+            "wins_vs_adp_mean_slots_total": 1
+          },
+          "by_season": {
+            "2024": {
+              "season": 2024,
+              "scrape_date": "2024-09-06",
+              "ranking": "preseason_ml",
+              "slot_ranks": [
+                8,
+                9,
+                9,
+                3,
+                9,
+                9,
+                9,
+                9,
+                9,
+                9
+              ],
+              "mean_rank": 8.3,
+              "best_rank": 3,
+              "worst_rank": 9,
+              "mean_model_actual": 1472.9,
+              "mean_adp_actual": 1654.5,
+              "lift_vs_adp_mean": -181.5,
+              "wins_vs_adp_mean_slots": 1
+            },
+            "2025": {
+              "season": 2025,
+              "scrape_date": "2025-09-05",
+              "ranking": "preseason_ml",
+              "slot_ranks": [
+                10,
+                10,
+                10,
+                10,
+                10,
+                10,
+                9,
+                9,
+                9,
+                10
+              ],
+              "mean_rank": 9.7,
+              "best_rank": 9,
+              "worst_rank": 10,
+              "mean_model_actual": 1272.2,
+              "mean_adp_actual": 1561.5,
+              "lift_vs_adp_mean": -289.4,
+              "wins_vs_adp_mean_slots": 0
+            }
+          }
+        },
+        "summary": {
+          "overall": {
+            "base_mae": 52.6317,
+            "pred_mae": 52.6317,
+            "base_bias": 0.004,
+            "pred_bias": 0.004,
+            "base_market_mae": 23.399,
+            "pred_market_mae": 23.399,
+            "base_large_divergence_share": 0.4221,
+            "pred_large_divergence_share": 0.4221,
+            "base_rb_wr_gap_excess": -21.5982,
+            "pred_rb_wr_gap_excess": -21.5982,
+            "base_top150_actual_mean": 181.1924,
+            "pred_top150_actual_mean": 181.1924,
+            "base_top24_rb_actual_mean": 211.9548,
+            "pred_top24_rb_actual_mean": 211.9548,
+            "base_top24_wr_actual_mean": 226.4042,
+            "pred_top24_wr_actual_mean": 226.4042,
+            "base_top12_te_actual_mean": 165.8667,
+            "pred_top12_te_actual_mean": 165.8667
+          },
+          "by_position": {
+            "QB": {
+              "n": 238,
+              "base_mae": 81.9884,
+              "pred_mae": 81.9884,
+              "base_bias": 0.9707,
+              "pred_bias": 0.9707,
+              "base_market_mae": 38.9434,
+              "pred_market_mae": 38.9434,
+              "base_large_divergence_share": 0.3529,
+              "pred_large_divergence_share": 0.3529
+            },
+            "RB": {
+              "n": 518,
+              "base_mae": 57.1007,
+              "pred_mae": 57.1007,
+              "base_bias": -0.2308,
+              "pred_bias": -0.2308,
+              "base_market_mae": 22.5279,
+              "pred_market_mae": 22.5279,
+              "base_large_divergence_share": 0.3592,
+              "pred_large_divergence_share": 0.3592
+            },
+            "WR": {
+              "n": 836,
+              "base_mae": 50.293,
+              "pred_mae": 50.293,
+              "base_bias": -0.221,
+              "pred_bias": -0.221,
+              "base_market_mae": 22.0165,
+              "pred_market_mae": 22.0165,
+              "base_large_divergence_share": 0.4268,
+              "pred_large_divergence_share": 0.4268
+            },
+            "TE": {
+              "n": 443,
+              "base_mae": 36.0476,
+              "pred_mae": 36.0476,
+              "base_bias": 0.184,
+              "pred_bias": 0.184,
+              "base_market_mae": 18.4571,
+              "pred_market_mae": 18.4571,
+              "base_large_divergence_share": 0.5246,
+              "pred_large_divergence_share": 0.5246
+            }
+          },
+          "cohort_market_error": {
+            "base": {
+              "backup": 48.4136,
+              "committee": 12.6049,
+              "rotational": 29.7667,
+              "starter": 22.7856,
+              "rookie_low_exp": 23.399,
+              "elite_incumbent": 33.3912
+            },
+            "pred": {
+              "backup": 48.4136,
+              "committee": 12.6049,
+              "rotational": 29.7667,
+              "starter": 22.7856,
+              "rookie_low_exp": 23.399,
+              "elite_incumbent": 33.3912
+            }
+          },
+          "variant": "hybrid_legacy_rb_position_specific",
+          "calibrator_audits": {}
+        }
+      },
+      "position_specific_ridge_plus_calibrator": {
+        "passes_gate": 1,
+        "market_objective_score": 60.7295,
+        "draft_sim_passes_gate": 0,
+        "draft_sim_candidate_score": 11.5935,
+        "draft_sim_summary": {
+          "aggregate": {
+            "mean_rank_avg": 9.15,
+            "lift_vs_adp_mean_avg": -244.35,
+            "mean_model_actual_avg": 1372.0,
+            "wins_vs_adp_mean_slots_total": 0
+          },
+          "by_season": {
+            "2024": {
+              "season": 2024,
+              "scrape_date": "2024-09-06",
+              "ranking": "preseason_ml",
+              "slot_ranks": [
+                8,
+                8,
+                8,
+                7,
+                10,
+                10,
+                10,
+                10,
+                10,
+                9
+              ],
+              "mean_rank": 9,
+              "best_rank": 7,
+              "worst_rank": 10,
+              "mean_model_actual": 1443.1,
+              "mean_adp_actual": 1671.4,
+              "lift_vs_adp_mean": -228.4,
+              "wins_vs_adp_mean_slots": 0
+            },
+            "2025": {
+              "season": 2025,
+              "scrape_date": "2025-09-05",
+              "ranking": "preseason_ml",
+              "slot_ranks": [
+                10,
+                10,
+                10,
+                9,
+                9,
+                9,
+                9,
+                9,
+                9,
+                9
+              ],
+              "mean_rank": 9.3,
+              "best_rank": 9,
+              "worst_rank": 10,
+              "mean_model_actual": 1300.9,
+              "mean_adp_actual": 1561.2,
+              "lift_vs_adp_mean": -260.3,
+              "wins_vs_adp_mean_slots": 0
+            }
+          }
+        },
+        "summary": {
+          "overall": {
+            "base_mae": 52.6431,
+            "pred_mae": 52.4112,
+            "base_bias": 0.0071,
+            "pred_bias": -1.2366,
+            "base_market_mae": 23.2505,
+            "pred_market_mae": 22.8954,
+            "base_large_divergence_share": 0.4098,
+            "pred_large_divergence_share": 0.4186,
+            "base_rb_wr_gap_excess": -20.4429,
+            "pred_rb_wr_gap_excess": -21.0901,
+            "base_top150_actual_mean": 181.3581,
+            "pred_top150_actual_mean": 181.339,
+            "base_top24_rb_actual_mean": 211.8726,
+            "pred_top24_rb_actual_mean": 212.9881,
+            "base_top24_wr_actual_mean": 226.4042,
+            "pred_top24_wr_actual_mean": 226.2565,
+            "base_top12_te_actual_mean": 165.8667,
+            "pred_top12_te_actual_mean": 163.5476
+          },
+          "by_position": {
+            "QB": {
+              "n": 238,
+              "base_mae": 81.9884,
+              "pred_mae": 79.7672,
+              "base_bias": 0.9707,
+              "pred_bias": 0.8836,
+              "base_market_mae": 38.9434,
+              "pred_market_mae": 37.704,
+              "base_large_divergence_share": 0.3529,
+              "pred_large_divergence_share": 0.4412
+            },
+            "RB": {
+              "n": 518,
+              "base_mae": 57.1458,
+              "pred_mae": 56.7244,
+              "base_bias": -0.2188,
+              "pred_bias": -3.9893,
+              "base_market_mae": 21.9307,
+              "pred_market_mae": 21.0965,
+              "base_large_divergence_share": 0.3099,
+              "pred_large_divergence_share": 0.3028
+            },
+            "WR": {
+              "n": 836,
+              "base_mae": 50.293,
+              "pred_mae": 50.4762,
+              "base_bias": -0.221,
+              "pred_bias": -0.2535,
+              "base_market_mae": 22.0165,
+              "pred_market_mae": 22.0165,
+              "base_large_divergence_share": 0.4268,
+              "pred_large_divergence_share": 0.4268
+            },
+            "TE": {
+              "n": 443,
+              "base_mae": 36.0476,
+              "pred_mae": 36.3227,
+              "base_bias": 0.184,
+              "pred_bias": -1.0121,
+              "base_market_mae": 18.4571,
+              "pred_market_mae": 18.4571,
+              "base_large_divergence_share": 0.5246,
+              "pred_large_divergence_share": 0.5246
+            }
+          },
+          "cohort_market_error": {
+            "base": {
+              "backup": 48.4136,
+              "committee": 12.3916,
+              "rotational": 29.7667,
+              "starter": 22.6292,
+              "rookie_low_exp": 23.2505,
+              "elite_incumbent": 33.1509
+            },
+            "pred": {
+              "backup": 38.3263,
+              "committee": 9.8572,
+              "rotational": 31.2934,
+              "starter": 22.4331,
+              "rookie_low_exp": 22.8954,
+              "elite_incumbent": 33.4641
+            }
+          },
+          "variant": "position_specific_ridge_plus_calibrator",
+          "calibrator_audits": {
+            "QB": [
+              {
+                "holdout_season": 2019,
+                "sample_size": 208,
+                "features": [
+                  "raw_pred",
+                  "confidence_score",
+                  "low_information_score",
+                  "rookie_or_low_experience",
+                  "support_class_starter",
+                  "support_class_committee",
+                  "support_class_backup",
+                  "support_class_rotational",
+                  "games_played",
+                  "snap_share",
+                  "ppg",
+                  "passing_yards_pg",
+                  "market_anchor"
+                ],
+                "mae_before": 84.7074,
+                "mae_after": 80.5774,
+                "bias_before": 0.8035,
+                "bias_after": -0.1845,
+                "max_adjustment_share": 0.2,
+                "market_weight_cap": 0.22
+              },
+              {
+                "holdout_season": 2020,
+                "sample_size": 203,
+                "features": [
+                  "raw_pred",
+                  "confidence_score",
+                  "low_information_score",
+                  "rookie_or_low_experience",
+                  "support_class_starter",
+                  "support_class_committee",
+                  "support_class_backup",
+                  "support_class_rotational",
+                  "games_played",
+                  "snap_share",
+                  "ppg",
+                  "passing_yards_pg",
+                  "market_anchor"
+                ],
+                "mae_before": 79.1184,
+                "mae_after": 75.864,
+                "bias_before": 1.2499,
+                "bias_after": -0.3784,
+                "max_adjustment_share": 0.2,
+                "market_weight_cap": 0.22
+              },
+              {
+                "holdout_season": 2021,
+                "sample_size": 207,
+                "features": [
+                  "raw_pred",
+                  "confidence_score",
+                  "low_information_score",
+                  "rookie_or_low_experience",
+                  "support_class_starter",
+                  "support_class_committee",
+                  "support_class_backup",
+                  "support_class_rotational",
+                  "games_played",
+                  "snap_share",
+                  "ppg",
+                  "passing_yards_pg",
+                  "market_anchor"
+                ],
+                "mae_before": 83.0355,
+                "mae_after": 78.5146,
+                "bias_before": 0.8373,
+                "bias_after": -0.6332,
+                "max_adjustment_share": 0.2,
+                "market_weight_cap": 0.22
+              },
+              {
+                "holdout_season": 2022,
+                "sample_size": 201,
+                "features": [
+                  "raw_pred",
+                  "confidence_score",
+                  "low_information_score",
+                  "rookie_or_low_experience",
+                  "support_class_starter",
+                  "support_class_committee",
+                  "support_class_backup",
+                  "support_class_rotational",
+                  "games_played",
+                  "snap_share",
+                  "ppg",
+                  "passing_yards_pg",
+                  "market_anchor"
+                ],
+                "mae_before": 83.9655,
+                "mae_after": 79.5635,
+                "bias_before": 1.483,
+                "bias_after": 0.2352,
+                "max_adjustment_share": 0.2,
+                "market_weight_cap": 0.22
+              },
+              {
+                "holdout_season": 2023,
+                "sample_size": 205,
+                "features": [
+                  "raw_pred",
+                  "confidence_score",
+                  "low_information_score",
+                  "rookie_or_low_experience",
+                  "support_class_starter",
+                  "support_class_committee",
+                  "support_class_backup",
+                  "support_class_rotational",
+                  "games_played",
+                  "snap_share",
+                  "ppg",
+                  "passing_yards_pg",
+                  "market_anchor"
+                ],
+                "mae_before": 82.7974,
+                "mae_after": 78.0445,
+                "bias_before": 1.3509,
+                "bias_after": 0.5397,
+                "max_adjustment_share": 0.2,
+                "market_weight_cap": 0.22
+              },
+              {
+                "holdout_season": 2024,
+                "sample_size": 202,
+                "features": [
+                  "raw_pred",
+                  "confidence_score",
+                  "low_information_score",
+                  "rookie_or_low_experience",
+                  "support_class_starter",
+                  "support_class_committee",
+                  "support_class_backup",
+                  "support_class_rotational",
+                  "games_played",
+                  "snap_share",
+                  "ppg",
+                  "passing_yards_pg",
+                  "market_anchor"
+                ],
+                "mae_before": 80.6485,
+                "mae_after": 78.5592,
+                "bias_before": 1.6447,
+                "bias_after": -0.8806,
+                "max_adjustment_share": 0.2,
+                "market_weight_cap": 0.22
+              },
+              {
+                "holdout_season": 2025,
+                "sample_size": 202,
+                "features": [
+                  "raw_pred",
+                  "confidence_score",
+                  "low_information_score",
+                  "rookie_or_low_experience",
+                  "support_class_starter",
+                  "support_class_committee",
+                  "support_class_backup",
+                  "support_class_rotational",
+                  "games_played",
+                  "snap_share",
+                  "ppg",
+                  "passing_yards_pg",
+                  "market_anchor"
+                ],
+                "mae_before": 82.2957,
+                "mae_after": 78.1838,
+                "bias_before": 0.497,
+                "bias_after": -1.7146,
+                "max_adjustment_share": 0.2,
+                "market_weight_cap": 0.22
+              }
+            ],
+            "RB": [
+              {
+                "holdout_season": 2019,
+                "sample_size": 447,
+                "features": [
+                  "raw_pred",
+                  "confidence_score",
+                  "low_information_score",
+                  "rookie_or_low_experience",
+                  "support_class_starter",
+                  "support_class_committee",
+                  "support_class_backup",
+                  "support_class_rotational",
+                  "games_played",
+                  "snap_share",
+                  "carries_pg",
+                  "targets_pg",
+                  "ppg_x_carries_pg",
+                  "low_volume_efficiency_flag",
+                  "market_anchor"
+                ],
+                "mae_before": 56.981,
+                "mae_after": 56.1444,
+                "bias_before": -0.3485,
+                "bias_after": -0.7326,
+                "max_adjustment_share": 0.3,
+                "market_weight_cap": 0.36
+              },
+              {
+                "holdout_season": 2020,
+                "sample_size": 440,
+                "features": [
+                  "raw_pred",
+                  "confidence_score",
+                  "low_information_score",
+                  "rookie_or_low_experience",
+                  "support_class_starter",
+                  "support_class_committee",
+                  "support_class_backup",
+                  "support_class_rotational",
+                  "games_played",
+                  "snap_share",
+                  "carries_pg",
+                  "targets_pg",
+                  "ppg_x_carries_pg",
+                  "low_volume_efficiency_flag",
+                  "market_anchor"
+                ],
+                "mae_before": 57.9798,
+                "mae_after": 56.9214,
+                "bias_before": -1.3564,
+                "bias_after": -1.3878,
+                "max_adjustment_share": 0.3,
+                "market_weight_cap": 0.36
+              },
+              {
+                "holdout_season": 2021,
+                "sample_size": 438,
+                "features": [
+                  "raw_pred",
+                  "confidence_score",
+                  "low_information_score",
+                  "rookie_or_low_experience",
+                  "support_class_starter",
+                  "support_class_committee",
+                  "support_class_backup",
+                  "support_class_rotational",
+                  "games_played",
+                  "snap_share",
+                  "carries_pg",
+                  "targets_pg",
+                  "ppg_x_carries_pg",
+                  "low_volume_efficiency_flag",
+                  "market_anchor"
+                ],
+                "mae_before": 57.8048,
+                "mae_after": 57.03,
+                "bias_before": -0.1545,
+                "bias_after": -0.8779,
+                "max_adjustment_share": 0.3,
+                "market_weight_cap": 0.36
+              },
+              {
+                "holdout_season": 2022,
+                "sample_size": 443,
+                "features": [
+                  "raw_pred",
+                  "confidence_score",
+                  "low_information_score",
+                  "rookie_or_low_experience",
+                  "support_class_starter",
+                  "support_class_committee",
+                  "support_class_backup",
+                  "support_class_rotational",
+                  "games_played",
+                  "snap_share",
+                  "carries_pg",
+                  "targets_pg",
+                  "ppg_x_carries_pg",
+                  "low_volume_efficiency_flag",
+                  "market_anchor"
+                ],
+                "mae_before": 56.5295,
+                "mae_after": 55.7451,
+                "bias_before": 0.1602,
+                "bias_after": -0.8616,
+                "max_adjustment_share": 0.3,
+                "market_weight_cap": 0.36
+              },
+              {
+                "holdout_season": 2023,
+                "sample_size": 448,
+                "features": [
+                  "raw_pred",
+                  "confidence_score",
+                  "low_information_score",
+                  "rookie_or_low_experience",
+                  "support_class_starter",
+                  "support_class_committee",
+                  "support_class_backup",
+                  "support_class_rotational",
+                  "games_played",
+                  "snap_share",
+                  "carries_pg",
+                  "targets_pg",
+                  "ppg_x_carries_pg",
+                  "low_volume_efficiency_flag",
+                  "market_anchor"
+                ],
+                "mae_before": 56.5204,
+                "mae_after": 55.509,
+                "bias_before": -0.2332,
+                "bias_after": -0.9589,
+                "max_adjustment_share": 0.3,
+                "market_weight_cap": 0.36
+              },
+              {
+                "holdout_season": 2024,
+                "sample_size": 442,
+                "features": [
+                  "raw_pred",
+                  "confidence_score",
+                  "low_information_score",
+                  "rookie_or_low_experience",
+                  "support_class_starter",
+                  "support_class_committee",
+                  "support_class_backup",
+                  "support_class_rotational",
+                  "games_played",
+                  "snap_share",
+                  "carries_pg",
+                  "targets_pg",
+                  "ppg_x_carries_pg",
+                  "low_volume_efficiency_flag",
+                  "market_anchor"
+                ],
+                "mae_before": 56.7114,
+                "mae_after": 56.0884,
+                "bias_before": -0.2884,
+                "bias_after": -1.0287,
+                "max_adjustment_share": 0.3,
+                "market_weight_cap": 0.36
+              },
+              {
+                "holdout_season": 2025,
+                "sample_size": 450,
+                "features": [
+                  "raw_pred",
+                  "confidence_score",
+                  "low_information_score",
+                  "rookie_or_low_experience",
+                  "support_class_starter",
+                  "support_class_committee",
+                  "support_class_backup",
+                  "support_class_rotational",
+                  "games_played",
+                  "snap_share",
+                  "carries_pg",
+                  "targets_pg",
+                  "ppg_x_carries_pg",
+                  "low_volume_efficiency_flag",
+                  "market_anchor"
+                ],
+                "mae_before": 58.002,
+                "mae_after": 57.6105,
+                "bias_before": -0.5674,
+                "bias_after": -0.8583,
+                "max_adjustment_share": 0.3,
+                "market_weight_cap": 0.36
+              }
+            ],
+            "WR": [
+              {
+                "holdout_season": 2019,
+                "sample_size": 728,
+                "features": [
+                  "raw_pred",
+                  "confidence_score",
+                  "low_information_score",
+                  "rookie_or_low_experience",
+                  "support_class_starter",
+                  "support_class_committee",
+                  "support_class_backup",
+                  "support_class_rotational",
+                  "games_played",
+                  "snap_share",
+                  "targets_pg",
+                  "target_share",
+                  "ppg_x_targets_pg",
+                  "low_target_efficiency_flag",
+                  "market_anchor"
+                ],
+                "mae_before": 50.4365,
+                "mae_after": 50.3412,
+                "bias_before": -1.8025,
+                "bias_after": -0.3893,
+                "max_adjustment_share": 0.28,
+                "market_weight_cap": 0.34
+              },
+              {
+                "holdout_season": 2020,
+                "sample_size": 723,
+                "features": [
+                  "raw_pred",
+                  "confidence_score",
+                  "low_information_score",
+                  "rookie_or_low_experience",
+                  "support_class_starter",
+                  "support_class_committee",
+                  "support_class_backup",
+                  "support_class_rotational",
+                  "games_played",
+                  "snap_share",
+                  "targets_pg",
+                  "target_share",
+                  "ppg_x_targets_pg",
+                  "low_target_efficiency_flag",
+                  "market_anchor"
+                ],
+                "mae_before": 49.6209,
+                "mae_after": 49.5992,
+                "bias_before": -0.6241,
+                "bias_after": -0.1211,
+                "max_adjustment_share": 0.28,
+                "market_weight_cap": 0.34
+              },
+              {
+                "holdout_season": 2021,
+                "sample_size": 713,
+                "features": [
+                  "raw_pred",
+                  "confidence_score",
+                  "low_information_score",
+                  "rookie_or_low_experience",
+                  "support_class_starter",
+                  "support_class_committee",
+                  "support_class_backup",
+                  "support_class_rotational",
+                  "games_played",
+                  "snap_share",
+                  "targets_pg",
+                  "target_share",
+                  "ppg_x_targets_pg",
+                  "low_target_efficiency_flag",
+                  "market_anchor"
+                ],
+                "mae_before": 49.655,
+                "mae_after": 49.5764,
+                "bias_before": -0.4448,
+                "bias_after": -0.2101,
+                "max_adjustment_share": 0.28,
+                "market_weight_cap": 0.34
+              },
+              {
+                "holdout_season": 2022,
+                "sample_size": 717,
+                "features": [
+                  "raw_pred",
+                  "confidence_score",
+                  "low_information_score",
+                  "rookie_or_low_experience",
+                  "support_class_starter",
+                  "support_class_committee",
+                  "support_class_backup",
+                  "support_class_rotational",
+                  "games_played",
+                  "snap_share",
+                  "targets_pg",
+                  "target_share",
+                  "ppg_x_targets_pg",
+                  "low_target_efficiency_flag",
+                  "market_anchor"
+                ],
+                "mae_before": 50.5716,
+                "mae_after": 50.6475,
+                "bias_before": 0.0563,
+                "bias_after": -0.2854,
+                "max_adjustment_share": 0.28,
+                "market_weight_cap": 0.34
+              },
+              {
+                "holdout_season": 2023,
+                "sample_size": 718,
+                "features": [
+                  "raw_pred",
+                  "confidence_score",
+                  "low_information_score",
+                  "rookie_or_low_experience",
+                  "support_class_starter",
+                  "support_class_committee",
+                  "support_class_backup",
+                  "support_class_rotational",
+                  "games_played",
+                  "snap_share",
+                  "targets_pg",
+                  "target_share",
+                  "ppg_x_targets_pg",
+                  "low_target_efficiency_flag",
+                  "market_anchor"
+                ],
+                "mae_before": 50.6702,
+                "mae_after": 50.8552,
+                "bias_before": -0.1239,
+                "bias_after": -0.1886,
+                "max_adjustment_share": 0.28,
+                "market_weight_cap": 0.34
+              },
+              {
+                "holdout_season": 2024,
+                "sample_size": 706,
+                "features": [
+                  "raw_pred",
+                  "confidence_score",
+                  "low_information_score",
+                  "rookie_or_low_experience",
+                  "support_class_starter",
+                  "support_class_committee",
+                  "support_class_backup",
+                  "support_class_rotational",
+                  "games_played",
+                  "snap_share",
+                  "targets_pg",
+                  "target_share",
+                  "ppg_x_targets_pg",
+                  "low_target_efficiency_flag",
+                  "market_anchor"
+                ],
+                "mae_before": 50.5854,
+                "mae_after": 50.5945,
+                "bias_before": -0.3818,
+                "bias_after": -0.4486,
+                "max_adjustment_share": 0.28,
+                "market_weight_cap": 0.34
+              },
+              {
+                "holdout_season": 2025,
+                "sample_size": 711,
+                "features": [
+                  "raw_pred",
+                  "confidence_score",
+                  "low_information_score",
+                  "rookie_or_low_experience",
+                  "support_class_starter",
+                  "support_class_committee",
+                  "support_class_backup",
+                  "support_class_rotational",
+                  "games_played",
+                  "snap_share",
+                  "targets_pg",
+                  "target_share",
+                  "ppg_x_targets_pg",
+                  "low_target_efficiency_flag",
+                  "market_anchor"
+                ],
+                "mae_before": 51.0999,
+                "mae_after": 51.2417,
+                "bias_before": -0.2106,
+                "bias_after": -0.3473,
+                "max_adjustment_share": 0.28,
+                "market_weight_cap": 0.34
+              }
+            ],
+            "TE": [
+              {
+                "holdout_season": 2019,
+                "sample_size": 386,
+                "features": [
+                  "raw_pred",
+                  "confidence_score",
+                  "low_information_score",
+                  "rookie_or_low_experience",
+                  "support_class_starter",
+                  "support_class_committee",
+                  "support_class_backup",
+                  "support_class_rotational",
+                  "games_played",
+                  "snap_share",
+                  "targets_pg",
+                  "target_share",
+                  "ppg_x_targets_pg",
+                  "market_anchor"
+                ],
+                "mae_before": 36.7754,
+                "mae_after": 36.7713,
+                "bias_before": 0.1648,
+                "bias_after": -0.1458,
+                "max_adjustment_share": 0.24,
+                "market_weight_cap": 0.28
+              },
+              {
+                "holdout_season": 2020,
+                "sample_size": 380,
+                "features": [
+                  "raw_pred",
+                  "confidence_score",
+                  "low_information_score",
+                  "rookie_or_low_experience",
+                  "support_class_starter",
+                  "support_class_committee",
+                  "support_class_backup",
+                  "support_class_rotational",
+                  "games_played",
+                  "snap_share",
+                  "targets_pg",
+                  "target_share",
+                  "ppg_x_targets_pg",
+                  "market_anchor"
+                ],
+                "mae_before": 35.2383,
+                "mae_after": 35.3397,
+                "bias_before": 0.1862,
+                "bias_after": -0.0334,
+                "max_adjustment_share": 0.24,
+                "market_weight_cap": 0.28
+              },
+              {
+                "holdout_season": 2021,
+                "sample_size": 386,
+                "features": [
+                  "raw_pred",
+                  "confidence_score",
+                  "low_information_score",
+                  "rookie_or_low_experience",
+                  "support_class_starter",
+                  "support_class_committee",
+                  "support_class_backup",
+                  "support_class_rotational",
+                  "games_played",
+                  "snap_share",
+                  "targets_pg",
+                  "target_share",
+                  "ppg_x_targets_pg",
+                  "market_anchor"
+                ],
+                "mae_before": 35.8667,
+                "mae_after": 35.8587,
+                "bias_before": 0.2501,
+                "bias_after": -0.1007,
+                "max_adjustment_share": 0.24,
+                "market_weight_cap": 0.28
+              },
+              {
+                "holdout_season": 2022,
+                "sample_size": 380,
+                "features": [
+                  "raw_pred",
+                  "confidence_score",
+                  "low_information_score",
+                  "rookie_or_low_experience",
+                  "support_class_starter",
+                  "support_class_committee",
+                  "support_class_backup",
+                  "support_class_rotational",
+                  "games_played",
+                  "snap_share",
+                  "targets_pg",
+                  "target_share",
+                  "ppg_x_targets_pg",
+                  "market_anchor"
+                ],
+                "mae_before": 35.4863,
+                "mae_after": 35.6198,
+                "bias_before": 0.1835,
+                "bias_after": -0.0733,
+                "max_adjustment_share": 0.24,
+                "market_weight_cap": 0.28
+              },
+              {
+                "holdout_season": 2023,
+                "sample_size": 379,
+                "features": [
+                  "raw_pred",
+                  "confidence_score",
+                  "low_information_score",
+                  "rookie_or_low_experience",
+                  "support_class_starter",
+                  "support_class_committee",
+                  "support_class_backup",
+                  "support_class_rotational",
+                  "games_played",
+                  "snap_share",
+                  "targets_pg",
+                  "target_share",
+                  "ppg_x_targets_pg",
+                  "market_anchor"
+                ],
+                "mae_before": 36.6719,
+                "mae_after": 36.6852,
+                "bias_before": 0.2737,
+                "bias_after": -0.186,
+                "max_adjustment_share": 0.24,
+                "market_weight_cap": 0.28
+              },
+              {
+                "holdout_season": 2024,
+                "sample_size": 374,
+                "features": [
+                  "raw_pred",
+                  "confidence_score",
+                  "low_information_score",
+                  "rookie_or_low_experience",
+                  "support_class_starter",
+                  "support_class_committee",
+                  "support_class_backup",
+                  "support_class_rotational",
+                  "games_played",
+                  "snap_share",
+                  "targets_pg",
+                  "target_share",
+                  "ppg_x_targets_pg",
+                  "market_anchor"
+                ],
+                "mae_before": 36.1851,
+                "mae_after": 36.2645,
+                "bias_before": 0.2325,
+                "bias_after": -0.2938,
+                "max_adjustment_share": 0.24,
+                "market_weight_cap": 0.28
+              },
+              {
+                "holdout_season": 2025,
+                "sample_size": 373,
+                "features": [
+                  "raw_pred",
+                  "confidence_score",
+                  "low_information_score",
+                  "rookie_or_low_experience",
+                  "support_class_starter",
+                  "support_class_committee",
+                  "support_class_backup",
+                  "support_class_rotational",
+                  "games_played",
+                  "snap_share",
+                  "targets_pg",
+                  "target_share",
+                  "ppg_x_targets_pg",
+                  "market_anchor"
+                ],
+                "mae_before": 36.897,
+                "mae_after": 37.0247,
+                "bias_before": 0.2539,
+                "bias_after": -0.3484,
+                "max_adjustment_share": 0.24,
+                "market_weight_cap": 0.28
+              }
+            ]
+          }
+        }
+      },
+      "incumbent_plus_upstream_calibrator": {
+        "passes_gate": 1,
+        "market_objective_score": 40.0468,
+        "draft_sim_passes_gate": 0,
+        "draft_sim_candidate_score": 9.903,
+        "draft_sim_summary": {
+          "aggregate": {
+            "mean_rank_avg": 8.1,
+            "lift_vs_adp_mean_avg": -180.3,
+            "mean_model_actual_avg": 1418.85,
+            "wins_vs_adp_mean_slots_total": 1
+          },
+          "by_season": {
+            "2024": {
+              "season": 2024,
+              "scrape_date": "2024-09-06",
+              "ranking": "preseason_ml",
+              "slot_ranks": [
+                6,
+                6,
+                6,
+                8,
+                8,
+                9,
+                8,
+                8,
+                8,
+                8
+              ],
+              "mean_rank": 7.5,
+              "best_rank": 6,
+              "worst_rank": 9,
+              "mean_model_actual": 1507.9,
+              "mean_adp_actual": 1634.6,
+              "lift_vs_adp_mean": -126.7,
+              "wins_vs_adp_mean_slots": 1
+            },
+            "2025": {
+              "season": 2025,
+              "scrape_date": "2025-09-05",
+              "ranking": "preseason_ml",
+              "slot_ranks": [
+                8,
+                8,
+                8,
+                9,
+                9,
+                9,
+                9,
+                9,
+                9,
+                9
+              ],
+              "mean_rank": 8.7,
+              "best_rank": 8,
+              "worst_rank": 9,
+              "mean_model_actual": 1329.8,
+              "mean_adp_actual": 1563.7,
+              "lift_vs_adp_mean": -233.9,
+              "wins_vs_adp_mean_slots": 0
+            }
+          }
+        },
+        "summary": {
+          "overall": {
+            "base_mae": 53.2795,
+            "pred_mae": 52.215,
+            "base_bias": 6.2283,
+            "pred_bias": 0.4132,
+            "base_market_mae": 23.5562,
+            "pred_market_mae": 19.0316,
+            "base_large_divergence_share": 0.4791,
+            "pred_large_divergence_share": 0.3559,
+            "base_rb_wr_gap_excess": -10.6655,
+            "pred_rb_wr_gap_excess": 6.7792,
+            "base_top150_actual_mean": 181.6438,
+            "pred_top150_actual_mean": 181.5919,
+            "base_top24_rb_actual_mean": 209.9214,
+            "pred_top24_rb_actual_mean": 213.4708,
+            "base_top24_wr_actual_mean": 225.8815,
+            "pred_top24_wr_actual_mean": 224.6905,
+            "base_top12_te_actual_mean": 162.9286,
+            "pred_top12_te_actual_mean": 162.1
+          },
+          "by_position": {
+            "QB": {
+              "n": 238,
+              "base_mae": 78.5653,
+              "pred_mae": 78.5653,
+              "base_bias": -1.642,
+              "pred_bias": -1.642
+            },
+            "RB": {
+              "n": 518,
+              "base_mae": 57.1705,
+              "pred_mae": 55.7164,
+              "base_bias": 6.7372,
+              "pred_bias": 0.6919,
+              "base_market_mae": 24.4682,
+              "pred_market_mae": 20.8965,
+              "base_large_divergence_share": 0.4225,
+              "pred_large_divergence_share": 0.3169
+            },
+            "WR": {
+              "n": 836,
+              "base_mae": 52.3641,
+              "pred_mae": 51.1062,
+              "base_bias": 9.2832,
+              "pred_bias": 0.6609,
+              "base_market_mae": 25.1485,
+              "pred_market_mae": 19.7008,
+              "base_large_divergence_share": 0.5021,
+              "pred_large_divergence_share": 0.3682
+            },
+            "TE": {
+              "n": 443,
+              "base_mae": 36.8726,
+              "pred_mae": 36.0566,
+              "base_bias": 4.0963,
+              "pred_bias": 0.7242,
+              "base_market_mae": 19.3753,
+              "pred_market_mae": 15.5501,
+              "base_large_divergence_share": 0.5,
+              "pred_large_divergence_share": 0.377
+            }
+          },
+          "cohort_market_error": {
+            "base": {
+              "backup": 13.3942,
+              "committee": 18.1866,
+              "rotational": 28.3162,
+              "starter": 23.6964,
+              "rookie_low_exp": 23.5562,
+              "elite_incumbent": 29.9525
+            },
+            "pred": {
+              "backup": 6.4064,
+              "committee": 13.7704,
+              "rotational": 18.719,
+              "starter": 19.2111,
+              "rookie_low_exp": 19.0316,
+              "elite_incumbent": 26.3623
+            }
+          },
+          "variant": "incumbent_plus_upstream_calibrator"
+        }
+      },
+      "incumbent_plus_conservative_upstream_calibrator": {
+        "passes_gate": 1,
+        "market_objective_score": 53.1882,
+        "draft_sim_passes_gate": 1,
+        "draft_sim_candidate_score": 8.5845,
+        "draft_sim_summary": {
+          "aggregate": {
+            "mean_rank_avg": 7.1,
+            "lift_vs_adp_mean_avg": -148.45,
+            "mean_model_actual_avg": 1456.2,
+            "wins_vs_adp_mean_slots_total": 7
+          },
+          "by_season": {
+            "2024": {
+              "season": 2024,
+              "scrape_date": "2024-09-06",
+              "ranking": "preseason_ml",
+              "slot_ranks": [
+                4,
+                3,
+                3,
+                3,
+                5,
+                5,
+                5,
+                6,
+                6,
+                6
+              ],
+              "mean_rank": 4.6,
+              "best_rank": 3,
+              "worst_rank": 6,
+              "mean_model_actual": 1670.6,
+              "mean_adp_actual": 1630.7,
+              "lift_vs_adp_mean": 39.9,
+              "wins_vs_adp_mean_slots": 7
+            },
+            "2025": {
+              "season": 2025,
+              "scrape_date": "2025-09-05",
+              "ranking": "preseason_ml",
+              "slot_ranks": [
+                10,
+                10,
+                10,
+                10,
+                9,
+                9,
+                9,
+                9,
+                10,
+                10
+              ],
+              "mean_rank": 9.6,
+              "best_rank": 9,
+              "worst_rank": 10,
+              "mean_model_actual": 1241.8,
+              "mean_adp_actual": 1578.6,
+              "lift_vs_adp_mean": -336.8,
+              "wins_vs_adp_mean_slots": 0
+            }
+          }
+        },
+        "summary": {
+          "overall": {
+            "base_mae": 53.2795,
+            "pred_mae": 53.2145,
+            "base_bias": 6.2283,
+            "pred_bias": 6.1806,
+            "base_market_mae": 23.5562,
+            "pred_market_mae": 23.5051,
+            "base_large_divergence_share": 0.4791,
+            "pred_large_divergence_share": 0.4791,
+            "base_rb_wr_gap_excess": -10.6655,
+            "pred_rb_wr_gap_excess": -10.5191,
+            "base_top150_actual_mean": 181.6438,
+            "pred_top150_actual_mean": 181.6444,
+            "base_top24_rb_actual_mean": 209.9214,
+            "pred_top24_rb_actual_mean": 209.9214,
+            "base_top24_wr_actual_mean": 225.8815,
+            "pred_top24_wr_actual_mean": 225.8815,
+            "base_top12_te_actual_mean": 162.9286,
+            "pred_top12_te_actual_mean": 162.9286
+          },
+          "by_position": {
+            "QB": {
+              "n": 238,
+              "base_mae": 78.5653,
+              "pred_mae": 78.5653,
+              "base_bias": -1.642,
+              "pred_bias": -1.642
+            },
+            "RB": {
+              "n": 518,
+              "base_mae": 57.1705,
+              "pred_mae": 57.0563,
+              "base_bias": 6.7372,
+              "pred_bias": 6.658,
+              "base_market_mae": 24.4682,
+              "pred_market_mae": 24.4335,
+              "base_large_divergence_share": 0.4225,
+              "pred_large_divergence_share": 0.4225
+            },
+            "WR": {
+              "n": 836,
+              "base_mae": 52.3641,
+              "pred_mae": 52.2858,
+              "base_bias": 9.2832,
+              "pred_bias": 9.2362,
+              "base_market_mae": 25.1485,
+              "pred_market_mae": 25.0615,
+              "base_large_divergence_share": 0.5021,
+              "pred_large_divergence_share": 0.5021
+            },
+            "TE": {
+              "n": 443,
+              "base_mae": 36.8726,
+              "pred_mae": 36.8556,
+              "base_bias": 4.0963,
+              "pred_bias": 4.0586,
+              "base_market_mae": 19.3753,
+              "pred_market_mae": 19.3753,
+              "base_large_divergence_share": 0.5,
+              "pred_large_divergence_share": 0.5
+            }
+          },
+          "cohort_market_error": {
+            "base": {
+              "backup": 13.3942,
+              "committee": 18.1866,
+              "rotational": 28.3162,
+              "starter": 23.6964,
+              "rookie_low_exp": 23.5562,
+              "elite_incumbent": 29.9525
+            },
+            "pred": {
+              "backup": 9.7747,
+              "committee": 17.2434,
+              "rotational": 25.9952,
+              "starter": 23.6964,
+              "rookie_low_exp": 23.5051,
+              "elite_incumbent": 30.056
+            }
+          },
+          "variant": "incumbent_plus_conservative_upstream_calibrator"
+        }
+      }
+    }
+  },
+  "audit_report": {
+    "overall": {
+      "base_mae": 53.2795,
+      "pred_mae": 53.2145,
+      "base_bias": 6.2283,
+      "pred_bias": 6.1806,
+      "base_market_mae": 23.5562,
+      "pred_market_mae": 23.5051,
+      "base_large_divergence_share": 0.4791,
+      "pred_large_divergence_share": 0.4791,
+      "base_rb_wr_gap_excess": -10.6655,
+      "pred_rb_wr_gap_excess": -10.5191,
+      "base_top150_actual_mean": 181.6438,
+      "pred_top150_actual_mean": 181.6444,
+      "base_top24_rb_actual_mean": 209.9214,
+      "pred_top24_rb_actual_mean": 209.9214,
+      "base_top24_wr_actual_mean": 225.8815,
+      "pred_top24_wr_actual_mean": 225.8815,
+      "base_top12_te_actual_mean": 162.9286,
+      "pred_top12_te_actual_mean": 162.9286
+    },
+    "by_position": {
+      "QB": {
+        "n": 238,
+        "base_mae": 78.5653,
+        "pred_mae": 78.5653,
+        "base_bias": -1.642,
+        "pred_bias": -1.642
+      },
+      "RB": {
+        "n": 518,
+        "base_mae": 57.1705,
+        "pred_mae": 57.0563,
+        "base_bias": 6.7372,
+        "pred_bias": 6.658,
+        "base_market_mae": 24.4682,
+        "pred_market_mae": 24.4335,
+        "base_large_divergence_share": 0.4225,
+        "pred_large_divergence_share": 0.4225
+      },
+      "WR": {
+        "n": 836,
+        "base_mae": 52.3641,
+        "pred_mae": 52.2858,
+        "base_bias": 9.2832,
+        "pred_bias": 9.2362,
+        "base_market_mae": 25.1485,
+        "pred_market_mae": 25.0615,
+        "base_large_divergence_share": 0.5021,
+        "pred_large_divergence_share": 0.5021
+      },
+      "TE": {
+        "n": 443,
+        "base_mae": 36.8726,
+        "pred_mae": 36.8556,
+        "base_bias": 4.0963,
+        "pred_bias": 4.0586,
+        "base_market_mae": 19.3753,
+        "pred_market_mae": 19.3753,
+        "base_large_divergence_share": 0.5,
+        "pred_large_divergence_share": 0.5
+      }
+    },
+    "cohort_market_error": {
+      "base": {
+        "backup": 13.3942,
+        "committee": 18.1866,
+        "rotational": 28.3162,
+        "starter": 23.6964,
+        "rookie_low_exp": 23.5562,
+        "elite_incumbent": 29.9525
+      },
+      "pred": {
+        "backup": 9.7747,
+        "committee": 17.2434,
+        "rotational": 25.9952,
+        "starter": 23.6964,
+        "rookie_low_exp": 23.5051,
+        "elite_incumbent": 30.056
+      }
+    },
+    "variant": "incumbent_plus_conservative_upstream_calibrator",
+    "variant_name": "incumbent_plus_conservative_upstream_calibrator",
+    "selected_variant": "incumbent_plus_conservative_upstream_calibrator",
+    "selection_report": {
+      "selected_variant": "incumbent_plus_conservative_upstream_calibrator",
+      "candidate_variant": "incumbent_plus_conservative_upstream_calibrator",
+      "baseline_variant": "ridge_baseline",
+      "incumbent_variant": "legacy_ridge_with_cohort_patches",
+      "promotion_decision": "promote_candidate",
+      "historical_tolerance": {
+        "outcome_mae_tolerance": 3.0,
+        "outcome_bias_tolerance": 2.0,
+        "top150_actual_mean_tolerance": 1.0,
+        "top24_rb_actual_mean_tolerance": 4.0
+      },
+      "draft_sim_tolerance": {
+        "mean_rank_tolerance": 0.15,
+        "lift_tolerance": 5.0,
+        "mean_model_points_tolerance": 10.0
+      },
+      "draft_sim_baseline": {
+        "aggregate": {
+          "mean_rank_avg": 7.1,
+          "lift_vs_adp_mean_avg": -148.45,
+          "mean_model_actual_avg": 1456.2,
+          "wins_vs_adp_mean_slots_total": 7
+        },
+        "by_season": {
+          "2024": {
+            "season": 2024,
+            "scrape_date": "2024-09-06",
+            "ranking": "preseason_ml",
+            "slot_ranks": [
+              4,
+              3,
+              3,
+              3,
+              5,
+              5,
+              5,
+              6,
+              6,
+              6
+            ],
+            "mean_rank": 4.6,
+            "best_rank": 3,
+            "worst_rank": 6,
+            "mean_model_actual": 1670.6,
+            "mean_adp_actual": 1630.7,
+            "lift_vs_adp_mean": 39.9,
+            "wins_vs_adp_mean_slots": 7
+          },
+          "2025": {
+            "season": 2025,
+            "scrape_date": "2025-09-05",
+            "ranking": "preseason_ml",
+            "slot_ranks": [
+              10,
+              10,
+              10,
+              10,
+              9,
+              9,
+              9,
+              9,
+              10,
+              10
+            ],
+            "mean_rank": 9.6,
+            "best_rank": 9,
+            "worst_rank": 10,
+            "mean_model_actual": 1241.8,
+            "mean_adp_actual": 1578.6,
+            "lift_vs_adp_mean": -336.8,
+            "wins_vs_adp_mean_slots": 0
+          }
+        }
+      },
+      "variants": {
+        "ridge_baseline": {
+          "passes_gate": 1,
+          "market_objective_score": 61.2461,
+          "draft_sim_passes_gate": 0,
+          "draft_sim_candidate_score": 9.0395,
+          "draft_sim_summary": {
+            "aggregate": {
+              "mean_rank_avg": 7.7,
+              "lift_vs_adp_mean_avg": -133.95,
+              "mean_model_actual_avg": 1468.3,
+              "wins_vs_adp_mean_slots_total": 5
+            },
+            "by_season": {
+              "2024": {
+                "season": 2024,
+                "scrape_date": "2024-09-06",
+                "ranking": "preseason_ml",
+                "slot_ranks": [
+                  8,
+                  8,
+                  9,
+                  5,
+                  8,
+                  5,
+                  5,
+                  3,
+                  3,
+                  3
+                ],
+                "mean_rank": 5.7,
+                "best_rank": 3,
+                "worst_rank": 9,
+                "mean_model_actual": 1646.8,
+                "mean_adp_actual": 1649.0,
+                "lift_vs_adp_mean": -2.2,
+                "wins_vs_adp_mean_slots": 5
+              },
+              "2025": {
+                "season": 2025,
+                "scrape_date": "2025-09-05",
+                "ranking": "preseason_ml",
+                "slot_ranks": [
+                  10,
+                  10,
+                  10,
+                  10,
+                  10,
+                  10,
+                  9,
+                  9,
+                  9,
+                  10
+                ],
+                "mean_rank": 9.7,
+                "best_rank": 9,
+                "worst_rank": 10,
+                "mean_model_actual": 1289.8,
+                "mean_adp_actual": 1555.5,
+                "lift_vs_adp_mean": -265.7,
+                "wins_vs_adp_mean_slots": 0
+              }
+            }
+          },
+          "summary": {
+            "overall": {
+              "base_mae": 52.7007,
+              "pred_mae": 52.7007,
+              "base_bias": 0.0828,
+              "pred_bias": 0.0828,
+              "base_market_mae": 24.1752,
+              "pred_market_mae": 24.1752,
+              "base_large_divergence_share": 0.4396,
+              "pred_large_divergence_share": 0.4396,
+              "base_rb_wr_gap_excess": -19.4869,
+              "pred_rb_wr_gap_excess": -19.4869,
+              "base_top150_actual_mean": 181.5378,
+              "pred_top150_actual_mean": 181.5378,
+              "base_top24_rb_actual_mean": 212.4238,
+              "pred_top24_rb_actual_mean": 212.4238,
+              "base_top24_wr_actual_mean": 226.1935,
+              "pred_top24_wr_actual_mean": 226.1935,
+              "base_top12_te_actual_mean": 164.3024,
+              "pred_top12_te_actual_mean": 164.3024
+            },
+            "by_position": {
+              "QB": {
+                "n": 238,
+                "base_mae": 82.5545,
+                "pred_mae": 82.5545,
+                "base_bias": 1.0878,
+                "pred_bias": 1.0878,
+                "base_market_mae": 38.9886,
+                "pred_market_mae": 38.9886,
+                "base_large_divergence_share": 0.3529,
+                "pred_large_divergence_share": 0.3529
+              },
+              "RB": {
+                "n": 518,
+                "base_mae": 57.1623,
+                "pred_mae": 57.1623,
+                "base_bias": -0.2159,
+                "pred_bias": -0.2159,
+                "base_market_mae": 22.4761,
+                "pred_market_mae": 22.4761,
+                "base_large_divergence_share": 0.3592,
+                "pred_large_divergence_share": 0.3592
+              },
+              "WR": {
+                "n": 836,
+                "base_mae": 50.3439,
+                "pred_mae": 50.3439,
+                "base_bias": -0.0859,
+                "pred_bias": -0.0859,
+                "base_market_mae": 23.3398,
+                "pred_market_mae": 23.3398,
+                "base_large_divergence_share": 0.4603,
+                "pred_large_divergence_share": 0.4603
+              },
+              "TE": {
+                "n": 443,
+                "base_mae": 35.8927,
+                "pred_mae": 35.8927,
+                "base_bias": 0.2107,
+                "pred_bias": 0.2107,
+                "base_market_mae": 19.5329,
+                "pred_market_mae": 19.5329,
+                "base_large_divergence_share": 0.541,
+                "pred_large_divergence_share": 0.541
+              }
+            },
+            "cohort_market_error": {
+              "base": {
+                "backup": 49.8612,
+                "committee": 12.8061,
+                "rotational": 29.2239,
+                "starter": 23.605,
+                "rookie_low_exp": 24.1752,
+                "elite_incumbent": 33.1623
+              },
+              "pred": {
+                "backup": 49.8612,
+                "committee": 12.8061,
+                "rotational": 29.2239,
+                "starter": 23.605,
+                "rookie_low_exp": 24.1752,
+                "elite_incumbent": 33.1623
+              }
+            },
+            "variant": "ridge_baseline",
+            "calibrator_audits": {}
+          }
+        },
+        "position_specific_ridge": {
+          "passes_gate": 1,
+          "market_objective_score": 60.0854,
+          "draft_sim_passes_gate": 0,
+          "draft_sim_candidate_score": 9.5555,
+          "draft_sim_summary": {
+            "aggregate": {
+              "mean_rank_avg": 7.9,
+              "lift_vs_adp_mean_avg": -165.55,
+              "mean_model_actual_avg": 1447.85,
+              "wins_vs_adp_mean_slots_total": 4
+            },
+            "by_season": {
+              "2024": {
+                "season": 2024,
+                "scrape_date": "2024-09-06",
+                "ranking": "preseason_ml",
+                "slot_ranks": [
+                  8,
+                  9,
+                  8,
+                  3,
+                  9,
+                  5,
+                  5,
+                  4,
+                  4,
+                  4
+                ],
+                "mean_rank": 5.9,
+                "best_rank": 3,
+                "worst_rank": 9,
+                "mean_model_actual": 1624.5,
+                "mean_adp_actual": 1671.0,
+                "lift_vs_adp_mean": -46.5,
+                "wins_vs_adp_mean_slots": 4
+              },
+              "2025": {
+                "season": 2025,
+                "scrape_date": "2025-09-05",
+                "ranking": "preseason_ml",
+                "slot_ranks": [
+                  10,
+                  10,
+                  10,
+                  10,
+                  10,
+                  10,
+                  9,
+                  10,
+                  10,
+                  10
+                ],
+                "mean_rank": 9.9,
+                "best_rank": 9,
+                "worst_rank": 10,
+                "mean_model_actual": 1271.2,
+                "mean_adp_actual": 1555.8,
+                "lift_vs_adp_mean": -284.6,
+                "wins_vs_adp_mean_slots": 0
+              }
+            }
+          },
+          "summary": {
+            "overall": {
+              "base_mae": 52.6431,
+              "pred_mae": 52.6431,
+              "base_bias": 0.0071,
+              "pred_bias": 0.0071,
+              "base_market_mae": 23.2505,
+              "pred_market_mae": 23.2505,
+              "base_large_divergence_share": 0.4098,
+              "pred_large_divergence_share": 0.4098,
+              "base_rb_wr_gap_excess": -20.4429,
+              "pred_rb_wr_gap_excess": -20.4429,
+              "base_top150_actual_mean": 181.3581,
+              "pred_top150_actual_mean": 181.3581,
+              "base_top24_rb_actual_mean": 211.8726,
+              "pred_top24_rb_actual_mean": 211.8726,
+              "base_top24_wr_actual_mean": 226.4042,
+              "pred_top24_wr_actual_mean": 226.4042,
+              "base_top12_te_actual_mean": 165.8667,
+              "pred_top12_te_actual_mean": 165.8667
+            },
+            "by_position": {
+              "QB": {
+                "n": 238,
+                "base_mae": 81.9884,
+                "pred_mae": 81.9884,
+                "base_bias": 0.9707,
+                "pred_bias": 0.9707,
+                "base_market_mae": 38.9434,
+                "pred_market_mae": 38.9434,
+                "base_large_divergence_share": 0.3529,
+                "pred_large_divergence_share": 0.3529
+              },
+              "RB": {
+                "n": 518,
+                "base_mae": 57.1458,
+                "pred_mae": 57.1458,
+                "base_bias": -0.2188,
+                "pred_bias": -0.2188,
+                "base_market_mae": 21.9307,
+                "pred_market_mae": 21.9307,
+                "base_large_divergence_share": 0.3099,
+                "pred_large_divergence_share": 0.3099
+              },
+              "WR": {
+                "n": 836,
+                "base_mae": 50.293,
+                "pred_mae": 50.293,
+                "base_bias": -0.221,
+                "pred_bias": -0.221,
+                "base_market_mae": 22.0165,
+                "pred_market_mae": 22.0165,
+                "base_large_divergence_share": 0.4268,
+                "pred_large_divergence_share": 0.4268
+              },
+              "TE": {
+                "n": 443,
+                "base_mae": 36.0476,
+                "pred_mae": 36.0476,
+                "base_bias": 0.184,
+                "pred_bias": 0.184,
+                "base_market_mae": 18.4571,
+                "pred_market_mae": 18.4571,
+                "base_large_divergence_share": 0.5246,
+                "pred_large_divergence_share": 0.5246
+              }
+            },
+            "cohort_market_error": {
+              "base": {
+                "backup": 48.4136,
+                "committee": 12.3916,
+                "rotational": 29.7667,
+                "starter": 22.6292,
+                "rookie_low_exp": 23.2505,
+                "elite_incumbent": 33.1509
+              },
+              "pred": {
+                "backup": 48.4136,
+                "committee": 12.3916,
+                "rotational": 29.7667,
+                "starter": 22.6292,
+                "rookie_low_exp": 23.2505,
+                "elite_incumbent": 33.1509
+              }
+            },
+            "variant": "position_specific_ridge",
+            "calibrator_audits": {}
+          }
+        },
+        "position_specific_ridge_rb_construction": {
+          "passes_gate": 1,
+          "market_objective_score": 62.5477,
+          "draft_sim_passes_gate": 0,
+          "draft_sim_candidate_score": 9.5555,
+          "draft_sim_summary": {
+            "aggregate": {
+              "mean_rank_avg": 7.9,
+              "lift_vs_adp_mean_avg": -165.55,
+              "mean_model_actual_avg": 1447.85,
+              "wins_vs_adp_mean_slots_total": 4
+            },
+            "by_season": {
+              "2024": {
+                "season": 2024,
+                "scrape_date": "2024-09-06",
+                "ranking": "preseason_ml",
+                "slot_ranks": [
+                  8,
+                  9,
+                  8,
+                  3,
+                  9,
+                  5,
+                  5,
+                  4,
+                  4,
+                  4
+                ],
+                "mean_rank": 5.9,
+                "best_rank": 3,
+                "worst_rank": 9,
+                "mean_model_actual": 1624.5,
+                "mean_adp_actual": 1671.0,
+                "lift_vs_adp_mean": -46.5,
+                "wins_vs_adp_mean_slots": 4
+              },
+              "2025": {
+                "season": 2025,
+                "scrape_date": "2025-09-05",
+                "ranking": "preseason_ml",
+                "slot_ranks": [
+                  10,
+                  10,
+                  10,
+                  10,
+                  10,
+                  10,
+                  9,
+                  10,
+                  10,
+                  10
+                ],
+                "mean_rank": 9.9,
+                "best_rank": 9,
+                "worst_rank": 10,
+                "mean_model_actual": 1271.2,
+                "mean_adp_actual": 1555.8,
+                "lift_vs_adp_mean": -284.6,
+                "wins_vs_adp_mean_slots": 0
+              }
+            }
+          },
+          "summary": {
+            "overall": {
+              "base_mae": 52.7205,
+              "pred_mae": 52.7205,
+              "base_bias": 0.0095,
+              "pred_bias": 0.0095,
+              "base_market_mae": 23.3146,
+              "pred_market_mae": 23.3146,
+              "base_large_divergence_share": 0.4151,
+              "pred_large_divergence_share": 0.4151,
+              "base_rb_wr_gap_excess": -22.6291,
+              "pred_rb_wr_gap_excess": -22.6291,
+              "base_top150_actual_mean": 181.4347,
+              "pred_top150_actual_mean": 181.4347,
+              "base_top24_rb_actual_mean": 210.1494,
+              "pred_top24_rb_actual_mean": 210.1494,
+              "base_top24_wr_actual_mean": 226.4042,
+              "pred_top24_wr_actual_mean": 226.4042,
+              "base_top12_te_actual_mean": 165.8667,
+              "pred_top12_te_actual_mean": 165.8667
+            },
+            "by_position": {
+              "QB": {
+                "n": 238,
+                "base_mae": 81.9884,
+                "pred_mae": 81.9884,
+                "base_bias": 0.9707,
+                "pred_bias": 0.9707,
+                "base_market_mae": 38.9434,
+                "pred_market_mae": 38.9434,
+                "base_large_divergence_share": 0.3529,
+                "pred_large_divergence_share": 0.3529
+              },
+              "RB": {
+                "n": 518,
+                "base_mae": 57.4497,
+                "pred_mae": 57.4497,
+                "base_bias": -0.2093,
+                "pred_bias": -0.2093,
+                "base_market_mae": 22.1885,
+                "pred_market_mae": 22.1885,
+                "base_large_divergence_share": 0.331,
+                "pred_large_divergence_share": 0.331
+              },
+              "WR": {
+                "n": 836,
+                "base_mae": 50.293,
+                "pred_mae": 50.293,
+                "base_bias": -0.221,
+                "pred_bias": -0.221,
+                "base_market_mae": 22.0165,
+                "pred_market_mae": 22.0165,
+                "base_large_divergence_share": 0.4268,
+                "pred_large_divergence_share": 0.4268
+              },
+              "TE": {
+                "n": 443,
+                "base_mae": 36.0476,
+                "pred_mae": 36.0476,
+                "base_bias": 0.184,
+                "pred_bias": 0.184,
+                "base_market_mae": 18.4571,
+                "pred_market_mae": 18.4571,
+                "base_large_divergence_share": 0.5246,
+                "pred_large_divergence_share": 0.5246
+              }
+            },
+            "cohort_market_error": {
+              "base": {
+                "backup": 48.4136,
+                "committee": 12.2693,
+                "rotational": 29.7667,
+                "starter": 22.6996,
+                "rookie_low_exp": 23.3146,
+                "elite_incumbent": 33.0444
+              },
+              "pred": {
+                "backup": 48.4136,
+                "committee": 12.2693,
+                "rotational": 29.7667,
+                "starter": 22.6996,
+                "rookie_low_exp": 23.3146,
+                "elite_incumbent": 33.0444
+              }
+            },
+            "variant": "position_specific_ridge_rb_construction",
+            "calibrator_audits": {}
+          }
+        },
+        "hybrid_legacy_rb_position_specific": {
+          "passes_gate": 1,
+          "market_objective_score": 61.8812,
+          "draft_sim_passes_gate": 0,
+          "draft_sim_candidate_score": 11.3545,
+          "draft_sim_summary": {
+            "aggregate": {
+              "mean_rank_avg": 9.0,
+              "lift_vs_adp_mean_avg": -235.45,
+              "mean_model_actual_avg": 1372.55,
+              "wins_vs_adp_mean_slots_total": 1
+            },
+            "by_season": {
+              "2024": {
+                "season": 2024,
+                "scrape_date": "2024-09-06",
+                "ranking": "preseason_ml",
+                "slot_ranks": [
+                  8,
+                  9,
+                  9,
+                  3,
+                  9,
+                  9,
+                  9,
+                  9,
+                  9,
+                  9
+                ],
+                "mean_rank": 8.3,
+                "best_rank": 3,
+                "worst_rank": 9,
+                "mean_model_actual": 1472.9,
+                "mean_adp_actual": 1654.5,
+                "lift_vs_adp_mean": -181.5,
+                "wins_vs_adp_mean_slots": 1
+              },
+              "2025": {
+                "season": 2025,
+                "scrape_date": "2025-09-05",
+                "ranking": "preseason_ml",
+                "slot_ranks": [
+                  10,
+                  10,
+                  10,
+                  10,
+                  10,
+                  10,
+                  9,
+                  9,
+                  9,
+                  10
+                ],
+                "mean_rank": 9.7,
+                "best_rank": 9,
+                "worst_rank": 10,
+                "mean_model_actual": 1272.2,
+                "mean_adp_actual": 1561.5,
+                "lift_vs_adp_mean": -289.4,
+                "wins_vs_adp_mean_slots": 0
+              }
+            }
+          },
+          "summary": {
+            "overall": {
+              "base_mae": 52.6317,
+              "pred_mae": 52.6317,
+              "base_bias": 0.004,
+              "pred_bias": 0.004,
+              "base_market_mae": 23.399,
+              "pred_market_mae": 23.399,
+              "base_large_divergence_share": 0.4221,
+              "pred_large_divergence_share": 0.4221,
+              "base_rb_wr_gap_excess": -21.5982,
+              "pred_rb_wr_gap_excess": -21.5982,
+              "base_top150_actual_mean": 181.1924,
+              "pred_top150_actual_mean": 181.1924,
+              "base_top24_rb_actual_mean": 211.9548,
+              "pred_top24_rb_actual_mean": 211.9548,
+              "base_top24_wr_actual_mean": 226.4042,
+              "pred_top24_wr_actual_mean": 226.4042,
+              "base_top12_te_actual_mean": 165.8667,
+              "pred_top12_te_actual_mean": 165.8667
+            },
+            "by_position": {
+              "QB": {
+                "n": 238,
+                "base_mae": 81.9884,
+                "pred_mae": 81.9884,
+                "base_bias": 0.9707,
+                "pred_bias": 0.9707,
+                "base_market_mae": 38.9434,
+                "pred_market_mae": 38.9434,
+                "base_large_divergence_share": 0.3529,
+                "pred_large_divergence_share": 0.3529
+              },
+              "RB": {
+                "n": 518,
+                "base_mae": 57.1007,
+                "pred_mae": 57.1007,
+                "base_bias": -0.2308,
+                "pred_bias": -0.2308,
+                "base_market_mae": 22.5279,
+                "pred_market_mae": 22.5279,
+                "base_large_divergence_share": 0.3592,
+                "pred_large_divergence_share": 0.3592
+              },
+              "WR": {
+                "n": 836,
+                "base_mae": 50.293,
+                "pred_mae": 50.293,
+                "base_bias": -0.221,
+                "pred_bias": -0.221,
+                "base_market_mae": 22.0165,
+                "pred_market_mae": 22.0165,
+                "base_large_divergence_share": 0.4268,
+                "pred_large_divergence_share": 0.4268
+              },
+              "TE": {
+                "n": 443,
+                "base_mae": 36.0476,
+                "pred_mae": 36.0476,
+                "base_bias": 0.184,
+                "pred_bias": 0.184,
+                "base_market_mae": 18.4571,
+                "pred_market_mae": 18.4571,
+                "base_large_divergence_share": 0.5246,
+                "pred_large_divergence_share": 0.5246
+              }
+            },
+            "cohort_market_error": {
+              "base": {
+                "backup": 48.4136,
+                "committee": 12.6049,
+                "rotational": 29.7667,
+                "starter": 22.7856,
+                "rookie_low_exp": 23.399,
+                "elite_incumbent": 33.3912
+              },
+              "pred": {
+                "backup": 48.4136,
+                "committee": 12.6049,
+                "rotational": 29.7667,
+                "starter": 22.7856,
+                "rookie_low_exp": 23.399,
+                "elite_incumbent": 33.3912
+              }
+            },
+            "variant": "hybrid_legacy_rb_position_specific",
+            "calibrator_audits": {}
+          }
+        },
+        "position_specific_ridge_plus_calibrator": {
+          "passes_gate": 1,
+          "market_objective_score": 60.7295,
+          "draft_sim_passes_gate": 0,
+          "draft_sim_candidate_score": 11.5935,
+          "draft_sim_summary": {
+            "aggregate": {
+              "mean_rank_avg": 9.15,
+              "lift_vs_adp_mean_avg": -244.35,
+              "mean_model_actual_avg": 1372.0,
+              "wins_vs_adp_mean_slots_total": 0
+            },
+            "by_season": {
+              "2024": {
+                "season": 2024,
+                "scrape_date": "2024-09-06",
+                "ranking": "preseason_ml",
+                "slot_ranks": [
+                  8,
+                  8,
+                  8,
+                  7,
+                  10,
+                  10,
+                  10,
+                  10,
+                  10,
+                  9
+                ],
+                "mean_rank": 9,
+                "best_rank": 7,
+                "worst_rank": 10,
+                "mean_model_actual": 1443.1,
+                "mean_adp_actual": 1671.4,
+                "lift_vs_adp_mean": -228.4,
+                "wins_vs_adp_mean_slots": 0
+              },
+              "2025": {
+                "season": 2025,
+                "scrape_date": "2025-09-05",
+                "ranking": "preseason_ml",
+                "slot_ranks": [
+                  10,
+                  10,
+                  10,
+                  9,
+                  9,
+                  9,
+                  9,
+                  9,
+                  9,
+                  9
+                ],
+                "mean_rank": 9.3,
+                "best_rank": 9,
+                "worst_rank": 10,
+                "mean_model_actual": 1300.9,
+                "mean_adp_actual": 1561.2,
+                "lift_vs_adp_mean": -260.3,
+                "wins_vs_adp_mean_slots": 0
+              }
+            }
+          },
+          "summary": {
+            "overall": {
+              "base_mae": 52.6431,
+              "pred_mae": 52.4112,
+              "base_bias": 0.0071,
+              "pred_bias": -1.2366,
+              "base_market_mae": 23.2505,
+              "pred_market_mae": 22.8954,
+              "base_large_divergence_share": 0.4098,
+              "pred_large_divergence_share": 0.4186,
+              "base_rb_wr_gap_excess": -20.4429,
+              "pred_rb_wr_gap_excess": -21.0901,
+              "base_top150_actual_mean": 181.3581,
+              "pred_top150_actual_mean": 181.339,
+              "base_top24_rb_actual_mean": 211.8726,
+              "pred_top24_rb_actual_mean": 212.9881,
+              "base_top24_wr_actual_mean": 226.4042,
+              "pred_top24_wr_actual_mean": 226.2565,
+              "base_top12_te_actual_mean": 165.8667,
+              "pred_top12_te_actual_mean": 163.5476
+            },
+            "by_position": {
+              "QB": {
+                "n": 238,
+                "base_mae": 81.9884,
+                "pred_mae": 79.7672,
+                "base_bias": 0.9707,
+                "pred_bias": 0.8836,
+                "base_market_mae": 38.9434,
+                "pred_market_mae": 37.704,
+                "base_large_divergence_share": 0.3529,
+                "pred_large_divergence_share": 0.4412
+              },
+              "RB": {
+                "n": 518,
+                "base_mae": 57.1458,
+                "pred_mae": 56.7244,
+                "base_bias": -0.2188,
+                "pred_bias": -3.9893,
+                "base_market_mae": 21.9307,
+                "pred_market_mae": 21.0965,
+                "base_large_divergence_share": 0.3099,
+                "pred_large_divergence_share": 0.3028
+              },
+              "WR": {
+                "n": 836,
+                "base_mae": 50.293,
+                "pred_mae": 50.4762,
+                "base_bias": -0.221,
+                "pred_bias": -0.2535,
+                "base_market_mae": 22.0165,
+                "pred_market_mae": 22.0165,
+                "base_large_divergence_share": 0.4268,
+                "pred_large_divergence_share": 0.4268
+              },
+              "TE": {
+                "n": 443,
+                "base_mae": 36.0476,
+                "pred_mae": 36.3227,
+                "base_bias": 0.184,
+                "pred_bias": -1.0121,
+                "base_market_mae": 18.4571,
+                "pred_market_mae": 18.4571,
+                "base_large_divergence_share": 0.5246,
+                "pred_large_divergence_share": 0.5246
+              }
+            },
+            "cohort_market_error": {
+              "base": {
+                "backup": 48.4136,
+                "committee": 12.3916,
+                "rotational": 29.7667,
+                "starter": 22.6292,
+                "rookie_low_exp": 23.2505,
+                "elite_incumbent": 33.1509
+              },
+              "pred": {
+                "backup": 38.3263,
+                "committee": 9.8572,
+                "rotational": 31.2934,
+                "starter": 22.4331,
+                "rookie_low_exp": 22.8954,
+                "elite_incumbent": 33.4641
+              }
+            },
+            "variant": "position_specific_ridge_plus_calibrator",
+            "calibrator_audits": {
+              "QB": [
+                {
+                  "holdout_season": 2019,
+                  "sample_size": 208,
+                  "features": [
+                    "raw_pred",
+                    "confidence_score",
+                    "low_information_score",
+                    "rookie_or_low_experience",
+                    "support_class_starter",
+                    "support_class_committee",
+                    "support_class_backup",
+                    "support_class_rotational",
+                    "games_played",
+                    "snap_share",
+                    "ppg",
+                    "passing_yards_pg",
+                    "market_anchor"
+                  ],
+                  "mae_before": 84.7074,
+                  "mae_after": 80.5774,
+                  "bias_before": 0.8035,
+                  "bias_after": -0.1845,
+                  "max_adjustment_share": 0.2,
+                  "market_weight_cap": 0.22
+                },
+                {
+                  "holdout_season": 2020,
+                  "sample_size": 203,
+                  "features": [
+                    "raw_pred",
+                    "confidence_score",
+                    "low_information_score",
+                    "rookie_or_low_experience",
+                    "support_class_starter",
+                    "support_class_committee",
+                    "support_class_backup",
+                    "support_class_rotational",
+                    "games_played",
+                    "snap_share",
+                    "ppg",
+                    "passing_yards_pg",
+                    "market_anchor"
+                  ],
+                  "mae_before": 79.1184,
+                  "mae_after": 75.864,
+                  "bias_before": 1.2499,
+                  "bias_after": -0.3784,
+                  "max_adjustment_share": 0.2,
+                  "market_weight_cap": 0.22
+                },
+                {
+                  "holdout_season": 2021,
+                  "sample_size": 207,
+                  "features": [
+                    "raw_pred",
+                    "confidence_score",
+                    "low_information_score",
+                    "rookie_or_low_experience",
+                    "support_class_starter",
+                    "support_class_committee",
+                    "support_class_backup",
+                    "support_class_rotational",
+                    "games_played",
+                    "snap_share",
+                    "ppg",
+                    "passing_yards_pg",
+                    "market_anchor"
+                  ],
+                  "mae_before": 83.0355,
+                  "mae_after": 78.5146,
+                  "bias_before": 0.8373,
+                  "bias_after": -0.6332,
+                  "max_adjustment_share": 0.2,
+                  "market_weight_cap": 0.22
+                },
+                {
+                  "holdout_season": 2022,
+                  "sample_size": 201,
+                  "features": [
+                    "raw_pred",
+                    "confidence_score",
+                    "low_information_score",
+                    "rookie_or_low_experience",
+                    "support_class_starter",
+                    "support_class_committee",
+                    "support_class_backup",
+                    "support_class_rotational",
+                    "games_played",
+                    "snap_share",
+                    "ppg",
+                    "passing_yards_pg",
+                    "market_anchor"
+                  ],
+                  "mae_before": 83.9655,
+                  "mae_after": 79.5635,
+                  "bias_before": 1.483,
+                  "bias_after": 0.2352,
+                  "max_adjustment_share": 0.2,
+                  "market_weight_cap": 0.22
+                },
+                {
+                  "holdout_season": 2023,
+                  "sample_size": 205,
+                  "features": [
+                    "raw_pred",
+                    "confidence_score",
+                    "low_information_score",
+                    "rookie_or_low_experience",
+                    "support_class_starter",
+                    "support_class_committee",
+                    "support_class_backup",
+                    "support_class_rotational",
+                    "games_played",
+                    "snap_share",
+                    "ppg",
+                    "passing_yards_pg",
+                    "market_anchor"
+                  ],
+                  "mae_before": 82.7974,
+                  "mae_after": 78.0445,
+                  "bias_before": 1.3509,
+                  "bias_after": 0.5397,
+                  "max_adjustment_share": 0.2,
+                  "market_weight_cap": 0.22
+                },
+                {
+                  "holdout_season": 2024,
+                  "sample_size": 202,
+                  "features": [
+                    "raw_pred",
+                    "confidence_score",
+                    "low_information_score",
+                    "rookie_or_low_experience",
+                    "support_class_starter",
+                    "support_class_committee",
+                    "support_class_backup",
+                    "support_class_rotational",
+                    "games_played",
+                    "snap_share",
+                    "ppg",
+                    "passing_yards_pg",
+                    "market_anchor"
+                  ],
+                  "mae_before": 80.6485,
+                  "mae_after": 78.5592,
+                  "bias_before": 1.6447,
+                  "bias_after": -0.8806,
+                  "max_adjustment_share": 0.2,
+                  "market_weight_cap": 0.22
+                },
+                {
+                  "holdout_season": 2025,
+                  "sample_size": 202,
+                  "features": [
+                    "raw_pred",
+                    "confidence_score",
+                    "low_information_score",
+                    "rookie_or_low_experience",
+                    "support_class_starter",
+                    "support_class_committee",
+                    "support_class_backup",
+                    "support_class_rotational",
+                    "games_played",
+                    "snap_share",
+                    "ppg",
+                    "passing_yards_pg",
+                    "market_anchor"
+                  ],
+                  "mae_before": 82.2957,
+                  "mae_after": 78.1838,
+                  "bias_before": 0.497,
+                  "bias_after": -1.7146,
+                  "max_adjustment_share": 0.2,
+                  "market_weight_cap": 0.22
+                }
+              ],
+              "RB": [
+                {
+                  "holdout_season": 2019,
+                  "sample_size": 447,
+                  "features": [
+                    "raw_pred",
+                    "confidence_score",
+                    "low_information_score",
+                    "rookie_or_low_experience",
+                    "support_class_starter",
+                    "support_class_committee",
+                    "support_class_backup",
+                    "support_class_rotational",
+                    "games_played",
+                    "snap_share",
+                    "carries_pg",
+                    "targets_pg",
+                    "ppg_x_carries_pg",
+                    "low_volume_efficiency_flag",
+                    "market_anchor"
+                  ],
+                  "mae_before": 56.981,
+                  "mae_after": 56.1444,
+                  "bias_before": -0.3485,
+                  "bias_after": -0.7326,
+                  "max_adjustment_share": 0.3,
+                  "market_weight_cap": 0.36
+                },
+                {
+                  "holdout_season": 2020,
+                  "sample_size": 440,
+                  "features": [
+                    "raw_pred",
+                    "confidence_score",
+                    "low_information_score",
+                    "rookie_or_low_experience",
+                    "support_class_starter",
+                    "support_class_committee",
+                    "support_class_backup",
+                    "support_class_rotational",
+                    "games_played",
+                    "snap_share",
+                    "carries_pg",
+                    "targets_pg",
+                    "ppg_x_carries_pg",
+                    "low_volume_efficiency_flag",
+                    "market_anchor"
+                  ],
+                  "mae_before": 57.9798,
+                  "mae_after": 56.9214,
+                  "bias_before": -1.3564,
+                  "bias_after": -1.3878,
+                  "max_adjustment_share": 0.3,
+                  "market_weight_cap": 0.36
+                },
+                {
+                  "holdout_season": 2021,
+                  "sample_size": 438,
+                  "features": [
+                    "raw_pred",
+                    "confidence_score",
+                    "low_information_score",
+                    "rookie_or_low_experience",
+                    "support_class_starter",
+                    "support_class_committee",
+                    "support_class_backup",
+                    "support_class_rotational",
+                    "games_played",
+                    "snap_share",
+                    "carries_pg",
+                    "targets_pg",
+                    "ppg_x_carries_pg",
+                    "low_volume_efficiency_flag",
+                    "market_anchor"
+                  ],
+                  "mae_before": 57.8048,
+                  "mae_after": 57.03,
+                  "bias_before": -0.1545,
+                  "bias_after": -0.8779,
+                  "max_adjustment_share": 0.3,
+                  "market_weight_cap": 0.36
+                },
+                {
+                  "holdout_season": 2022,
+                  "sample_size": 443,
+                  "features": [
+                    "raw_pred",
+                    "confidence_score",
+                    "low_information_score",
+                    "rookie_or_low_experience",
+                    "support_class_starter",
+                    "support_class_committee",
+                    "support_class_backup",
+                    "support_class_rotational",
+                    "games_played",
+                    "snap_share",
+                    "carries_pg",
+                    "targets_pg",
+                    "ppg_x_carries_pg",
+                    "low_volume_efficiency_flag",
+                    "market_anchor"
+                  ],
+                  "mae_before": 56.5295,
+                  "mae_after": 55.7451,
+                  "bias_before": 0.1602,
+                  "bias_after": -0.8616,
+                  "max_adjustment_share": 0.3,
+                  "market_weight_cap": 0.36
+                },
+                {
+                  "holdout_season": 2023,
+                  "sample_size": 448,
+                  "features": [
+                    "raw_pred",
+                    "confidence_score",
+                    "low_information_score",
+                    "rookie_or_low_experience",
+                    "support_class_starter",
+                    "support_class_committee",
+                    "support_class_backup",
+                    "support_class_rotational",
+                    "games_played",
+                    "snap_share",
+                    "carries_pg",
+                    "targets_pg",
+                    "ppg_x_carries_pg",
+                    "low_volume_efficiency_flag",
+                    "market_anchor"
+                  ],
+                  "mae_before": 56.5204,
+                  "mae_after": 55.509,
+                  "bias_before": -0.2332,
+                  "bias_after": -0.9589,
+                  "max_adjustment_share": 0.3,
+                  "market_weight_cap": 0.36
+                },
+                {
+                  "holdout_season": 2024,
+                  "sample_size": 442,
+                  "features": [
+                    "raw_pred",
+                    "confidence_score",
+                    "low_information_score",
+                    "rookie_or_low_experience",
+                    "support_class_starter",
+                    "support_class_committee",
+                    "support_class_backup",
+                    "support_class_rotational",
+                    "games_played",
+                    "snap_share",
+                    "carries_pg",
+                    "targets_pg",
+                    "ppg_x_carries_pg",
+                    "low_volume_efficiency_flag",
+                    "market_anchor"
+                  ],
+                  "mae_before": 56.7114,
+                  "mae_after": 56.0884,
+                  "bias_before": -0.2884,
+                  "bias_after": -1.0287,
+                  "max_adjustment_share": 0.3,
+                  "market_weight_cap": 0.36
+                },
+                {
+                  "holdout_season": 2025,
+                  "sample_size": 450,
+                  "features": [
+                    "raw_pred",
+                    "confidence_score",
+                    "low_information_score",
+                    "rookie_or_low_experience",
+                    "support_class_starter",
+                    "support_class_committee",
+                    "support_class_backup",
+                    "support_class_rotational",
+                    "games_played",
+                    "snap_share",
+                    "carries_pg",
+                    "targets_pg",
+                    "ppg_x_carries_pg",
+                    "low_volume_efficiency_flag",
+                    "market_anchor"
+                  ],
+                  "mae_before": 58.002,
+                  "mae_after": 57.6105,
+                  "bias_before": -0.5674,
+                  "bias_after": -0.8583,
+                  "max_adjustment_share": 0.3,
+                  "market_weight_cap": 0.36
+                }
+              ],
+              "WR": [
+                {
+                  "holdout_season": 2019,
+                  "sample_size": 728,
+                  "features": [
+                    "raw_pred",
+                    "confidence_score",
+                    "low_information_score",
+                    "rookie_or_low_experience",
+                    "support_class_starter",
+                    "support_class_committee",
+                    "support_class_backup",
+                    "support_class_rotational",
+                    "games_played",
+                    "snap_share",
+                    "targets_pg",
+                    "target_share",
+                    "ppg_x_targets_pg",
+                    "low_target_efficiency_flag",
+                    "market_anchor"
+                  ],
+                  "mae_before": 50.4365,
+                  "mae_after": 50.3412,
+                  "bias_before": -1.8025,
+                  "bias_after": -0.3893,
+                  "max_adjustment_share": 0.28,
+                  "market_weight_cap": 0.34
+                },
+                {
+                  "holdout_season": 2020,
+                  "sample_size": 723,
+                  "features": [
+                    "raw_pred",
+                    "confidence_score",
+                    "low_information_score",
+                    "rookie_or_low_experience",
+                    "support_class_starter",
+                    "support_class_committee",
+                    "support_class_backup",
+                    "support_class_rotational",
+                    "games_played",
+                    "snap_share",
+                    "targets_pg",
+                    "target_share",
+                    "ppg_x_targets_pg",
+                    "low_target_efficiency_flag",
+                    "market_anchor"
+                  ],
+                  "mae_before": 49.6209,
+                  "mae_after": 49.5992,
+                  "bias_before": -0.6241,
+                  "bias_after": -0.1211,
+                  "max_adjustment_share": 0.28,
+                  "market_weight_cap": 0.34
+                },
+                {
+                  "holdout_season": 2021,
+                  "sample_size": 713,
+                  "features": [
+                    "raw_pred",
+                    "confidence_score",
+                    "low_information_score",
+                    "rookie_or_low_experience",
+                    "support_class_starter",
+                    "support_class_committee",
+                    "support_class_backup",
+                    "support_class_rotational",
+                    "games_played",
+                    "snap_share",
+                    "targets_pg",
+                    "target_share",
+                    "ppg_x_targets_pg",
+                    "low_target_efficiency_flag",
+                    "market_anchor"
+                  ],
+                  "mae_before": 49.655,
+                  "mae_after": 49.5764,
+                  "bias_before": -0.4448,
+                  "bias_after": -0.2101,
+                  "max_adjustment_share": 0.28,
+                  "market_weight_cap": 0.34
+                },
+                {
+                  "holdout_season": 2022,
+                  "sample_size": 717,
+                  "features": [
+                    "raw_pred",
+                    "confidence_score",
+                    "low_information_score",
+                    "rookie_or_low_experience",
+                    "support_class_starter",
+                    "support_class_committee",
+                    "support_class_backup",
+                    "support_class_rotational",
+                    "games_played",
+                    "snap_share",
+                    "targets_pg",
+                    "target_share",
+                    "ppg_x_targets_pg",
+                    "low_target_efficiency_flag",
+                    "market_anchor"
+                  ],
+                  "mae_before": 50.5716,
+                  "mae_after": 50.6475,
+                  "bias_before": 0.0563,
+                  "bias_after": -0.2854,
+                  "max_adjustment_share": 0.28,
+                  "market_weight_cap": 0.34
+                },
+                {
+                  "holdout_season": 2023,
+                  "sample_size": 718,
+                  "features": [
+                    "raw_pred",
+                    "confidence_score",
+                    "low_information_score",
+                    "rookie_or_low_experience",
+                    "support_class_starter",
+                    "support_class_committee",
+                    "support_class_backup",
+                    "support_class_rotational",
+                    "games_played",
+                    "snap_share",
+                    "targets_pg",
+                    "target_share",
+                    "ppg_x_targets_pg",
+                    "low_target_efficiency_flag",
+                    "market_anchor"
+                  ],
+                  "mae_before": 50.6702,
+                  "mae_after": 50.8552,
+                  "bias_before": -0.1239,
+                  "bias_after": -0.1886,
+                  "max_adjustment_share": 0.28,
+                  "market_weight_cap": 0.34
+                },
+                {
+                  "holdout_season": 2024,
+                  "sample_size": 706,
+                  "features": [
+                    "raw_pred",
+                    "confidence_score",
+                    "low_information_score",
+                    "rookie_or_low_experience",
+                    "support_class_starter",
+                    "support_class_committee",
+                    "support_class_backup",
+                    "support_class_rotational",
+                    "games_played",
+                    "snap_share",
+                    "targets_pg",
+                    "target_share",
+                    "ppg_x_targets_pg",
+                    "low_target_efficiency_flag",
+                    "market_anchor"
+                  ],
+                  "mae_before": 50.5854,
+                  "mae_after": 50.5945,
+                  "bias_before": -0.3818,
+                  "bias_after": -0.4486,
+                  "max_adjustment_share": 0.28,
+                  "market_weight_cap": 0.34
+                },
+                {
+                  "holdout_season": 2025,
+                  "sample_size": 711,
+                  "features": [
+                    "raw_pred",
+                    "confidence_score",
+                    "low_information_score",
+                    "rookie_or_low_experience",
+                    "support_class_starter",
+                    "support_class_committee",
+                    "support_class_backup",
+                    "support_class_rotational",
+                    "games_played",
+                    "snap_share",
+                    "targets_pg",
+                    "target_share",
+                    "ppg_x_targets_pg",
+                    "low_target_efficiency_flag",
+                    "market_anchor"
+                  ],
+                  "mae_before": 51.0999,
+                  "mae_after": 51.2417,
+                  "bias_before": -0.2106,
+                  "bias_after": -0.3473,
+                  "max_adjustment_share": 0.28,
+                  "market_weight_cap": 0.34
+                }
+              ],
+              "TE": [
+                {
+                  "holdout_season": 2019,
+                  "sample_size": 386,
+                  "features": [
+                    "raw_pred",
+                    "confidence_score",
+                    "low_information_score",
+                    "rookie_or_low_experience",
+                    "support_class_starter",
+                    "support_class_committee",
+                    "support_class_backup",
+                    "support_class_rotational",
+                    "games_played",
+                    "snap_share",
+                    "targets_pg",
+                    "target_share",
+                    "ppg_x_targets_pg",
+                    "market_anchor"
+                  ],
+                  "mae_before": 36.7754,
+                  "mae_after": 36.7713,
+                  "bias_before": 0.1648,
+                  "bias_after": -0.1458,
+                  "max_adjustment_share": 0.24,
+                  "market_weight_cap": 0.28
+                },
+                {
+                  "holdout_season": 2020,
+                  "sample_size": 380,
+                  "features": [
+                    "raw_pred",
+                    "confidence_score",
+                    "low_information_score",
+                    "rookie_or_low_experience",
+                    "support_class_starter",
+                    "support_class_committee",
+                    "support_class_backup",
+                    "support_class_rotational",
+                    "games_played",
+                    "snap_share",
+                    "targets_pg",
+                    "target_share",
+                    "ppg_x_targets_pg",
+                    "market_anchor"
+                  ],
+                  "mae_before": 35.2383,
+                  "mae_after": 35.3397,
+                  "bias_before": 0.1862,
+                  "bias_after": -0.0334,
+                  "max_adjustment_share": 0.24,
+                  "market_weight_cap": 0.28
+                },
+                {
+                  "holdout_season": 2021,
+                  "sample_size": 386,
+                  "features": [
+                    "raw_pred",
+                    "confidence_score",
+                    "low_information_score",
+                    "rookie_or_low_experience",
+                    "support_class_starter",
+                    "support_class_committee",
+                    "support_class_backup",
+                    "support_class_rotational",
+                    "games_played",
+                    "snap_share",
+                    "targets_pg",
+                    "target_share",
+                    "ppg_x_targets_pg",
+                    "market_anchor"
+                  ],
+                  "mae_before": 35.8667,
+                  "mae_after": 35.8587,
+                  "bias_before": 0.2501,
+                  "bias_after": -0.1007,
+                  "max_adjustment_share": 0.24,
+                  "market_weight_cap": 0.28
+                },
+                {
+                  "holdout_season": 2022,
+                  "sample_size": 380,
+                  "features": [
+                    "raw_pred",
+                    "confidence_score",
+                    "low_information_score",
+                    "rookie_or_low_experience",
+                    "support_class_starter",
+                    "support_class_committee",
+                    "support_class_backup",
+                    "support_class_rotational",
+                    "games_played",
+                    "snap_share",
+                    "targets_pg",
+                    "target_share",
+                    "ppg_x_targets_pg",
+                    "market_anchor"
+                  ],
+                  "mae_before": 35.4863,
+                  "mae_after": 35.6198,
+                  "bias_before": 0.1835,
+                  "bias_after": -0.0733,
+                  "max_adjustment_share": 0.24,
+                  "market_weight_cap": 0.28
+                },
+                {
+                  "holdout_season": 2023,
+                  "sample_size": 379,
+                  "features": [
+                    "raw_pred",
+                    "confidence_score",
+                    "low_information_score",
+                    "rookie_or_low_experience",
+                    "support_class_starter",
+                    "support_class_committee",
+                    "support_class_backup",
+                    "support_class_rotational",
+                    "games_played",
+                    "snap_share",
+                    "targets_pg",
+                    "target_share",
+                    "ppg_x_targets_pg",
+                    "market_anchor"
+                  ],
+                  "mae_before": 36.6719,
+                  "mae_after": 36.6852,
+                  "bias_before": 0.2737,
+                  "bias_after": -0.186,
+                  "max_adjustment_share": 0.24,
+                  "market_weight_cap": 0.28
+                },
+                {
+                  "holdout_season": 2024,
+                  "sample_size": 374,
+                  "features": [
+                    "raw_pred",
+                    "confidence_score",
+                    "low_information_score",
+                    "rookie_or_low_experience",
+                    "support_class_starter",
+                    "support_class_committee",
+                    "support_class_backup",
+                    "support_class_rotational",
+                    "games_played",
+                    "snap_share",
+                    "targets_pg",
+                    "target_share",
+                    "ppg_x_targets_pg",
+                    "market_anchor"
+                  ],
+                  "mae_before": 36.1851,
+                  "mae_after": 36.2645,
+                  "bias_before": 0.2325,
+                  "bias_after": -0.2938,
+                  "max_adjustment_share": 0.24,
+                  "market_weight_cap": 0.28
+                },
+                {
+                  "holdout_season": 2025,
+                  "sample_size": 373,
+                  "features": [
+                    "raw_pred",
+                    "confidence_score",
+                    "low_information_score",
+                    "rookie_or_low_experience",
+                    "support_class_starter",
+                    "support_class_committee",
+                    "support_class_backup",
+                    "support_class_rotational",
+                    "games_played",
+                    "snap_share",
+                    "targets_pg",
+                    "target_share",
+                    "ppg_x_targets_pg",
+                    "market_anchor"
+                  ],
+                  "mae_before": 36.897,
+                  "mae_after": 37.0247,
+                  "bias_before": 0.2539,
+                  "bias_after": -0.3484,
+                  "max_adjustment_share": 0.24,
+                  "market_weight_cap": 0.28
+                }
+              ]
+            }
+          }
+        },
+        "incumbent_plus_upstream_calibrator": {
+          "passes_gate": 1,
+          "market_objective_score": 40.0468,
+          "draft_sim_passes_gate": 0,
+          "draft_sim_candidate_score": 9.903,
+          "draft_sim_summary": {
+            "aggregate": {
+              "mean_rank_avg": 8.1,
+              "lift_vs_adp_mean_avg": -180.3,
+              "mean_model_actual_avg": 1418.85,
+              "wins_vs_adp_mean_slots_total": 1
+            },
+            "by_season": {
+              "2024": {
+                "season": 2024,
+                "scrape_date": "2024-09-06",
+                "ranking": "preseason_ml",
+                "slot_ranks": [
+                  6,
+                  6,
+                  6,
+                  8,
+                  8,
+                  9,
+                  8,
+                  8,
+                  8,
+                  8
+                ],
+                "mean_rank": 7.5,
+                "best_rank": 6,
+                "worst_rank": 9,
+                "mean_model_actual": 1507.9,
+                "mean_adp_actual": 1634.6,
+                "lift_vs_adp_mean": -126.7,
+                "wins_vs_adp_mean_slots": 1
+              },
+              "2025": {
+                "season": 2025,
+                "scrape_date": "2025-09-05",
+                "ranking": "preseason_ml",
+                "slot_ranks": [
+                  8,
+                  8,
+                  8,
+                  9,
+                  9,
+                  9,
+                  9,
+                  9,
+                  9,
+                  9
+                ],
+                "mean_rank": 8.7,
+                "best_rank": 8,
+                "worst_rank": 9,
+                "mean_model_actual": 1329.8,
+                "mean_adp_actual": 1563.7,
+                "lift_vs_adp_mean": -233.9,
+                "wins_vs_adp_mean_slots": 0
+              }
+            }
+          },
+          "summary": {
+            "overall": {
+              "base_mae": 53.2795,
+              "pred_mae": 52.215,
+              "base_bias": 6.2283,
+              "pred_bias": 0.4132,
+              "base_market_mae": 23.5562,
+              "pred_market_mae": 19.0316,
+              "base_large_divergence_share": 0.4791,
+              "pred_large_divergence_share": 0.3559,
+              "base_rb_wr_gap_excess": -10.6655,
+              "pred_rb_wr_gap_excess": 6.7792,
+              "base_top150_actual_mean": 181.6438,
+              "pred_top150_actual_mean": 181.5919,
+              "base_top24_rb_actual_mean": 209.9214,
+              "pred_top24_rb_actual_mean": 213.4708,
+              "base_top24_wr_actual_mean": 225.8815,
+              "pred_top24_wr_actual_mean": 224.6905,
+              "base_top12_te_actual_mean": 162.9286,
+              "pred_top12_te_actual_mean": 162.1
+            },
+            "by_position": {
+              "QB": {
+                "n": 238,
+                "base_mae": 78.5653,
+                "pred_mae": 78.5653,
+                "base_bias": -1.642,
+                "pred_bias": -1.642
+              },
+              "RB": {
+                "n": 518,
+                "base_mae": 57.1705,
+                "pred_mae": 55.7164,
+                "base_bias": 6.7372,
+                "pred_bias": 0.6919,
+                "base_market_mae": 24.4682,
+                "pred_market_mae": 20.8965,
+                "base_large_divergence_share": 0.4225,
+                "pred_large_divergence_share": 0.3169
+              },
+              "WR": {
+                "n": 836,
+                "base_mae": 52.3641,
+                "pred_mae": 51.1062,
+                "base_bias": 9.2832,
+                "pred_bias": 0.6609,
+                "base_market_mae": 25.1485,
+                "pred_market_mae": 19.7008,
+                "base_large_divergence_share": 0.5021,
+                "pred_large_divergence_share": 0.3682
+              },
+              "TE": {
+                "n": 443,
+                "base_mae": 36.8726,
+                "pred_mae": 36.0566,
+                "base_bias": 4.0963,
+                "pred_bias": 0.7242,
+                "base_market_mae": 19.3753,
+                "pred_market_mae": 15.5501,
+                "base_large_divergence_share": 0.5,
+                "pred_large_divergence_share": 0.377
+              }
+            },
+            "cohort_market_error": {
+              "base": {
+                "backup": 13.3942,
+                "committee": 18.1866,
+                "rotational": 28.3162,
+                "starter": 23.6964,
+                "rookie_low_exp": 23.5562,
+                "elite_incumbent": 29.9525
+              },
+              "pred": {
+                "backup": 6.4064,
+                "committee": 13.7704,
+                "rotational": 18.719,
+                "starter": 19.2111,
+                "rookie_low_exp": 19.0316,
+                "elite_incumbent": 26.3623
+              }
+            },
+            "variant": "incumbent_plus_upstream_calibrator"
+          }
+        },
+        "incumbent_plus_conservative_upstream_calibrator": {
+          "passes_gate": 1,
+          "market_objective_score": 53.1882,
+          "draft_sim_passes_gate": 1,
+          "draft_sim_candidate_score": 8.5845,
+          "draft_sim_summary": {
+            "aggregate": {
+              "mean_rank_avg": 7.1,
+              "lift_vs_adp_mean_avg": -148.45,
+              "mean_model_actual_avg": 1456.2,
+              "wins_vs_adp_mean_slots_total": 7
+            },
+            "by_season": {
+              "2024": {
+                "season": 2024,
+                "scrape_date": "2024-09-06",
+                "ranking": "preseason_ml",
+                "slot_ranks": [
+                  4,
+                  3,
+                  3,
+                  3,
+                  5,
+                  5,
+                  5,
+                  6,
+                  6,
+                  6
+                ],
+                "mean_rank": 4.6,
+                "best_rank": 3,
+                "worst_rank": 6,
+                "mean_model_actual": 1670.6,
+                "mean_adp_actual": 1630.7,
+                "lift_vs_adp_mean": 39.9,
+                "wins_vs_adp_mean_slots": 7
+              },
+              "2025": {
+                "season": 2025,
+                "scrape_date": "2025-09-05",
+                "ranking": "preseason_ml",
+                "slot_ranks": [
+                  10,
+                  10,
+                  10,
+                  10,
+                  9,
+                  9,
+                  9,
+                  9,
+                  10,
+                  10
+                ],
+                "mean_rank": 9.6,
+                "best_rank": 9,
+                "worst_rank": 10,
+                "mean_model_actual": 1241.8,
+                "mean_adp_actual": 1578.6,
+                "lift_vs_adp_mean": -336.8,
+                "wins_vs_adp_mean_slots": 0
+              }
+            }
+          },
+          "summary": {
+            "overall": {
+              "base_mae": 53.2795,
+              "pred_mae": 53.2145,
+              "base_bias": 6.2283,
+              "pred_bias": 6.1806,
+              "base_market_mae": 23.5562,
+              "pred_market_mae": 23.5051,
+              "base_large_divergence_share": 0.4791,
+              "pred_large_divergence_share": 0.4791,
+              "base_rb_wr_gap_excess": -10.6655,
+              "pred_rb_wr_gap_excess": -10.5191,
+              "base_top150_actual_mean": 181.6438,
+              "pred_top150_actual_mean": 181.6444,
+              "base_top24_rb_actual_mean": 209.9214,
+              "pred_top24_rb_actual_mean": 209.9214,
+              "base_top24_wr_actual_mean": 225.8815,
+              "pred_top24_wr_actual_mean": 225.8815,
+              "base_top12_te_actual_mean": 162.9286,
+              "pred_top12_te_actual_mean": 162.9286
+            },
+            "by_position": {
+              "QB": {
+                "n": 238,
+                "base_mae": 78.5653,
+                "pred_mae": 78.5653,
+                "base_bias": -1.642,
+                "pred_bias": -1.642
+              },
+              "RB": {
+                "n": 518,
+                "base_mae": 57.1705,
+                "pred_mae": 57.0563,
+                "base_bias": 6.7372,
+                "pred_bias": 6.658,
+                "base_market_mae": 24.4682,
+                "pred_market_mae": 24.4335,
+                "base_large_divergence_share": 0.4225,
+                "pred_large_divergence_share": 0.4225
+              },
+              "WR": {
+                "n": 836,
+                "base_mae": 52.3641,
+                "pred_mae": 52.2858,
+                "base_bias": 9.2832,
+                "pred_bias": 9.2362,
+                "base_market_mae": 25.1485,
+                "pred_market_mae": 25.0615,
+                "base_large_divergence_share": 0.5021,
+                "pred_large_divergence_share": 0.5021
+              },
+              "TE": {
+                "n": 443,
+                "base_mae": 36.8726,
+                "pred_mae": 36.8556,
+                "base_bias": 4.0963,
+                "pred_bias": 4.0586,
+                "base_market_mae": 19.3753,
+                "pred_market_mae": 19.3753,
+                "base_large_divergence_share": 0.5,
+                "pred_large_divergence_share": 0.5
+              }
+            },
+            "cohort_market_error": {
+              "base": {
+                "backup": 13.3942,
+                "committee": 18.1866,
+                "rotational": 28.3162,
+                "starter": 23.6964,
+                "rookie_low_exp": 23.5562,
+                "elite_incumbent": 29.9525
+              },
+              "pred": {
+                "backup": 9.7747,
+                "committee": 17.2434,
+                "rotational": 25.9952,
+                "starter": 23.6964,
+                "rookie_low_exp": 23.5051,
+                "elite_incumbent": 30.056
+              }
+            },
+            "variant": "incumbent_plus_conservative_upstream_calibrator"
+          }
+        }
+      }
+    }
+  },
   "positions": {
     "QB": {
-      "features": [
-        "ppg",
-        "games_played",
-        "snap_share",
-        "passing_yards_pg",
-        "passing_tds_pg",
-        "interceptions_pg",
-        "rushing_yards_pg",
-        "completion_pct"
-      ],
-      "coef": [
-        35.21345228441071,
-        26.42920577304954,
-        0.0,
-        11.570707580417338,
-        16.121281259935277,
-        -16.714260884695133,
-        13.34012838486125,
-        -15.95654760457078
-      ],
-      "intercept": 207.81373390557948,
-      "scaler_mean": [
-        15.19218401992246,
-        13.944206008583691,
-        0.0,
-        217.77046396478937,
-        1.374001482420575,
-        0.6608726259515532,
-        16.200625711817395,
-        62.367156131018874
-      ],
-      "scaler_scale": [
-        5.266439179437244,
-        4.12896950539049,
-        1.0,
-        66.57810326768718,
-        0.6061115564039731,
-        0.290488720753664,
-        15.162779394104653,
-        9.919468658762018
-      ]
+      "base_outcome_model": {
+        "features": [
+          "ppg",
+          "games_played",
+          "snap_share",
+          "passing_yards_pg",
+          "passing_tds_pg",
+          "interceptions_pg",
+          "rushing_yards_pg",
+          "completion_pct"
+        ],
+        "coef": [
+          35.2135,
+          26.4292,
+          0.0,
+          11.5707,
+          16.1213,
+          -16.7143,
+          13.3401,
+          -15.9565
+        ],
+        "intercept": 207.8137,
+        "scaler_mean": [
+          15.1922,
+          13.9442,
+          0.0,
+          217.7705,
+          1.374,
+          0.6609,
+          16.2006,
+          62.3672
+        ],
+        "scaler_scale": [
+          5.2664,
+          4.129,
+          1.0,
+          66.5781,
+          0.6061,
+          0.2905,
+          15.1628,
+          9.9195
+        ],
+        "alpha": 1.0
+      },
+      "upstream_calibrator": null,
+      "market_anchor_curve": null
     },
     "RB": {
-      "features": [
-        "ppg",
-        "games_played",
-        "snap_share",
-        "carries_pg",
-        "targets_pg",
-        "receptions_pg",
-        "rushing_yards_pg",
-        "receiving_yards_pg",
-        "rush_share",
-        "target_share"
-      ],
-      "coef": [
-        25.49920251138467,
-        6.375172743437873,
-        -3.136346142110467,
-        1.5827632806394636,
-        -1.15894318552422,
-        19.38332704248135,
-        29.803507518464738,
-        4.679920107955789,
-        -3.4511993690043554,
-        -8.881845433719247
-      ],
-      "intercept": 131.36619999999994,
-      "scaler_mean": [
-        9.860587187219378,
-        13.578,
-        42.14277359274661,
-        9.28608179173768,
-        2.6169398189529756,
-        2.0203578098629946,
-        40.466481350452106,
-        15.40651956149285,
-        12.132769420365245,
-        80.58957537388657
-      ],
-      "scaler_scale": [
-        5.231097614053305,
-        3.6094204520947755,
-        20.425030137231445,
-        5.177046581947999,
-        1.5557581651466759,
-        1.2438707188389941,
-        24.474676335704387,
-        10.301942576902201,
-        19.733710993703035,
-        21.244388131922232
-      ]
+      "base_outcome_model": {
+        "features": [
+          "ppg",
+          "games_played",
+          "snap_share",
+          "carries_pg",
+          "targets_pg",
+          "receptions_pg",
+          "rushing_yards_pg",
+          "receiving_yards_pg",
+          "rush_share",
+          "target_share"
+        ],
+        "coef": [
+          25.4992,
+          6.3752,
+          -3.1363,
+          1.5828,
+          -1.1589,
+          19.3833,
+          29.8035,
+          4.6799,
+          -3.4512,
+          -8.8818
+        ],
+        "intercept": 131.3662,
+        "scaler_mean": [
+          9.8606,
+          13.578,
+          42.1428,
+          9.2861,
+          2.6169,
+          2.0204,
+          40.4665,
+          15.4065,
+          12.1328,
+          80.5896
+        ],
+        "scaler_scale": [
+          5.2311,
+          3.6094,
+          20.425,
+          5.177,
+          1.5558,
+          1.2439,
+          24.4747,
+          10.3019,
+          19.7337,
+          21.2444
+        ],
+        "alpha": 1.0
+      },
+      "upstream_calibrator": {
+        "position": "RB",
+        "features": [
+          "raw_pred",
+          "confidence_score",
+          "low_information_score",
+          "rookie_or_low_experience",
+          "support_class_starter",
+          "support_class_committee",
+          "support_class_backup",
+          "support_class_rotational",
+          "games_played",
+          "snap_share",
+          "carries_pg",
+          "targets_pg",
+          "ppg_x_carries_pg",
+          "low_volume_efficiency_flag",
+          "market_anchor"
+        ],
+        "coef": [
+          30.0915,
+          0.9715,
+          -0.9715,
+          0.0,
+          4.1671,
+          -3.8697,
+          1.6603,
+          -4.5774,
+          2.8458,
+          -8.6715,
+          4.9413,
+          8.9998,
+          16.2064,
+          2.4015,
+          9.3931
+        ],
+        "intercept": 129.9683,
+        "scaler_mean": [
+          136.7055,
+          0.7592,
+          0.2408,
+          1.0,
+          0.9653,
+          0.0251,
+          0.0058,
+          0.0039,
+          13.0907,
+          0.9595,
+          9.3077,
+          2.6031,
+          114.0734,
+          0.0367,
+          37.7322
+        ],
+        "scaler_scale": [
+          66.8066,
+          0.115,
+          0.115,
+          1.0,
+          0.1831,
+          0.1564,
+          0.0759,
+          0.062,
+          3.3337,
+          0.1972,
+          5.1842,
+          1.5365,
+          107.6473,
+          0.188,
+          72.2302
+        ],
+        "max_adjustment_share": 0.165,
+        "market_weight_cap": 0.144,
+        "sample_size": 518,
+        "train_mae_before": 57.1705,
+        "train_mae_after": 55.7164,
+        "confidence_power": 2.0,
+        "min_confidence_multiplier": 0.0,
+        "market_confidence_power": 2.0,
+        "starter_adjustment_multiplier": 0.0
+      },
+      "market_anchor_curve": {
+        "position": "RB",
+        "intercept": 481.5703,
+        "coef_log_ecr": -72.3936,
+        "coef_inv_sqrt_ecr": -26.3474,
+        "sample_size": 142
+      }
     },
     "WR": {
-      "features": [
-        "ppg",
-        "games_played",
-        "snap_share",
-        "targets_pg",
-        "receptions_pg",
-        "receiving_yards_pg",
-        "air_yards_pg",
-        "target_share"
-      ],
-      "coef": [
-        22.939579896732454,
-        12.967175939123562,
-        -3.957652352976119,
-        12.323975156216918,
-        -1.2916246392540411,
-        26.838419523183788,
-        -2.3557874562991494,
-        -4.916329252457072
-      ],
-      "intercept": 117.11070707070708,
-      "scaler_mean": [
-        8.806167675220113,
-        13.594949494949494,
-        59.793399370133635,
-        4.891355588877283,
-        3.152547094514214,
-        39.380038673482474,
-        36.77769797331648,
-        98.0617984695877
-      ],
-      "scaler_scale": [
-        4.791027683832332,
-        3.6159823046790915,
-        24.101461268435244,
-        2.4740148929602084,
-        1.6960441880290649,
-        22.77378713950667,
-        33.15528408252975,
-        7.671363201037109
-      ]
+      "base_outcome_model": {
+        "features": [
+          "ppg",
+          "games_played",
+          "snap_share",
+          "targets_pg",
+          "receptions_pg",
+          "receiving_yards_pg",
+          "air_yards_pg",
+          "target_share"
+        ],
+        "coef": [
+          22.9396,
+          12.9672,
+          -3.9577,
+          12.324,
+          -1.2916,
+          26.8384,
+          -2.3558,
+          -4.9163
+        ],
+        "intercept": 117.1107,
+        "scaler_mean": [
+          8.8062,
+          13.5949,
+          59.7934,
+          4.8914,
+          3.1525,
+          39.38,
+          36.7777,
+          98.0618
+        ],
+        "scaler_scale": [
+          4.791,
+          3.616,
+          24.1015,
+          2.474,
+          1.696,
+          22.7738,
+          33.1553,
+          7.6714
+        ],
+        "alpha": 1.0
+      },
+      "upstream_calibrator": {
+        "position": "WR",
+        "features": [
+          "raw_pred",
+          "confidence_score",
+          "low_information_score",
+          "rookie_or_low_experience",
+          "support_class_starter",
+          "support_class_committee",
+          "support_class_backup",
+          "support_class_rotational",
+          "games_played",
+          "snap_share",
+          "targets_pg",
+          "target_share",
+          "ppg_x_targets_pg",
+          "low_target_efficiency_flag",
+          "market_anchor"
+        ],
+        "coef": [
+          35.7832,
+          3.404,
+          -3.404,
+          0.0,
+          2.1411,
+          1.0932,
+          -0.7455,
+          -5.1321,
+          2.0869,
+          -8.3449,
+          0.4418,
+          -0.9273,
+          19.3155,
+          2.1819,
+          -0.1786
+        ],
+        "intercept": 124.188,
+        "scaler_mean": [
+          133.4713,
+          0.7732,
+          0.2268,
+          1.0,
+          0.9713,
+          0.0072,
+          0.0167,
+          0.0048,
+          13.2189,
+          0.9605,
+          5.2584,
+          98.7961,
+          60.4518,
+          0.0299,
+          34.8356
+        ],
+        "scaler_scale": [
+          63.6128,
+          0.1196,
+          0.1196,
+          1.0,
+          0.167,
+          0.0844,
+          0.1283,
+          0.069,
+          3.252,
+          0.1947,
+          2.419,
+          4.3125,
+          53.6611,
+          0.1703,
+          63.6083
+        ],
+        "max_adjustment_share": 0.154,
+        "market_weight_cap": 0.136,
+        "sample_size": 836,
+        "train_mae_before": 52.3641,
+        "train_mae_after": 51.1062,
+        "confidence_power": 2.0,
+        "min_confidence_multiplier": 0.0,
+        "market_confidence_power": 2.0,
+        "starter_adjustment_multiplier": 0.0
+      },
+      "market_anchor_curve": {
+        "position": "WR",
+        "intercept": 385.3977,
+        "coef_log_ecr": -54.0006,
+        "coef_inv_sqrt_ecr": -14.9965,
+        "sample_size": 239
+      }
     },
     "TE": {
-      "features": [
-        "ppg",
-        "games_played",
-        "snap_share",
-        "targets_pg",
-        "receptions_pg",
-        "receiving_yards_pg",
-        "target_share"
-      ],
-      "coef": [
-        11.408072867841387,
-        10.669315583030459,
-        -2.562943499589375,
-        10.172719101812602,
-        -14.855397315858182,
-        40.243964315273814,
-        -8.574329692922765
-      ],
-      "intercept": 88.24741641337381,
-      "scaler_mean": [
-        6.8667023668735565,
-        13.112462006079028,
-        58.20920263830961,
-        3.825847972007646,
-        2.6619996795889844,
-        28.29094280209935,
-        99.00575996901762
-      ],
-      "scaler_scale": [
-        3.8220366800585044,
-        3.6063262996095573,
-        18.99105777448186,
-        2.047580714460749,
-        1.4541053074467463,
-        17.379261016121234,
-        6.065790780570349
-      ]
+      "base_outcome_model": {
+        "features": [
+          "ppg",
+          "games_played",
+          "snap_share",
+          "targets_pg",
+          "receptions_pg",
+          "receiving_yards_pg",
+          "target_share"
+        ],
+        "coef": [
+          11.4081,
+          10.6693,
+          -2.5629,
+          10.1727,
+          -14.8554,
+          40.244,
+          -8.5743
+        ],
+        "intercept": 88.2474,
+        "scaler_mean": [
+          6.8667,
+          13.1125,
+          58.2092,
+          3.8258,
+          2.662,
+          28.2909,
+          99.0058
+        ],
+        "scaler_scale": [
+          3.822,
+          3.6063,
+          18.9911,
+          2.0476,
+          1.4541,
+          17.3793,
+          6.0658
+        ],
+        "alpha": 1.0
+      },
+      "upstream_calibrator": {
+        "position": "TE",
+        "features": [
+          "raw_pred",
+          "confidence_score",
+          "low_information_score",
+          "rookie_or_low_experience",
+          "support_class_starter",
+          "support_class_committee",
+          "support_class_backup",
+          "support_class_rotational",
+          "games_played",
+          "snap_share",
+          "targets_pg",
+          "target_share",
+          "ppg_x_targets_pg",
+          "market_anchor"
+        ],
+        "coef": [
+          26.0052,
+          2.1136,
+          -2.1136,
+          0.0,
+          -0.1116,
+          -1.1155,
+          0.4711,
+          0.6136,
+          -0.1698,
+          -0.1116,
+          5.6127,
+          1.8321,
+          13.2245,
+          2.8955
+        ],
+        "intercept": 84.7233,
+        "scaler_mean": [
+          88.8196,
+          0.7397,
+          0.2603,
+          1.0,
+          0.991,
+          0.0023,
+          0.0023,
+          0.0045,
+          12.4786,
+          0.991,
+          3.6603,
+          99.7724,
+          30.1568,
+          24.8628
+        ],
+        "scaler_scale": [
+          50.0123,
+          0.0954,
+          0.0954,
+          1.0,
+          0.0946,
+          0.0475,
+          0.0475,
+          0.067,
+          3.2953,
+          0.0946,
+          1.9659,
+          1.6266,
+          33.1693,
+          46.3628
+        ],
+        "max_adjustment_share": 0.132,
+        "market_weight_cap": 0.112,
+        "sample_size": 443,
+        "train_mae_before": 36.8726,
+        "train_mae_after": 36.0566,
+        "confidence_power": 2.0,
+        "min_confidence_multiplier": 0.0,
+        "market_confidence_power": 2.0,
+        "starter_adjustment_multiplier": 0.0
+      },
+      "market_anchor_curve": {
+        "position": "TE",
+        "intercept": 437.1616,
+        "coef_log_ecr": -64.639,
+        "coef_inv_sqrt_ecr": 1.2464,
+        "sample_size": 122
+      }
     }
-  }
+  },
+  "legacy_veteran_elite_calibration": {},
+  "legacy_fragile_role_calibration": {}
 }

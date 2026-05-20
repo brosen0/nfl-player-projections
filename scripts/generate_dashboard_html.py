@@ -14,6 +14,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from collections import defaultdict
 from pathlib import Path
 
 import pandas as pd
@@ -49,6 +50,662 @@ PFR_TEAM_MAP = {
     "GNB": "GB", "KAN": "KC", "LVR": "LV", "NOR": "NO",
     "NWE": "NE", "SFO": "SF", "TAM": "TB",
 }
+
+SUFFIXES = {"jr", "sr", "ii", "iii", "iv", "v", "jr."}
+
+CALIBRATION_POLICY = {
+    "blend_model_weight": {"QB": 0.62, "RB": 0.58, "WR": 0.52, "TE": 0.55},
+    "min_model_weight": {"QB": 0.42, "RB": 0.38, "WR": 0.35, "TE": 0.38},
+    "elite_model_weight_cap": {"QB": 0.58, "RB": 0.48, "WR": 0.44, "TE": 0.48},
+    "divergence_soft_pct": 0.10,
+    "divergence_hard_pct": 0.45,
+    "per_signal_caps_pct": {
+        "age": 0.05,
+        "team_change": 0.04,
+        "usage": 0.04,
+        "regression": 0.05,
+        "injury": 0.06,
+        "breakout": 0.04,
+        "manual": 0.06,
+        "sos": 0.03,
+    },
+    "global_adjustment_cap_pct": 0.10,
+    "market_band_pct": {"QB": 0.22, "RB": 0.18, "WR": 0.16, "TE": 0.18},
+    "elite_band_pct": {"QB": 0.18, "RB": 0.12, "WR": 0.12, "TE": 0.14},
+    "min_band_points": {"QB": 16.0, "RB": 14.0, "WR": 12.0, "TE": 10.0},
+    "large_divergence_pct": 0.20,
+    "large_divergence_min_points": {"QB": 16.0, "RB": 14.0, "WR": 12.0, "TE": 10.0},
+    "elite_ecr_cutoff": 18,
+    "position_bias_tolerance": 12.0,
+    "outlier_share_limit": 0.05,
+    "displayable_rank_cutoff": 150,
+}
+
+
+def _norm_key(name: str, pos: str | None = None):
+    name = (name or "").strip()
+    if "." in name and " " not in name:
+        parts = name.split(".")
+        initial = parts[0].strip()[0].lower() if parts[0].strip() else ""
+        last = parts[-1].strip().lower()
+    else:
+        parts = name.split()
+        initial = parts[0][0].lower() if parts else ""
+        idx = len(parts) - 1
+        while idx > 0 and parts[idx].lower().rstrip(".") in SUFFIXES:
+            idx -= 1
+        last = parts[idx].lower() if idx >= 0 else ""
+    return (initial, "".join(c for c in last if c.isalnum()))
+
+
+def _spread_identity(sr) -> tuple[str, str, str, str, float]:
+    return (
+        str(getattr(sr, "player_id", "") or ""),
+        getattr(sr, "name", ""),
+        getattr(sr, "position", ""),
+        getattr(sr, "team", ""),
+        round(float(getattr(sr, "ecr", 0.0) or 0.0), 3),
+    )
+
+
+def _clamp(value: float, low: float, high: float) -> float:
+    return max(low, min(high, value))
+
+
+def _interpolate_curve(points: list[tuple[int, float]], x: int) -> float | None:
+    if not points:
+        return None
+    pts = sorted(points, key=lambda item: item[0])
+    if x <= pts[0][0]:
+        return float(pts[0][1])
+    if x >= pts[-1][0]:
+        return float(pts[-1][1])
+    prev_x, prev_y = pts[0]
+    for cur_x, cur_y in pts[1:]:
+        if x <= cur_x:
+            if cur_x == prev_x:
+                return float(cur_y)
+            frac = (x - prev_x) / (cur_x - prev_x)
+            return float(prev_y + frac * (cur_y - prev_y))
+        prev_x, prev_y = cur_x, cur_y
+    return float(pts[-1][1])
+
+
+def _build_market_anchor_context(spread_results, market_lookup: dict) -> dict:
+    pos_rank = defaultdict(int)
+    overall_curve: list[tuple[int, float]] = []
+    pos_curves = defaultdict(list)
+    player_context = {}
+
+    for overall_rank, sr in enumerate(sorted(spread_results, key=lambda r: float(r.ecr)), 1):
+        pos = getattr(sr, "position", "")
+        pos_rank[pos] += 1
+        ident = _spread_identity(sr)
+        exact_market = market_lookup.get(_norm_key(getattr(sr, "name", "")))
+        player_context[ident] = {
+            "position_rank": pos_rank[pos],
+            "overall_rank": overall_rank,
+            "exact_market": exact_market,
+        }
+        if exact_market is not None and exact_market > 0:
+            pos_curves[pos].append((pos_rank[pos], float(exact_market)))
+            overall_curve.append((overall_rank, float(exact_market)))
+
+    return {
+        "player_context": player_context,
+        "pos_curves": dict(pos_curves),
+        "overall_curve": overall_curve,
+    }
+
+
+def _resolve_market_anchor(sr, anchor_context: dict) -> tuple[float, str]:
+    ident = _spread_identity(sr)
+    player_context = anchor_context.get("player_context", {}).get(ident, {})
+    exact_market = player_context.get("exact_market")
+    if exact_market is not None and exact_market > 0:
+        return float(exact_market), "exact_market"
+
+    pos = getattr(sr, "position", "")
+    pos_rank = int(player_context.get("position_rank") or 0)
+    pos_curve = anchor_context.get("pos_curves", {}).get(pos, [])
+    pos_curve_estimate = _interpolate_curve(pos_curve, pos_rank) if pos_rank else None
+    if pos_curve_estimate is not None and pos_curve_estimate > 0:
+        return float(pos_curve_estimate), "position_curve"
+
+    adp_implied = float(getattr(sr, "adp_implied", 0.0) or 0.0)
+    if adp_implied > 0:
+        return adp_implied, "adp_yield"
+
+    overall_rank = int(player_context.get("overall_rank") or 0)
+    overall_curve_estimate = _interpolate_curve(
+        anchor_context.get("overall_curve", []), overall_rank
+    ) if overall_rank else None
+    if overall_curve_estimate is not None and overall_curve_estimate > 0:
+        return float(overall_curve_estimate), "overall_curve"
+
+    fallback = float(getattr(sr, "blended_projection", 0.0) or 0.0)
+    if fallback > 0:
+        return fallback, "legacy_blend"
+
+    return float(getattr(sr, "model_projection", 0.0) or 0.0), "raw_fallback"
+
+
+def _compute_blend_weight(position: str, ecr: float, raw_proj: float, market_proj: float) -> float:
+    if market_proj <= 0:
+        return 1.0
+
+    base_weight = CALIBRATION_POLICY["blend_model_weight"].get(position, 0.5)
+    min_weight = CALIBRATION_POLICY["min_model_weight"].get(position, 0.35)
+    divergence_pct = abs(raw_proj - market_proj) / max(abs(market_proj), 1.0)
+    soft = CALIBRATION_POLICY["divergence_soft_pct"]
+    hard = CALIBRATION_POLICY["divergence_hard_pct"]
+    if divergence_pct <= soft:
+        weight = base_weight
+    else:
+        frac = _clamp((divergence_pct - soft) / max(hard - soft, 1e-6), 0.0, 1.0)
+        weight = base_weight - frac * (base_weight - min_weight)
+
+    elite_cutoff = CALIBRATION_POLICY["elite_ecr_cutoff"]
+    if ecr <= elite_cutoff:
+        weight = min(weight, CALIBRATION_POLICY["elite_model_weight_cap"].get(position, weight))
+
+    return _clamp(weight, min_weight, base_weight)
+
+
+def _is_large_divergence(position: str, projected: float, market_proj: float) -> bool:
+    if market_proj <= 0:
+        return False
+    eps = 1e-9
+    abs_delta = abs(projected - market_proj)
+    rel_delta = abs_delta / max(abs(market_proj), 1.0)
+    min_points = CALIBRATION_POLICY["large_divergence_min_points"].get(
+        position,
+        CALIBRATION_POLICY["min_band_points"].get(position, 10.0),
+    )
+    return bool(
+        rel_delta > CALIBRATION_POLICY["large_divergence_pct"] + eps
+        and abs_delta > min_points + eps
+    )
+
+
+def _is_unresolved_display_divergence(
+    position: str,
+    projected: float,
+    market_proj: float,
+    *,
+    elite_consensus: bool,
+) -> bool:
+    if market_proj <= 0:
+        return False
+    eps = 1e-9
+    abs_delta = abs(projected - market_proj)
+    rel_delta = abs_delta / max(abs(market_proj), 1.0)
+    allowed_pct = (
+        CALIBRATION_POLICY["elite_band_pct"].get(position, 0.14)
+        if elite_consensus
+        else CALIBRATION_POLICY["market_band_pct"].get(position, 0.18)
+    )
+    rel_threshold = max(CALIBRATION_POLICY["large_divergence_pct"], allowed_pct)
+    abs_threshold = max(
+        CALIBRATION_POLICY["large_divergence_min_points"].get(
+            position,
+            CALIBRATION_POLICY["min_band_points"].get(position, 10.0),
+        ),
+        market_proj * allowed_pct,
+    )
+    return bool(rel_delta > rel_threshold + eps and abs_delta > abs_threshold + eps)
+
+
+def _add_adjustment(
+    breakdown: list[dict],
+    signal: str,
+    requested_pct: float,
+    cap_pct: float,
+    base_projection: float,
+    label: str,
+) -> bool:
+    if abs(requested_pct) < 1e-9:
+        return False
+
+    capped_pct = _clamp(requested_pct, -cap_pct, cap_pct)
+    delta = base_projection * capped_pct
+    breakdown.append({
+        "signal": signal,
+        "label": label,
+        "delta": round(delta, 2),
+        "pct": round(capped_pct, 4),
+        "requestedPct": round(requested_pct, 4),
+        "capHit": abs(capped_pct - requested_pct) > 1e-9,
+    })
+    return abs(capped_pct - requested_pct) > 1e-9
+
+
+def _apply_structured_adjustments(
+    *,
+    sr,
+    calibrated_proj: float,
+    age_data: dict | None,
+    team_change_data: dict | None,
+    trend_data: dict | None,
+    regression_data: dict | None,
+    injury_data: dict | None,
+    breakout_data: dict | None,
+    manual_data: dict | None,
+    sos_label: str,
+    sos_mult: float,
+) -> tuple[float, list[dict], dict]:
+    caps = CALIBRATION_POLICY["per_signal_caps_pct"]
+    breakdown: list[dict] = []
+    flags = {
+        "ageCapHit": False,
+        "totalAdjustmentCapHit": False,
+        "manualCapHit": False,
+    }
+
+    if age_data and age_data.get("mult", 1.0) != 1.0:
+        flags["ageCapHit"] = _add_adjustment(
+            breakdown,
+            "age",
+            float(age_data["mult"]) - 1.0,
+            caps["age"],
+            calibrated_proj,
+            f"Age {age_data['age']:.0f}",
+        )
+
+    if team_change_data and team_change_data.get("mult", 1.0) != 1.0:
+        from_team = str(team_change_data.get("from", "") or "").strip()
+        to_team = str(team_change_data.get("to", "") or "").strip()
+        if from_team and to_team:
+            team_change_label = f"Team change {from_team}->{to_team}"
+        else:
+            team_change_label = "Team change"
+        _add_adjustment(
+            breakdown,
+            "team_change",
+            float(team_change_data["mult"]) - 1.0,
+            caps["team_change"],
+            calibrated_proj,
+            team_change_label,
+        )
+
+    if trend_data and trend_data.get("mult", 1.0) != 1.0:
+        slope = float(trend_data.get("slope", 0.0) or 0.0)
+        slope_prefix = "+" if slope > 0 else ""
+        _add_adjustment(
+            breakdown,
+            "usage",
+            float(trend_data["mult"]) - 1.0,
+            caps["usage"],
+            calibrated_proj,
+            f"Usage trend {slope_prefix}{slope:.0f}",
+        )
+
+    if regression_data and regression_data.get("mult", 1.0) != 1.0:
+        _add_adjustment(
+            breakdown,
+            "regression",
+            float(regression_data["mult"]) - 1.0,
+            caps["regression"],
+            calibrated_proj,
+            f"Regression {int(regression_data.get('pct_above', 0))}%",
+        )
+
+    if injury_data and injury_data.get("mult", 1.0) != 1.0:
+        _add_adjustment(
+            breakdown,
+            "injury",
+            float(injury_data["mult"]) - 1.0,
+            caps["injury"],
+            calibrated_proj,
+            f"Durability {injury_data['expected_gp']:.0f} expected games",
+        )
+
+    if breakout_data and breakout_data.get("mult", 1.0) != 1.0:
+        _add_adjustment(
+            breakdown,
+            "breakout",
+            float(breakout_data["mult"]) - 1.0,
+            caps["breakout"],
+            calibrated_proj,
+            f"Breakout +{int(breakout_data.get('eff_change', 0))}% eff",
+        )
+
+    if manual_data and manual_data.get("mult", 1.0) != 1.0:
+        flags["manualCapHit"] = _add_adjustment(
+            breakdown,
+            "manual",
+            float(manual_data["mult"]) - 1.0,
+            caps["manual"],
+            calibrated_proj,
+            manual_data.get("note", "Manual context"),
+        )
+
+    if sos_label and sos_mult != 1.0:
+        _add_adjustment(
+            breakdown,
+            "sos",
+            float(sos_mult) - 1.0,
+            caps["sos"],
+            calibrated_proj,
+            sos_label,
+        )
+
+    total_requested = sum(item["delta"] for item in breakdown)
+    global_cap = calibrated_proj * CALIBRATION_POLICY["global_adjustment_cap_pct"]
+    if abs(total_requested) > global_cap > 0:
+        flags["totalAdjustmentCapHit"] = True
+        scale = global_cap / abs(total_requested)
+        for item in breakdown:
+            item["delta"] = round(item["delta"] * scale, 2)
+            item["pct"] = round(item["pct"] * scale, 4)
+
+    total_delta = round(sum(item["delta"] for item in breakdown), 2)
+    return total_delta, breakdown, flags
+
+
+def _calibrate_projection(
+    *,
+    sr,
+    market_proj: float,
+    market_source: str,
+    age_data: dict | None,
+    team_change_data: dict | None,
+    trend_data: dict | None,
+    regression_data: dict | None,
+    injury_data: dict | None,
+    breakout_data: dict | None,
+    manual_data: dict | None,
+    sos_mult: float,
+    sos_label: str,
+) -> dict:
+    raw_proj = float(getattr(sr, "model_projection", 0.0) or 0.0)
+    position = getattr(sr, "position", "")
+    ecr = float(getattr(sr, "ecr", 999.0) or 999.0)
+
+    blend_weight = _compute_blend_weight(position, ecr, raw_proj, market_proj)
+    calibrated_proj = raw_proj if market_proj <= 0 else (
+        blend_weight * raw_proj + (1.0 - blend_weight) * market_proj
+    )
+
+    adj_delta, adj_breakdown, adj_flags = _apply_structured_adjustments(
+        sr=sr,
+        calibrated_proj=calibrated_proj,
+        age_data=age_data,
+        team_change_data=team_change_data,
+        trend_data=trend_data,
+        regression_data=regression_data,
+        injury_data=injury_data,
+        breakout_data=breakout_data,
+        manual_data=manual_data,
+        sos_label=sos_label,
+        sos_mult=sos_mult,
+    )
+    unclamped_final = calibrated_proj + adj_delta
+
+    clamp_delta = 0.0
+    clamp_hit = False
+    elite_consensus = ecr <= CALIBRATION_POLICY["elite_ecr_cutoff"]
+    if market_proj > 0:
+        band_pct = CALIBRATION_POLICY["elite_band_pct"].get(position, 0.14) if elite_consensus else (
+            CALIBRATION_POLICY["market_band_pct"].get(position, 0.18)
+        )
+        band = max(
+            CALIBRATION_POLICY["min_band_points"].get(position, 10.0),
+            market_proj * band_pct,
+        )
+        lower = max(0.0, market_proj - band)
+        upper = market_proj + band
+        final_display = _clamp(unclamped_final, lower, upper)
+        clamp_delta = round(final_display - unclamped_final, 2)
+        clamp_hit = abs(clamp_delta) > 1e-9
+    else:
+        final_display = max(0.0, unclamped_final)
+
+    divergence_pct = (
+        abs(raw_proj - market_proj) / max(abs(market_proj), 1.0)
+        if market_proj > 0 else 0.0
+    )
+    final_divergence_pct = (
+        abs(final_display - market_proj) / max(abs(market_proj), 1.0)
+        if market_proj > 0 else 0.0
+    )
+    elite_override_check = bool(
+        elite_consensus and market_proj > 0 and divergence_pct > CALIBRATION_POLICY["elite_band_pct"].get(position, 0.14)
+    )
+
+    if clamp_hit:
+        adj_breakdown.append({
+            "signal": "market_clamp",
+            "label": "Market band clamp",
+            "delta": round(clamp_delta, 2),
+            "pct": round(clamp_delta / max(calibrated_proj, 1.0), 4),
+            "requestedPct": round(clamp_delta / max(calibrated_proj, 1.0), 4),
+            "capHit": True,
+        })
+
+    final_adj_delta = round(final_display - calibrated_proj, 2)
+    why = [
+        f"Our rank #{int(getattr(sr, 'model_rank', 999))} vs consensus #{int(round(ecr))}",
+        (
+            f"Base projection {round(calibrated_proj, 1):.1f} from "
+            f"{blend_weight:.0%} model {raw_proj:.1f} and "
+            f"{1.0 - blend_weight:.0%} market {market_proj:.1f}"
+        ),
+    ]
+    for item in adj_breakdown:
+        if abs(item["delta"]) < 0.05:
+            continue
+        why.append(f"{item['label']}: {item['delta']:+.1f}")
+    why = why[:5]
+
+    flags = {
+        "largeDivergence": _is_large_divergence(position, raw_proj, market_proj),
+        "unresolvedDisplayDivergence": _is_unresolved_display_divergence(
+            position,
+            final_display,
+            market_proj,
+            elite_consensus=elite_consensus,
+        ),
+        "clampHit": clamp_hit,
+        "ageCapHit": adj_flags["ageCapHit"],
+        "eliteConsensusOverrideCheck": elite_override_check,
+        "positionBiasCheck": False,
+        "totalAdjustmentCapHit": adj_flags["totalAdjustmentCapHit"],
+        "manualCapHit": adj_flags["manualCapHit"],
+        "marketSource": market_source,
+    }
+
+    return {
+        "raw_projection": round(raw_proj, 2),
+        "market_anchor_projection": round(market_proj, 2),
+        "calibrated_projection": round(calibrated_proj, 2),
+        "final_display_projection": round(final_display, 2),
+        "adjustment_delta": round(final_adj_delta, 2),
+        "adjustment_breakdown": adj_breakdown,
+        "calibration_flags": flags,
+        "why": why,
+        "blend_weight": round(blend_weight, 4),
+    }
+
+
+def _summarize_board_calibration(players: list[dict]) -> dict:
+    if not players:
+        return {"summary": {}, "auditPlayers": []}
+
+    displayable_cutoff = CALIBRATION_POLICY["displayable_rank_cutoff"]
+    displayable_players = [
+        p for p in players
+        if p["ecr"] <= displayable_cutoff or p["mr"] <= displayable_cutoff
+    ]
+    if not displayable_players:
+        displayable_players = players
+
+    def _top_by_ecr(position: str, limit: int = 24) -> list[dict]:
+        pos_players = [p for p in displayable_players if p["p"] == position]
+        return sorted(pos_players, key=lambda p: p["ecr"])[:limit]
+
+    rb_top = _top_by_ecr("RB")
+    wr_top = _top_by_ecr("WR")
+    rb_avg = sum(p["proj"] for p in rb_top) / len(rb_top) if rb_top else 0.0
+    wr_avg = sum(p["proj"] for p in wr_top) / len(wr_top) if wr_top else 0.0
+    rb_market_avg = sum(p["marketProj"] for p in rb_top) / len(rb_top) if rb_top else 0.0
+    wr_market_avg = sum(p["marketProj"] for p in wr_top) / len(wr_top) if wr_top else 0.0
+    actual_gap = round(rb_avg - wr_avg, 2)
+    market_gap = round(rb_market_avg - wr_market_avg, 2)
+
+    large_divergence_players = [
+        p for p in players if p["calibrationFlags"].get("largeDivergence")
+    ]
+    unresolved_display_players = [
+        p for p in displayable_players
+        if p["calibrationFlags"].get("unresolvedDisplayDivergence")
+    ]
+    clamp_players = [p for p in players if p["calibrationFlags"].get("clampHit")]
+    elite_override_players = [
+        p for p in players if p["calibrationFlags"].get("eliteConsensusOverrideCheck")
+    ]
+
+    audit_players = sorted(
+        players,
+        key=lambda p: abs(p["rawProj"] - p["marketProj"]),
+        reverse=True,
+    )[:25]
+    audit_players = [
+        {
+            "name": p["n"],
+            "position": p["p"],
+            "team": p["t"],
+            "ecr": p["ecr"],
+            "rawProj": p["rawProj"],
+            "marketProj": p["marketProj"],
+            "calibratedProj": p["calibratedProj"],
+            "proj": p["proj"],
+            "adjDelta": p["adjDelta"],
+            "flags": p["calibrationFlags"],
+        }
+        for p in audit_players
+    ]
+
+    return {
+        "summary": {
+            "top24_rb_wr_gap": actual_gap,
+            "top24_market_rb_wr_gap": market_gap,
+            "rb_wr_gap_excess": round(actual_gap - market_gap, 2),
+            "large_divergence_share": round(
+                len(unresolved_display_players) / len(displayable_players), 4
+            ),
+            "raw_large_divergence_share_all": round(
+                len(large_divergence_players) / len(players), 4
+            ),
+            "displayable_players": len(displayable_players),
+            "unresolved_display_divergence_count": len(unresolved_display_players),
+            "clamp_hits": len(clamp_players),
+            "elite_override_checks": len(elite_override_players),
+            "position_bias_tolerance": CALIBRATION_POLICY["position_bias_tolerance"],
+            "outlier_share_limit": CALIBRATION_POLICY["outlier_share_limit"],
+        },
+        "auditPlayers": audit_players,
+    }
+
+
+def load_headshot_lookup() -> dict:
+    """Load the latest known headshot URLs from ``weekly_rosters_v2``.
+
+    The dashboard only needs a best-effort frontend embellishment, so this
+    lookup is intentionally tolerant of missing tables/columns and falls back
+    cleanly when the richer roster snapshot is unavailable.
+    """
+    import sqlite3
+    from config.settings import DB_PATH
+
+    lookup = {
+        "by_player_id": {},
+        "by_name_team": {},
+        "by_name_pos": {},
+        "by_name": {},
+    }
+
+    try:
+        conn = sqlite3.connect(str(DB_PATH))
+    except Exception:
+        return lookup
+
+    try:
+        table_exists = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='weekly_rosters_v2'"
+        ).fetchone()
+        if not table_exists:
+            return lookup
+
+        columns = {
+            row[1]
+            for row in conn.execute("PRAGMA table_info(weekly_rosters_v2)").fetchall()
+        }
+        required_cols = {"player_name", "team", "position", "headshot_url"}
+        if not required_cols.issubset(columns):
+            return lookup
+
+        rows = conn.execute(
+            """
+            SELECT player_id, player_name, team, position, headshot_url
+            FROM weekly_rosters_v2
+            WHERE headshot_url IS NOT NULL
+              AND TRIM(headshot_url) != ''
+            ORDER BY season DESC, week DESC
+            """
+        ).fetchall()
+    except Exception:
+        return lookup
+    finally:
+        conn.close()
+
+    for player_id, player_name, team, position, headshot_url in rows:
+        url = str(headshot_url or "").strip()
+        if not url:
+            continue
+
+        name = str(player_name or "").strip()
+        team = str(team or "").strip()
+        position = str(position or "").strip()
+        pid = str(player_id or "").strip()
+        name_key = _norm_key(name, position) if name else None
+
+        if pid:
+            lookup["by_player_id"].setdefault(pid, url)
+        if name_key and team:
+            lookup["by_name_team"].setdefault((name_key, team), url)
+        if name_key and position:
+            lookup["by_name_pos"].setdefault((name_key, position), url)
+        if name_key:
+            lookup["by_name"].setdefault(name_key, url)
+
+    return lookup
+
+
+def resolve_headshot_url(sr, headshot_lookup: dict) -> str:
+    """Resolve the best available player headshot URL for a spread row."""
+    player_id = str(getattr(sr, "player_id", "") or "").strip()
+    if player_id:
+        url = headshot_lookup.get("by_player_id", {}).get(player_id)
+        if url:
+            return url
+
+    name_key = _norm_key(getattr(sr, "name", ""), getattr(sr, "position", ""))
+    team = str(getattr(sr, "team", "") or "").strip()
+    position = str(getattr(sr, "position", "") or "").strip()
+
+    if name_key and team:
+        url = headshot_lookup.get("by_name_team", {}).get((name_key, team))
+        if url:
+            return url
+    if name_key and position:
+        url = headshot_lookup.get("by_name_pos", {}).get((name_key, position))
+        if url:
+            return url
+    if name_key:
+        return headshot_lookup.get("by_name", {}).get(name_key, "")
+
+    return ""
 
 
 def load_draft_class(season: int) -> pd.DataFrame:
@@ -134,17 +791,46 @@ AVAILABILITY_CURVE = [
 
 def compute_age_adjustments(season: int) -> dict:
     """Return {normalized_name_key: {age, multiplier}} for players with birth dates."""
+    from datetime import datetime
+    season_start = datetime(season, 9, 1)
+    rosters = pd.DataFrame()
+
     try:
         import nfl_data_py as nfl
         rosters = nfl.import_seasonal_rosters([season - 1])
     except Exception:
-        return {}
+        rosters = pd.DataFrame()
 
-    if "birth_date" not in rosters.columns or "position" not in rosters.columns:
-        return {}
+    if rosters.empty or "birth_date" not in rosters.columns or "position" not in rosters.columns:
+        try:
+            import sqlite3
+            from config.settings import DB_PATH
 
-    from datetime import datetime
-    season_start = datetime(season, 9, 1)
+            conn = sqlite3.connect(str(DB_PATH))
+            rosters = pd.read_sql_query(
+                """
+                SELECT
+                    p.name AS player_name,
+                    p.position,
+                    p.birth_date
+                FROM players p
+                JOIN (
+                    SELECT player_id, MAX(season) AS season
+                    FROM player_weekly_stats
+                    WHERE season = ?
+                    GROUP BY player_id
+                ) s ON p.player_id = s.player_id
+                WHERE p.position IN ('QB', 'RB', 'WR', 'TE')
+                  AND p.birth_date IS NOT NULL
+                  AND p.birth_date != ''
+                """,
+                conn,
+                params=(season - 1,),
+            )
+            conn.close()
+        except Exception:
+            return {}
+
     result = {}
     for _, r in rosters.iterrows():
         pos = r.get("position")
@@ -976,28 +1662,6 @@ def build_board_data(season: int):
     raw_usage_roles = build_usage_roles(season)
     team_tendencies = build_team_tendencies(season)
 
-    # Build normalized lookup for usage roles (first_initial, last_name, pos) -> role
-    # because DB names are "T.McBride" but ADP names are "Trey McBride"
-    SUFFIXES = {"jr", "sr", "ii", "iii", "iv", "v", "jr."}
-
-    def _norm_key(name, pos=None):
-        name = name.strip()
-        if "." in name and " " not in name:
-            # Abbreviated: "T.McBride"
-            parts = name.split(".")
-            initial = parts[0].strip()[0].lower() if parts[0].strip() else ""
-            last = parts[-1].strip().lower()
-        else:
-            # Full: "James Cook III" or "Travis Etienne Jr."
-            parts = name.split()
-            initial = parts[0][0].lower() if parts else ""
-            # Walk backwards past suffixes to find the real last name
-            idx = len(parts) - 1
-            while idx > 0 and parts[idx].lower().rstrip(".") in SUFFIXES:
-                idx -= 1
-            last = parts[idx].lower() if idx >= 0 else ""
-        return (initial, "".join(c for c in last if c.isalnum()))
-
     usage_roles = {}  # normalized key -> role data
     for name, data in raw_usage_roles.items():
         pos = data["role"][:2]
@@ -1057,15 +1721,20 @@ def build_board_data(season: int):
     # Load market-implied 2025 projections for edge signal on draft board.
     # Keyed by _norm_key(name) → market_fp float. Missing file = no signal shown.
     mkt_proj_lookup: dict = {}
+    market_projection_season = None
     mkt_proj_path = PROJECT_ROOT / "docs" / "data" / "market_projections.json"
     if mkt_proj_path.exists():
         mkt_raw = json.loads(mkt_proj_path.read_text(encoding="utf-8"))
+        market_projection_season = mkt_raw.get("season")
         for pname, rec in mkt_raw.get("players", {}).items():
             key = _norm_key(pname)
             fp = rec.get("market_fp", 0)
             # Keep the highest-fp entry when norm keys collide
             if key not in mkt_proj_lookup or fp > mkt_proj_lookup[key]:
                 mkt_proj_lookup[key] = fp
+
+    anchor_context = _build_market_anchor_context(spread_results, mkt_proj_lookup)
+    headshot_lookup = load_headshot_lookup()
 
     # Serialize board for JS
     players = []
@@ -1088,91 +1757,85 @@ def build_board_data(season: int):
         # Team tendency
         tt = team_tendencies.get(sr.team, {})
 
-        # The board UI is labeled as season fantasy points, so it must use the
-        # model's season-total projection rather than the ADP/model blend used
-        # for rank-spread analysis.
-        raw_proj = sr.model_projection
-        blended_proj = sr.blended_projection
-        adj_mult = 1.0
-        adj_reasons = []
         player_age = None
-
-        # Age — only adjustment that improves accuracy on top of the season-total
-        # model projection.
         aa = age_adj.get(sr.name)
+        if aa is None:
+            aa = next(
+                (data for name, data in age_adj.items() if _norm_key(name, sr.position) == _norm_key(sr.name, sr.position)),
+                None,
+            )
         if aa:
             player_age = aa["age"]
-            if aa["mult"] < 1.0:
-                adj_mult *= aa["mult"]
-                adj_reasons.append(f"Age {aa['age']:.0f}")
+        tc = next(
+            (data for name, data in team_change_adj.items() if _norm_key(name, sr.position) == _norm_key(sr.name, sr.position)),
+            None,
+        )
+        tr = next(
+            (data for name, data in trend_adj.items() if _norm_key(name, sr.position) == _norm_key(sr.name, sr.position)),
+            None,
+        )
+        ra = next(
+            (data for name, data in regression_adj.items() if _norm_key(name) == _norm_key(sr.name)),
+            None,
+        )
+        ia = next(
+            (data for name, data in injury_adj.items() if _norm_key(name) == _norm_key(sr.name)),
+            None,
+        )
+        ba = next(
+            (data for name, data in breakout_adj.items() if _norm_key(name) == _norm_key(sr.name)),
+            None,
+        )
 
-        # Context signals (informational only — no projection change)
-        for tc_name, tc in team_change_adj.items():
-            if _norm_key(tc_name, sr.position) == _norm_key(sr.name, sr.position):
-                adj_reasons.append("New team")
-                break
-
-        for tr_name, tr in trend_adj.items():
-            if _norm_key(tr_name, sr.position) == _norm_key(sr.name, sr.position):
-                if tr["slope"] > 0:
-                    adj_reasons.append(f"Usage +{tr['slope']:.0f}")
-                else:
-                    adj_reasons.append(f"Usage {tr['slope']:.0f}")
-                break
-
-        ra = None
-        for rname, rdata in regression_adj.items():
-            if _norm_key(rname) == _norm_key(sr.name):
-                ra = rdata
-                break
-        if ra:
-            adj_reasons.append(f"Regress {ra['pct_above']}%yr")
-
-        ia = None
-        for iname, idata in injury_adj.items():
-            if _norm_key(iname) == _norm_key(sr.name):
-                ia = idata
-                break
-        if ia:
-            adj_reasons.append(f"Inj {ia['expected_gp']:.0f}g")
-
-        ba = None
-        for bname, bdata in breakout_adj.items():
-            if _norm_key(bname) == _norm_key(sr.name):
-                ba = bdata
-                break
-        if ba:
-            adj_reasons.append(f"Breakout +{ba['eff_change']}%eff")
-
-        _, sos_label = compute_sos_adjustment(
+        sos_mult, sos_label = compute_sos_adjustment(
             sr.team, sr.position, def_rankings
         )
-        if sos_label:
-            adj_reasons.append(sos_label)
 
-        # Manual override (offseason moves, known roster changes)
         manual = _find_manual_adj(sr.name)
-        if manual:
-            adj_mult *= manual["mult"]
-
-        adjusted_proj = round(raw_proj * adj_mult, 1)
-        adj_pct = round((adj_mult - 1.0) * 100)
-        why_reasons = [f"Model #{sr.model_rank} vs ADP #{int(round(sr.ecr))}"]
-        why_reasons.extend(adj_reasons[:3])
-        if manual and manual.get("note"):
-            why_reasons.append(manual["note"])
+        market_proj, market_source = _resolve_market_anchor(sr, anchor_context)
+        calibration = _calibrate_projection(
+            sr=sr,
+            market_proj=market_proj,
+            market_source=market_source,
+            age_data=aa,
+            team_change_data=tc,
+            trend_data=tr,
+            regression_data=ra,
+            injury_data=ia,
+            breakout_data=ba,
+            manual_data=manual,
+            sos_mult=sos_mult,
+            sos_label=sos_label,
+        )
+        adj_pct = round(
+            (
+                calibration["final_display_projection"]
+                / max(calibration["calibrated_projection"], 1.0) - 1.0
+            ) * 100
+        )
+        adj_reasons = [
+            f"{item['label']} {item['delta']:+.1f}"
+            for item in calibration["adjustment_breakdown"]
+            if item["signal"] != "market_clamp"
+        ]
 
         players.append({
             "id": i,
             "n": sr.name,
             "p": sr.position,
             "t": sr.team,
+            "img": resolve_headshot_url(sr, headshot_lookup),
             "ecr": round(sr.ecr, 1),
             "mr": sr.model_rank,
             "sp": sr.rank_spread,
-            "proj": adjusted_proj,
-            "rawProj": round(raw_proj, 1),
-            "blendProj": round(blended_proj, 1),
+            "proj": round(calibration["final_display_projection"], 1),
+            "rawProj": round(calibration["raw_projection"], 1),
+            "marketProj": round(calibration["market_anchor_projection"], 1),
+            "calibratedProj": round(calibration["calibrated_projection"], 1),
+            "blendProj": round(calibration["calibrated_projection"], 1),
+            "adjDelta": round(calibration["adjustment_delta"], 1),
+            "adjBreakdown": calibration["adjustment_breakdown"],
+            "calibrationFlags": calibration["calibration_flags"],
             "adjPct": adj_pct,
             "adjR": ", ".join(adj_reasons) if adj_reasons else "",
             "age": player_age,
@@ -1190,11 +1853,23 @@ def build_board_data(season: int):
             "act": round(sr.actual_total, 1) if has_actuals else None,
             "w": sr.model_wins if has_actuals else None,
             "adj_note": manual["note"] if manual else "",
-            "why": why_reasons[:4],
+            "why": calibration["why"],
             "mkt25": mkt_proj_lookup.get(_norm_key(sr.name)),
-            "edge": round(adjusted_proj - mkt_proj_lookup[_norm_key(sr.name)])
+            "edge": round(calibration["final_display_projection"] - mkt_proj_lookup[_norm_key(sr.name)])
                 if _norm_key(sr.name) in mkt_proj_lookup else None,
         })
+
+    calibration_summary = _summarize_board_calibration(players)
+    rb_wr_gap_excess = calibration_summary["summary"].get("rb_wr_gap_excess", 0.0)
+    tolerance = CALIBRATION_POLICY["position_bias_tolerance"]
+    if rb_wr_gap_excess > tolerance:
+        for player in players:
+            if player["p"] == "RB":
+                player["calibrationFlags"]["positionBiasCheck"] = True
+    elif rb_wr_gap_excess < -tolerance:
+        for player in players:
+            if player["p"] == "WR":
+                player["calibrationFlags"]["positionBiasCheck"] = True
 
     return {
         "players": players,
@@ -1205,6 +1880,11 @@ def build_board_data(season: int):
         },
         "has_actuals": has_actuals,
         "season": season,
+        "calibration": {
+            "policy": CALIBRATION_POLICY,
+            "market_projection_season": market_projection_season,
+            **calibration_summary,
+        },
         "board": board,
         "adp_df": adp_df,
     }
@@ -1290,6 +1970,7 @@ def build_data_payloads(board_data, vona_data, scarcity_data, data_sources):
     """Return the JSON payloads served to the page at runtime."""
     return {
         "board":    board_data["players"],
+        "calibration": board_data.get("calibration", {}),
         "vona":     vona_data,
         "scarcity": scarcity_data,
         "meta":  {
@@ -1299,6 +1980,7 @@ def build_data_payloads(board_data, vona_data, scarcity_data, data_sources):
             "teams":       TEAMS,
             "rounds":      ROUNDS,
             "sources":     data_sources,
+            "calibration": board_data.get("calibration", {}).get("summary", {}),
         },
     }
 

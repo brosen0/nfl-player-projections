@@ -311,6 +311,45 @@ def test_build_draft_board_matches_last_name_and_position():
     assert by_name["X.Ghost"].pred_total == 0.0
 
 
+def test_attach_actual_totals_uses_player_id_then_name_fallback():
+    projections = sd.pd.DataFrame([
+        {
+            "player_id": "PID_A",
+            "name": "A.Star",
+            "position": "WR",
+            "pred_total": 180.0,
+            "model_rank_value": 180.0,
+        },
+        {
+            "player_id": "rookie_Marvin Harrison Jr._WR",
+            "name": "Marvin Harrison Jr.",
+            "position": "WR",
+            "pred_total": 150.0,
+            "model_rank_value": 150.0,
+        },
+    ])
+    actuals = sd.pd.DataFrame([
+        {
+            "player_id": "PID_A",
+            "name": "Alpha Star",
+            "position": "WR",
+            "actual_total": 201.5,
+            "weeks": 17,
+        },
+        {
+            "player_id": "PID_MHJ",
+            "name": "Marvin Harrison Jr.",
+            "position": "WR",
+            "actual_total": 245.0,
+            "weeks": 17,
+        },
+    ])
+
+    out = sd._attach_actual_totals(projections, actuals)
+
+    assert list(out["actual_total"]) == [201.5, 245.0]
+
+
 def test_vorp_uses_flex_aware_replacement_levels():
     """Replacement should come from starter demand, including FLEX."""
     import pandas as pd
